@@ -1,0 +1,18 @@
+{
+  "name": "Animal Farts",
+  "short_name": "Farts",
+  "description": "Tap animals. Make fart noises. Maximum fun.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fbbf24",
+  "theme_color": "#fbbf24",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='96' fill='%23fbbf24'/><text x='50%25' y='55%25' font-size='320' text-anchor='middle' dominant-baseline='middle'>💨</text></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
