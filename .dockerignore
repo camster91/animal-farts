@@ -1,0 +1,16 @@
+node_modules
+server/node_modules
+server/farts.db
+server/farts.db-shm
+server/farts.db-wal
+server/uploads
+dist
+*.log
+.DS_Store
+.git
+.github
+README.md
+.env
+.env.*
+*.md
+!server/**/*.md
