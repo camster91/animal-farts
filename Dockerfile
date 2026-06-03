@@ -19,6 +19,9 @@ RUN npm run build
 # ─── Stage 2: runtime server ────────────────────────────────────────────────
 FROM node:20-alpine
 
+# Install curl + wget for Coolify's healthcheck (uses either)
+RUN apk add --no-cache curl wget
+
 WORKDIR /app
 
 # Server-only deps (Express, sqlite, multer, cors)
