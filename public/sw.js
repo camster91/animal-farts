@@ -54,6 +54,8 @@ const SOUND_ASSETS = [
   "/sounds/extra/rooster2.mp3",
   "/sounds/extra/turtle2.mp3",
   "/sounds/extra/whale2.mp3",
+  "/sounds/extra/elephant_v3.mp3",
+  "/sounds/extra/lion_v3.mp3",
   "/sounds/extra/goat.mp3",
   "/sounds/extra/sheep.mp3",
   "/sounds/extra/bee.mp3",

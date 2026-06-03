@@ -74,6 +74,7 @@ export default function App() {
   const [profiles, setProfiles] = useState<Kid[]>([]);
   const [activeKid, setActiveKidState] = useState<Kid | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showKidMenu, setShowKidMenu] = useState(false);
   const [poofs, setPoofs] = useState<Poof[]>([]);
   const [shake, setShake] = useState(false);
   const [hype, setHype] = useState(0);
@@ -151,6 +152,18 @@ export default function App() {
       if (petTimerRef.current) clearTimeout(petTimerRef.current);
     };
   }, [petState]);
+
+  // Close kid menu when clicking outside or switching tabs
+  useEffect(() => {
+    if (!showKidMenu) return;
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-kid-menu-root]")) setShowKidMenu(false);
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, [showKidMenu]);
+  useEffect(() => { setShowKidMenu(false); }, [tab]);
 
   // Check achievements after stats updates
   const checkAchievementsAndNotify = useCallback((kidId: string) => {
@@ -410,50 +423,68 @@ export default function App() {
         </div>
       )}
 
-      {/* Kid Switcher Bar */}
-      {profiles.length > 0 && tab === "play" && (
-        <div className="px-3 pb-2 max-w-3xl mx-auto w-full">
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {profiles.map((kid) => (
+      {/* Active Kid Pill — tap to switch / add / delete */}
+      {profiles.length > 0 && tab === "play" && activeKid && (
+        <div data-kid-menu-root className="px-3 pb-2 max-w-3xl mx-auto w-full relative">
+          <button
+            onClick={() => setShowKidMenu((v) => !v)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-bold shadow-md bg-gradient-to-br ${activeKid.color} text-white`}
+          >
+            <span className="text-lg">{activeKid.avatar}</span>
+            <span>{activeKid.name}</span>
+            <span className="text-xs opacity-80">▾</span>
+          </button>
+          {showKidMenu && (
+            <div className="absolute z-40 mt-1 left-3 bg-white rounded-2xl shadow-xl border-2 border-purple-200 p-2 min-w-[200px]">
+              <p className="text-xs text-purple-700 font-bold px-2 py-1 uppercase tracking-wider">Switch player</p>
+              {profiles.map((kid) => (
+                <button
+                  key={kid.id}
+                  onClick={() => { setActiveKidState(kid); setActiveKidId(kid.id); setShowKidMenu(false); }}
+                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left ${activeKid.id === kid.id ? "bg-purple-100" : "hover:bg-gray-100"}`}
+                >
+                  <span className="text-2xl">{kid.avatar}</span>
+                  <span className="font-bold text-gray-800 flex-1">{kid.name}</span>
+                  {activeKid.id === kid.id && <span className="text-purple-500">✓</span>}
+                </button>
+              ))}
+              <div className="border-t border-gray-200 my-1" />
               <button
-                key={kid.id}
-                onClick={() => { setActiveKidState(kid); setActiveKidId(kid.id); }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-all ${activeKid?.id === kid.id ? `bg-gradient-to-br ${kid.color} text-white shadow-md scale-105` : "bg-white/60 text-gray-700"}`}
+                onClick={() => { setShowProfileModal(true); setShowKidMenu(false); }}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-purple-700 font-bold hover:bg-purple-50"
               >
-                <span className="text-lg">{kid.avatar}</span>
-                <span>{kid.name}</span>
+                <span className="text-2xl">+</span> Add a kid
               </button>
-            ))}
-            <button onClick={() => setShowProfileModal(true)} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-white/60 text-gray-600 text-sm font-bold whitespace-nowrap">
-              <span className="text-lg">+</span> Add Kid
-            </button>
-          </div>
+              {profiles.length > 1 && (
+                <button
+                  onClick={() => {
+                    if (confirm(`Delete ${activeKid.name}? Their stats and stickers will be removed.`)) {
+                      const id = activeKid.id;
+                      deleteKid(id);
+                      const remaining = loadProfiles();
+                      setProfiles(remaining);
+                      if (remaining.length > 0) {
+                        setActiveKidState(remaining[0]);
+                        setActiveKidId(remaining[0].id);
+                      } else {
+                        setActiveKidState(null as any);
+                        setActiveKidId(null);
+                      }
+                    }
+                    setShowKidMenu(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-red-600 font-bold hover:bg-red-50"
+                >
+                  <span className="text-2xl">✕</span> Delete {activeKid.name}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
       {tab === "play" && (
         <>
-          {/* Kid Switcher Bar — keep this; kids need to know who's playing */}
-          {profiles.length > 0 && (
-            <div className="px-3 pb-2 max-w-3xl mx-auto w-full">
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {profiles.map((kid) => (
-                  <button
-                    key={kid.id}
-                    onClick={() => { setActiveKidState(kid); setActiveKidId(kid.id); }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-all ${activeKid?.id === kid.id ? `bg-gradient-to-br ${kid.color} text-white shadow-md scale-105` : "bg-white/60 text-gray-700"}`}
-                  >
-                    <span className="text-lg">{kid.avatar}</span>
-                    <span>{kid.name}</span>
-                  </button>
-                ))}
-                <button onClick={() => setShowProfileModal(true)} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-white/60 text-gray-600 text-sm font-bold whitespace-nowrap">
-                  <span className="text-lg">+</span> Add
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Sound Pack Selector — small, useful for variety */}
           {activeKid && (
             <div className="px-3 pb-2 max-w-3xl mx-auto w-full">

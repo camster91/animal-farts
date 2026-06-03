@@ -72,7 +72,7 @@ export const PRESETS: FartPreset[] = [
   },
   {
     id: "elephant", name: "Elephant", emoji: "🐘", color: "from-slate-300 to-slate-500",
-    src: "/sounds/elephant.mp3", altSrcs: ["/sounds/extra/elephant2.mp3"],
+    src: "/sounds/elephant.mp3", altSrcs: ["/sounds/extra/elephant_v3.mp3", "/sounds/extra/elephant2.mp3"],
     pitchShift: -4, rate: 0.8, caption: "ROLLING THUNDER",
     loopable: false, baseFreq: 45, detune: 10, attack: 0.04, hold: 1.1, release: 0.7,
     cutoff: 350, noise: 0.08, pitchSweep: -6, wobble: 6, wobbleRate: 6, squelch: 0.05, thump: true,
@@ -93,7 +93,7 @@ export const PRESETS: FartPreset[] = [
   },
   {
     id: "lion", name: "Lion", emoji: "🦁", color: "from-yellow-300 to-amber-500",
-    src: "/sounds/lion.mp3", altSrcs: ["/sounds/extra/lion2.mp3"],
+    src: "/sounds/lion.mp3", altSrcs: ["/sounds/extra/lion_v3.mp3", "/sounds/extra/lion2.mp3"],
     pitchShift: -1, rate: 0.95, caption: "ROAR-TOOT",
     loopable: false, baseFreq: 55, detune: 8, attack: 0.05, hold: 0.85, release: 0.6,
     cutoff: 500, noise: 0.15, pitchSweep: -5, wobble: 5, wobbleRate: 10, squelch: 0.05, thump: true,
