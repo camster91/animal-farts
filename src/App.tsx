@@ -61,7 +61,7 @@ import {
 } from "./game/state";
 
 type Poof = { id: number; x: number; y: number; emoji: string };
-type Tab = "play" | "explore" | "profile" | "stickers" | "daily" | "parental";
+type Tab = "play" | "explore" | "mystuff" | "parental";
 
 const HYPE_LABELS = [
   "Calm wind", "Whisper toot", "Solid rip", "HILARIOUS rip",
@@ -80,6 +80,7 @@ export default function App() {
   const [active, setActive] = useState<string | null>(null);
   const [recordings, setRecordings] = useState<CustomRecording[]>([]);
   const [reverbMode, setReverbModeState] = useState(false);
+  const [showHypeMeter, setShowHypeMeter] = useState(true);
   const [recording, setRecording] = useState(false);
   const [recordDuration, setRecordDuration] = useState(0);
   const [showRecordModal, setShowRecordModal] = useState(false);
@@ -395,14 +396,12 @@ export default function App() {
         )}
       </header>
 
-      {/* Tabs */}
-      <div className="px-3 pb-2 flex gap-1.5 max-w-3xl mx-auto w-full overflow-x-auto">
-        <button onClick={() => setTab("play")} className={`flex-1 py-2 rounded-xl font-bold text-xs whitespace-nowrap ${tab === "play" ? "bg-amber-500 text-white shadow-lg" : "bg-white/60 text-amber-900"}`}>🎵 Play</button>
-        <button onClick={() => setTab("explore")} className={`flex-1 py-2 rounded-xl font-bold text-xs whitespace-nowrap ${tab === "explore" ? "bg-emerald-500 text-white shadow-lg" : "bg-white/60 text-emerald-900"}`}>🌍 Explore</button>
-        <button onClick={() => setTab("profile")} className={`flex-1 py-2 rounded-xl font-bold text-xs whitespace-nowrap ${tab === "profile" ? "bg-purple-500 text-white shadow-lg" : "bg-white/60 text-purple-900"}`}>👤 Kids</button>
-        <button onClick={() => setTab("stickers")} className={`flex-1 py-2 rounded-xl font-bold text-xs whitespace-nowrap ${tab === "stickers" ? "bg-pink-500 text-white shadow-lg" : "bg-white/60 text-pink-900"}`}>⭐ Stickers</button>
-        <button onClick={() => setTab("daily")} className={`flex-1 py-2 rounded-xl font-bold text-xs whitespace-nowrap ${tab === "daily" ? "bg-orange-500 text-white shadow-lg" : "bg-white/60 text-orange-900"}`}>📅 Daily</button>
-        <button onClick={() => setTab("parental")} className={`flex-1 py-2 rounded-xl font-bold text-xs whitespace-nowrap ${tab === "parental" ? "bg-slate-700 text-white shadow-lg" : "bg-white/60 text-slate-700"}`}>👪 Parents</button>
+      {/* Top tabs — kid-facing nav: 4 tabs, room to breathe */}
+      <div className="px-3 pb-3 flex gap-2 max-w-3xl mx-auto w-full">
+        <NavTab active={tab === "play"} onClick={() => setTab("play")} color="amber" emoji="🎵" label="Play" />
+        <NavTab active={tab === "explore"} onClick={() => setTab("explore")} color="emerald" emoji="🌍" label="Explore" />
+        <NavTab active={tab === "mystuff"} onClick={() => setTab("mystuff")} color="purple" emoji="📦" label="My Stuff" />
+        <NavTab active={tab === "parental"} onClick={() => setTab("parental")} color="slate" emoji="⚙️" label="Parents" />
       </div>
 
       {parentalBlocked && (
@@ -434,34 +433,28 @@ export default function App() {
 
       {tab === "play" && (
         <>
-          {/* Hype Meter */}
-          <div className="px-4 pb-3">
-            <div className="bg-white/60 backdrop-blur rounded-2xl p-3 shadow-lg border-2 border-amber-300">
-              <div className="flex justify-between items-center mb-1">
-                <span className="text-sm font-bold text-amber-900">💨 HYPE METER</span>
-                <span className="text-xs font-bold text-amber-900">{HYPE_LABELS[hype]}</span>
-              </div>
-              <div className="w-full h-4 bg-amber-100 rounded-full overflow-hidden border-2 border-amber-300">
-                <div className={`h-full ${hypeColor} transition-all duration-300 ease-out`} style={{ width: `${hypePct}%` }} />
-              </div>
-              <div className="flex gap-2 mt-2">
-                <button
-                  onClick={toggleReverb}
-                  className={`flex-1 text-xs py-1.5 px-2 rounded-lg font-bold ${reverbMode ? "bg-blue-500 text-white" : "bg-white text-blue-700 border border-blue-300"}`}
-                >
-                  🚿 Bathroom {reverbMode ? "ON" : "OFF"}
-                </button>
-                <button
-                  onClick={() => { stopAllSounds(); }}
-                  className="text-xs py-1.5 px-3 rounded-lg font-bold bg-white text-red-700 border border-red-300"
-                >
-                  🛑 STOP
+          {/* Kid Switcher Bar — keep this; kids need to know who's playing */}
+          {profiles.length > 0 && (
+            <div className="px-3 pb-2 max-w-3xl mx-auto w-full">
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {profiles.map((kid) => (
+                  <button
+                    key={kid.id}
+                    onClick={() => { setActiveKidState(kid); setActiveKidId(kid.id); }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-all ${activeKid?.id === kid.id ? `bg-gradient-to-br ${kid.color} text-white shadow-md scale-105` : "bg-white/60 text-gray-700"}`}
+                  >
+                    <span className="text-lg">{kid.avatar}</span>
+                    <span>{kid.name}</span>
+                  </button>
+                ))}
+                <button onClick={() => setShowProfileModal(true)} className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-white/60 text-gray-600 text-sm font-bold whitespace-nowrap">
+                  <span className="text-lg">+</span> Add
                 </button>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Sound Pack Selector */}
+          {/* Sound Pack Selector — small, useful for variety */}
           {activeKid && (
             <div className="px-3 pb-2 max-w-3xl mx-auto w-full">
               <div className="flex gap-1.5 overflow-x-auto pb-1">
@@ -471,7 +464,7 @@ export default function App() {
                 >
                   🎵 All
                 </button>
-                {getUnlockedPacks(activeKid.id).map((pack) => (
+                {getUnlockedPacks(activeKid.id).slice(0, 3).map((pack) => (
                   <button
                     key={pack.id}
                     onClick={() => setSelectedPack(activeKid.id, pack.id === selectedPackId ? null : pack.id)}
@@ -484,10 +477,20 @@ export default function App() {
             </div>
           )}
 
-          {/* Tabs within Play: Animals / Oh No / My Farts */}
-          {/* (sub-tabs are rendered inside PlayTab below) */}
+          {/* Small hype indicator — optional, parents can hide in settings */}
+          {showHypeMeter && (
+            <div className="px-3 pb-2 max-w-3xl mx-auto w-full">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-amber-900/70">💨</span>
+                <div className="flex-1 h-2 bg-amber-100 rounded-full overflow-hidden">
+                  <div className={`h-full ${hypeColor} transition-all duration-300`} style={{ width: `${hypePct}%` }} />
+                </div>
+                <span className="text-[10px] font-bold text-amber-900/60 whitespace-nowrap">{HYPE_LABELS[hype]}</span>
+              </div>
+            </div>
+          )}
 
-          {/* Cards */}
+          {/* Cards — the fun part */}
           <PlayTab
             presets={visiblePresets}
             ohnoPresets={OHNO_PRESETS}
@@ -518,8 +521,8 @@ export default function App() {
         </>
       )}
 
-      {tab === "profile" && (
-        <ProfileTab
+      {tab === "mystuff" && (
+        <MyStuffTab
           profiles={profiles}
           setProfiles={setProfiles}
           activeKid={activeKid}
@@ -529,18 +532,16 @@ export default function App() {
         />
       )}
 
-      {tab === "stickers" && activeKid && (
-        <StickerTab kidId={activeKid.id} />
-      )}
-
-      {tab === "daily" && activeKid && <DailyTab kidId={activeKid.id} />}
-
       {tab === "explore" && <ExploreTab activeKid={activeKid} recordings={recordings} />}
 
       {tab === "parental" && (
         <ParentalTab
           parental={parental}
           setParental={(s) => { saveParentalSettings(s); setParental(s); }}
+          reverbMode={reverbMode}
+          toggleReverb={toggleReverb}
+          showHypeMeter={showHypeMeter}
+          setShowHypeMeter={setShowHypeMeter}
         />
       )}
 
@@ -615,6 +616,25 @@ export default function App() {
 }
 
 // === Sub-components ===
+
+function NavTab({ active, onClick, color, emoji, label }: { active: boolean; onClick: () => void; color: "amber" | "emerald" | "purple" | "slate"; emoji: string; label: string }) {
+  const colors = {
+    amber: { active: "bg-amber-500 text-white shadow-lg", idle: "bg-white/70 text-amber-900 border-2 border-amber-200" },
+    emerald: { active: "bg-emerald-500 text-white shadow-lg", idle: "bg-white/70 text-emerald-900 border-2 border-emerald-200" },
+    purple: { active: "bg-purple-500 text-white shadow-lg", idle: "bg-white/70 text-purple-900 border-2 border-purple-200" },
+    slate: { active: "bg-slate-700 text-white shadow-lg", idle: "bg-white/70 text-slate-700 border-2 border-slate-200" },
+  };
+  const cls = active ? colors[color].active : colors[color].idle;
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-1 py-3 rounded-2xl font-bold text-sm transition-all active:scale-95 ${cls}`}
+    >
+      <span className="text-xl mr-1">{emoji}</span>
+      {label}
+    </button>
+  );
+}
 
 function StatCard({ label, value }: { label: string; value: number | string }) {
   return (
@@ -829,6 +849,51 @@ function PlayTab(props: {
         </div>
       )}
     </>
+  );
+}
+
+// === My Stuff tab — wraps profile, stickers, daily into one tab with sub-nav ===
+function MyStuffTab(props: {
+  profiles: Kid[];
+  setProfiles: (p: Kid[]) => void;
+  activeKid: Kid | null;
+  setActiveKid: (k: Kid) => void;
+  showProfileModal: boolean;
+  setShowProfileModal: (v: boolean) => void;
+}) {
+  const [section, setSection] = useState<"player" | "stickers" | "daily">("player");
+
+  if (!props.activeKid) {
+    return (
+      <main className="flex-1 px-3 pb-4 max-w-3xl mx-auto w-full">
+        <ProfileTab {...props} />
+      </main>
+    );
+  }
+
+  return (
+    <main className="flex-1 px-3 pb-4 max-w-3xl mx-auto w-full">
+      <div className="flex gap-2 mb-3 bg-white/60 rounded-2xl p-1">
+        <SubTab active={section === "player"} onClick={() => setSection("player")} label="👤 Player" />
+        <SubTab active={section === "stickers"} onClick={() => setSection("stickers")} label="⭐ Stickers" />
+        <SubTab active={section === "daily"} onClick={() => setSection("daily")} label="📅 Daily" />
+      </div>
+
+      {section === "player" && <ProfileTab {...props} />}
+      {section === "stickers" && <StickerTab kidId={props.activeKid.id} />}
+      {section === "daily" && <DailyTab kidId={props.activeKid.id} />}
+    </main>
+  );
+}
+
+function SubTab({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${active ? "bg-purple-500 text-white shadow" : "text-purple-900"}`}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -1142,7 +1207,7 @@ function DailyTab({ kidId }: { kidId: string }) {
   );
 }
 
-function ParentalTab({ parental, setParental }: { parental: ParentalSettings; setParental: (s: ParentalSettings) => void }) {
+function ParentalTab({ parental, setParental, reverbMode, toggleReverb, showHypeMeter, setShowHypeMeter }: { parental: ParentalSettings; setParental: (s: ParentalSettings) => void; reverbMode: boolean; toggleReverb: () => void; showHypeMeter: boolean; setShowHypeMeter: (v: boolean) => void }) {
   const [local, setLocal] = useState(parental);
 
   const update = <K extends keyof ParentalSettings>(key: K, value: ParentalSettings[K]) => {
@@ -1230,6 +1295,46 @@ function ParentalTab({ parental, setParental }: { parental: ParentalSettings; se
             className="w-6 h-6"
           />
         </label>
+      </div>
+
+      <div className="bg-white/80 rounded-2xl p-4 shadow-lg mb-3">
+        <label className="flex items-center justify-between cursor-pointer">
+          <div>
+            <div className="font-bold text-slate-800">🚿 Bathroom Echo by Default</div>
+            <div className="text-xs text-slate-600">All sounds play with bathroom reverb</div>
+          </div>
+          <input
+            type="checkbox"
+            checked={reverbMode}
+            onChange={toggleReverb}
+            className="w-6 h-6"
+          />
+        </label>
+      </div>
+
+      <div className="bg-white/80 rounded-2xl p-4 shadow-lg mb-3">
+        <label className="flex items-center justify-between cursor-pointer">
+          <div>
+            <div className="font-bold text-slate-800">💨 Show Hype Meter</div>
+            <div className="text-xs text-slate-600">Visible progress bar in the Play tab</div>
+          </div>
+          <input
+            type="checkbox"
+            checked={showHypeMeter}
+            onChange={(e) => setShowHypeMeter(e.target.checked)}
+            className="w-6 h-6"
+          />
+        </label>
+      </div>
+
+      <div className="bg-white/80 rounded-2xl p-4 shadow-lg mb-3">
+        <button
+          onClick={() => { stopAllSounds(); }}
+          className="w-full py-3 rounded-xl bg-red-500 text-white font-bold active:scale-95"
+        >
+          🛑 Stop All Sounds
+        </button>
+        <p className="text-xs text-slate-600 mt-2 text-center">Kills any audio currently playing</p>
       </div>
 
       <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 text-sm text-red-900">
