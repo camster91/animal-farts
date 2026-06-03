@@ -57,6 +57,15 @@ app.use(cors());
 // Serve uploaded audio files
 app.use("/uploads", express.static(UPLOAD_DIR, { maxAge: "7d" }));
 
+// Serve the built client (dist/) as static assets — single-port deployment
+const DIST_DIR = path.join(__dirname, "..", "dist");
+app.use(express.static(DIST_DIR, { maxAge: "1h" }));
+
+// SPA fallback: any non-API GET that didn't match a static file → index.html
+app.get(/^(?!\/api|\/uploads).*/, (req, res) => {
+  res.sendFile(path.join(DIST_DIR, "index.html"));
+});
+
 // Multer for audio uploads (memory or disk)
 const storage = multer.diskStorage({
   destination: UPLOAD_DIR,
