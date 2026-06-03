@@ -383,7 +383,7 @@ export default function App() {
     <div className={`min-h-screen w-full flex flex-col ${shake ? "animate-shake" : ""}`} style={reverbMode ? { background: "linear-gradient(135deg, #dbeafe 0%, #93c5fd 100%)" } : { background: "linear-gradient(135deg, #fef3c7 0%, #fde68a 50%, #fbbf24 100%)" }}>
       <header className="px-4 pt-6 pb-3 text-center relative">
         <h1 className={`text-4xl sm:text-5xl font-bold drop-shadow-sm ${reverbMode ? "text-blue-900" : "text-amber-900"}`}>
-          💥 ANIMAL FARTS 💥
+          💨 ANIMAL FARTS 💨
         </h1>
         <p className={`text-base sm:text-lg mt-1 font-semibold ${reverbMode ? "text-blue-800" : "text-amber-800"}`}>
           Tap an animal. Brace yourself.
@@ -557,15 +557,16 @@ export default function App() {
               🎲 SURPRISE ME
             </button>
             <button
-              onPointerDown={onCombo}
-              onClick={onCombo}
-              className="flex-1 bg-gradient-to-br from-orange-500 to-red-500 active:scale-95 transition-transform text-white font-extrabold text-xl py-5 rounded-2xl shadow-xl border-4 border-white"
-            >
-              💥 COMBO
-            </button>
-          </div>
-        </footer>
-      )}
+              <button
+                onPointerDown={onCombo}
+                onClick={onCombo}
+                className="flex-1 bg-gradient-to-br from-orange-500 to-red-500 active:scale-95 transition-transform text-white font-extrabold text-xl py-5 rounded-2xl shadow-xl border-4 border-white"
+              >
+                💥 COMBO
+              </button>
+              </div>
+              </footer>
+              )}
 
       {/* Poof particles */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
@@ -696,9 +697,12 @@ function PlayTab(props: {
         </div>
       </div>
 
-      <main className="flex-1 px-3 pb-4">
+      <main className="flex-1 px-3 pb-32">
         {sub === "myfarts" ? (
           <div>
+            <p className="text-center text-purple-900/70 text-sm font-semibold mb-2">
+              Hold the phone close and make a funny sound — we use your mic to save it here.
+            </p>
             <button
               onClick={() => { props.setShowRecordModal(true); }}
               className="w-full mb-3 py-4 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 text-white font-bold text-lg shadow-xl border-4 border-white active:scale-95"
@@ -709,7 +713,7 @@ function PlayTab(props: {
               <div className="text-center text-purple-900/60 py-12 px-4">
                 <div className="text-6xl mb-3">🎤</div>
                 <p className="font-semibold">No recordings yet</p>
-                <p className="text-sm">Tap the button above to record your first fart!</p>
+                <p className="text-sm">Make your first one! Be silly. Be loud. 💨</p>
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-3xl mx-auto">
