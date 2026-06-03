@@ -1,5 +1,5 @@
 // Animal Farts — minimal offline-first service worker
-const CACHE = "animal-farts-v6";
+const CACHE = "animal-farts-v7";
 const ASSETS = ["/", "/index.html", "/manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {

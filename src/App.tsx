@@ -16,6 +16,14 @@ import {
   type CustomRecording,
 } from "./audio/fartEngine";
 import {
+  listRecordings as fetchSharedRecordings,
+  uploadCustomRecording,
+  toggleUpvote,
+  deleteSharedRecording,
+  getHealth,
+  type SharedRecording,
+} from "./audio/serverApi";
+import {
   loadProfiles,
   createKid,
   getActiveKidId,
@@ -53,7 +61,7 @@ import {
 } from "./game/state";
 
 type Poof = { id: number; x: number; y: number; emoji: string };
-type Tab = "play" | "profile" | "stickers" | "daily" | "parental";
+type Tab = "play" | "explore" | "profile" | "stickers" | "daily" | "parental";
 
 const HYPE_LABELS = [
   "Calm wind", "Whisper toot", "Solid rip", "HILARIOUS rip",
@@ -390,10 +398,11 @@ export default function App() {
       {/* Tabs */}
       <div className="px-3 pb-2 flex gap-1.5 max-w-3xl mx-auto w-full overflow-x-auto">
         <button onClick={() => setTab("play")} className={`flex-1 py-2 rounded-xl font-bold text-xs whitespace-nowrap ${tab === "play" ? "bg-amber-500 text-white shadow-lg" : "bg-white/60 text-amber-900"}`}>🎵 Play</button>
+        <button onClick={() => setTab("explore")} className={`flex-1 py-2 rounded-xl font-bold text-xs whitespace-nowrap ${tab === "explore" ? "bg-emerald-500 text-white shadow-lg" : "bg-white/60 text-emerald-900"}`}>🌍 Explore</button>
         <button onClick={() => setTab("profile")} className={`flex-1 py-2 rounded-xl font-bold text-xs whitespace-nowrap ${tab === "profile" ? "bg-purple-500 text-white shadow-lg" : "bg-white/60 text-purple-900"}`}>👤 Kids</button>
         <button onClick={() => setTab("stickers")} className={`flex-1 py-2 rounded-xl font-bold text-xs whitespace-nowrap ${tab === "stickers" ? "bg-pink-500 text-white shadow-lg" : "bg-white/60 text-pink-900"}`}>⭐ Stickers</button>
         <button onClick={() => setTab("daily")} className={`flex-1 py-2 rounded-xl font-bold text-xs whitespace-nowrap ${tab === "daily" ? "bg-orange-500 text-white shadow-lg" : "bg-white/60 text-orange-900"}`}>📅 Daily</button>
-        <button onClick={() => setTab("parental")} className={`flex-1 py-2 rounded-xl font-bold text-xs whitespace-nowrap ${tab === "parental" ? "bg-slate-700 text-white shadow-lg" : "bg-white/60 text-slate-700"}`}>👪 Grown-ups</button>
+        <button onClick={() => setTab("parental")} className={`flex-1 py-2 rounded-xl font-bold text-xs whitespace-nowrap ${tab === "parental" ? "bg-slate-700 text-white shadow-lg" : "bg-white/60 text-slate-700"}`}>👪 Parents</button>
       </div>
 
       {parentalBlocked && (
@@ -525,6 +534,8 @@ export default function App() {
       )}
 
       {tab === "daily" && activeKid && <DailyTab kidId={activeKid.id} />}
+
+      {tab === "explore" && <ExploreTab activeKid={activeKid} recordings={recordings} />}
 
       {tab === "parental" && (
         <ParentalTab
@@ -1224,6 +1235,169 @@ function ParentalTab({ parental, setParental }: { parental: ParentalSettings; se
       <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 text-sm text-red-900">
         <h3 className="font-bold mb-2">📍 All data is stored on this device only</h3>
         <p>Recordings, stickers, and stats live in your browser's local storage. No data is sent to any server. Clearing your browser data will erase all recordings.</p>
+      </div>
+    </main>
+  );
+}
+
+// === Explore Tab — shared server recordings ===
+function ExploreTab({ activeKid, recordings }: { activeKid: Kid | null; recordings: CustomRecording[] }) {
+  const [shared, setShared] = useState<SharedRecording[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [serverOnline, setServerOnline] = useState<boolean | null>(null);
+  const [filter, setFilter] = useState<"top" | "new">("top");
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [health, list] = await Promise.all([
+      getHealth().catch(() => null),
+      fetchSharedRecordings(),
+    ]);
+    setServerOnline(!!health);
+    setShared(list.recordings.sort((a, b) => filter === "top" ? b.upvotes - a.upvotes : b.createdAt - a.createdAt));
+    setLoading(false);
+  }, [filter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const onUpvote = async (id: number) => {
+    const result = await toggleUpvote(id);
+    if (result) {
+      setShared((prev) => prev.map((r) => r.id === id ? { ...r, upvotes: result.upvotes, userVoted: result.userVoted } : r).sort((a, b) => filter === "top" ? b.upvotes - a.upvotes : b.createdAt - a.createdAt));
+    }
+  };
+
+  const onPlayShared = async (rec: SharedRecording) => {
+    try {
+      const resp = await fetch(rec.audioUrl);
+      const blob = await resp.blob();
+      const withReverb = !!(window as any).__reverbEnabled;
+      await playBlobWithFx(blob, withReverb);
+    } catch (err) {
+      console.warn("[explore] play failed:", err);
+    }
+  };
+
+  const onShare = async (rec: CustomRecording) => {
+    if (!serverOnline) {
+      alert("Server is offline. Ask a grown-up to start it.");
+      return;
+    }
+    setUploadingId(rec.id);
+    try {
+      await uploadCustomRecording(rec, activeKid?.name);
+      await load();
+    } catch (err) {
+      alert("Upload failed: " + (err as Error).message);
+    } finally {
+      setUploadingId(null);
+    }
+  };
+
+  const onDeleteShared = async (id: number) => {
+    if (!confirm("Delete this shared recording? Everyone will lose it.")) return;
+    try {
+      await deleteSharedRecording(id);
+      setShared((prev) => prev.filter((r) => r.id !== id));
+    } catch {}
+  };
+
+  return (
+    <main className="flex-1 px-3 pb-4 max-w-3xl mx-auto w-full">
+      <div className="flex justify-between items-center mb-3">
+        <h2 className="text-2xl font-bold text-emerald-900">🌍 Shared Farts</h2>
+        <div className="flex items-center gap-1">
+          <div className={`w-2 h-2 rounded-full ${serverOnline === null ? "bg-gray-400" : serverOnline ? "bg-green-500" : "bg-red-500"}`} />
+          <span className="text-xs text-gray-600">{serverOnline === null ? "checking" : serverOnline ? "online" : "offline"}</span>
+        </div>
+      </div>
+
+      {/* Share your recordings */}
+      {recordings.length > 0 && (
+        <div className="bg-white/60 rounded-2xl p-3 mb-4">
+          <h3 className="font-bold text-sm text-gray-800 mb-2">📤 Share your recordings</h3>
+          <div className="flex flex-wrap gap-2">
+            {recordings.map((r) => (
+              <button
+                key={r.id}
+                onClick={() => onShare(r)}
+                disabled={uploadingId === r.id}
+                className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 rounded-full text-sm font-bold text-emerald-900 active:scale-95 disabled:opacity-50"
+              >
+                {uploadingId === r.id ? "⏳" : "☁️"} {r.emoji} {r.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Filter */}
+      <div className="flex gap-2 mb-3">
+        <button
+          onClick={() => { setFilter("top"); }}
+          className={`px-4 py-1.5 rounded-full text-sm font-bold ${filter === "top" ? "bg-emerald-500 text-white" : "bg-white/60 text-gray-700"}`}
+        >
+          🏆 Top
+        </button>
+        <button
+          onClick={() => { setFilter("new"); }}
+          className={`px-4 py-1.5 rounded-full text-sm font-bold ${filter === "new" ? "bg-emerald-500 text-white" : "bg-white/60 text-gray-700"}`}
+        >
+          ✨ New
+        </button>
+        <button onClick={load} className="ml-auto px-3 py-1.5 rounded-full text-sm bg-white/60 text-gray-700">🔄</button>
+      </div>
+
+      {serverOnline === false && (
+        <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 text-center text-red-900">
+          <div className="text-3xl mb-2">📡</div>
+          <p className="font-bold">Server offline</p>
+          <p className="text-sm mt-1">Ask a grown-up to start it:</p>
+          <code className="block bg-white/80 rounded p-2 mt-2 text-xs font-mono">cd server && npm start</code>
+        </div>
+      )}
+
+      {loading && serverOnline !== false && (
+        <div className="text-center text-gray-500 py-8">Loading shared farts...</div>
+      )}
+
+      {!loading && serverOnline !== false && shared.length === 0 && (
+        <div className="text-center text-emerald-900/60 py-8">
+          <div className="text-4xl mb-2">🦗</div>
+          <p className="font-semibold">No shared farts yet</p>
+          <p className="text-sm">Be the first to share one above!</p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {shared.map((rec) => (
+          <div key={rec.id} className="bg-gradient-to-br from-emerald-100 to-teal-200 rounded-2xl p-3 shadow-md border-2 border-white/70 relative">
+            <button
+              onClick={() => onPlayShared(rec)}
+              className="w-full active:scale-95 transition-transform"
+            >
+              <div className="text-4xl mb-1">{rec.emoji}</div>
+              <div className="text-sm font-bold text-emerald-950 truncate">{rec.name}</div>
+              {rec.kidName && (
+                <div className="text-[10px] text-emerald-700/80">by {rec.kidName}</div>
+              )}
+            </button>
+            <button
+              onClick={() => onUpvote(rec.id)}
+              className={`mt-2 w-full text-xs font-bold py-1 px-2 rounded-lg flex items-center justify-center gap-1 ${rec.userVoted ? "bg-emerald-500 text-white" : "bg-white/80 text-emerald-700"}`}
+            >
+              {rec.userVoted ? "⭐" : "☆"} {rec.upvotes}
+            </button>
+            <button
+              onClick={() => onDeleteShared(rec.id)}
+              className="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center shadow active:scale-90"
+              title="Delete"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
       </div>
     </main>
   );
