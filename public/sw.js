@@ -1,7 +1,7 @@
 // Animal Farts — offline-first service worker
 // Precaches the app shell + all sound files so it works fully offline on first load.
 
-const CACHE = "animal-farts-v8";
+const CACHE = "animal-farts-v8-2";
 
 const SHELL_ASSETS = [
   "/",

@@ -547,8 +547,8 @@ export default function App() {
 
       {/* Action Bar (only on play tab) — pinned to bottom, big tap targets */}
       {tab === "play" && (
-        <footer className="sticky bottom-0 p-3 bg-gradient-to-t from-white via-white/95 to-transparent">
-          <div className="flex gap-2 max-w-3xl mx-auto">
+        <footer className="fixed bottom-0 left-0 right-0 z-30 p-3 bg-gradient-to-t from-white via-white/95 to-transparent pointer-events-none">
+          <div className="flex gap-2 max-w-3xl mx-auto pointer-events-auto">
             <button
               onPointerDown={onRandom}
               onClick={onRandom}
@@ -557,16 +557,15 @@ export default function App() {
               🎲 SURPRISE ME
             </button>
             <button
-              <button
-                onPointerDown={onCombo}
-                onClick={onCombo}
-                className="flex-1 bg-gradient-to-br from-orange-500 to-red-500 active:scale-95 transition-transform text-white font-extrabold text-xl py-5 rounded-2xl shadow-xl border-4 border-white"
-              >
-                💥 COMBO
-              </button>
-              </div>
-              </footer>
-              )}
+              onPointerDown={onCombo}
+              onClick={onCombo}
+              className="flex-1 bg-gradient-to-br from-orange-500 to-red-500 active:scale-95 transition-transform text-white font-extrabold text-xl py-5 rounded-2xl shadow-xl border-4 border-white"
+            >
+              💥 COMBO
+            </button>
+          </div>
+        </footer>
+      )}
 
       {/* Poof particles */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
