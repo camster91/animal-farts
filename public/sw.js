@@ -1,12 +1,16 @@
 // Animal Farts — offline-first service worker
-// Precaches the app shell + all sound files so it works fully offline on first load.
+// Precaches the app shell, all sound files, and the built JS/CSS bundles so
+// the app works fully offline on first load. Asset paths are injected at
+// build time by scripts/inject-sw-assets.mjs.
 
-const CACHE = "animal-farts-v8-2";
+const CACHE = "animal-farts-v10";
 
 const SHELL_ASSETS = [
   "/",
   "/index.html",
   "/manifest.webmanifest",
+  "/favicon.svg",
+  "/apple-touch-icon.png",
 ];
 
 const SOUND_ASSETS = [
@@ -33,51 +37,80 @@ const SOUND_ASSETS = [
   "/sounds/ohno3.mp3",
 ];
 
+// __PRECACHE_ASSETS__
+const PRECACHE_ASSETS = [
+  "/assets/index-HfGtDziB.js",
+  "/assets/index-BSNq1RqT.css"
+];
+
 self.addEventListener("install", (e) => {
   e.waitUntil(
-    caches.open(CACHE).then(async (c) => {
-      // Add shell first; add sounds one-by-one so one missing file doesn't break install
-      await c.addAll(SHELL_ASSETS);
-      await Promise.all(
-        SOUND_ASSETS.map((url) =>
-          fetch(url, { cache: "no-cache" })
-            .then((res) => (res.ok ? c.put(url, res.clone()) : null))
-            .catch(() => null)
-        )
+    (async () => {
+      const cache = await caches.open(CACHE);
+
+      // Shell: must succeed — if /index.html 404s we abort install
+      await cache.addAll(SHELL_ASSETS);
+
+      // Sound + JS/CSS: best-effort. If one fails (slow network, 404),
+      // log and continue so the SW still installs.
+      const optional = [...SOUND_ASSETS, ...(typeof PRECACHE_ASSETS !== "undefined" ? PRECACHE_ASSETS : [])];
+      const results = await Promise.allSettled(
+        optional.map(async (url) => {
+          const res = await fetch(url, { cache: "reload" });
+          if (res && res.ok) {
+            await cache.put(url, res.clone());
+            return { url, ok: true };
+          }
+          return { url, ok: false, status: res ? res.status : "no-res" };
+        })
       );
+      const failed = results.filter((r) => r.status === "rejected" || (r.status === "fulfilled" && !r.value.ok));
+      if (failed.length) {
+        console.warn(`[sw] ${failed.length}/${optional.length} precache entries failed:`, failed.slice(0, 5));
+      }
+
       await self.skipWaiting();
-    })
+    })()
   );
 });
 
 self.addEventListener("activate", (e) => {
   e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    )
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+      await self.clients.claim();
+    })()
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
-  // Only handle same-origin requests
   const url = new URL(e.request.url);
+  // Only handle same-origin requests
   if (url.origin !== self.location.origin) return;
 
   e.respondWith(
-    caches.match(e.request).then((cached) => {
+    (async () => {
+      const cached = await caches.match(e.request);
       if (cached) return cached;
-      return fetch(e.request)
-        .then((res) => {
-          // Cache successful responses for next time
-          if (res && res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(e.request, copy));
-          }
-          return res;
-        })
-        .catch(() => cached);
-    })
+
+      try {
+        const res = await fetch(e.request);
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(e.request, copy));
+        }
+        return res;
+      } catch (err) {
+        // Offline + not in cache. For navigation requests, return the shell
+        // so the SPA still loads.
+        if (e.request.mode === "navigate") {
+          const shell = await caches.match("/index.html");
+          if (shell) return shell;
+        }
+        throw err;
+      }
+    })()
   );
 });

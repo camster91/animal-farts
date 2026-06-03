@@ -386,7 +386,7 @@ export default function App() {
           💨 ANIMAL FARTS 💨
         </h1>
         <p className={`text-base sm:text-lg mt-1 font-semibold ${reverbMode ? "text-blue-800" : "text-amber-800"}`}>
-          Tap an animal. Brace yourself.
+          Tap an animal. Hold your nose.
         </p>
         {/* Pet in top-right */}
         {activeKid && (
@@ -545,10 +545,13 @@ export default function App() {
         />
       )}
 
-      {/* Action Bar (only on play tab) — pinned to bottom, big tap targets */}
+      {/* Action Bar (only on play tab) — fixed at bottom of viewport, with safe-area padding */}
       {tab === "play" && (
-        <footer className="fixed bottom-0 left-0 right-0 z-30 p-3 bg-gradient-to-t from-white via-white/95 to-transparent pointer-events-none">
-          <div className="flex gap-2 max-w-3xl mx-auto pointer-events-auto">
+        <footer
+          className="fixed bottom-0 left-0 right-0 z-30 p-3 bg-gradient-to-t from-white via-white/95 to-transparent"
+          style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+        >
+          <div className="flex gap-2 max-w-3xl mx-auto">
             <button
               onPointerDown={onRandom}
               onClick={onRandom}
@@ -1376,10 +1379,16 @@ function ExploreTab({ activeKid, recordings }: { activeKid: Kid | null; recordin
     }
   };
 
-  const onPlayShared = async (rec: SharedRecording) => {
+  const onPlayShared = async (rec: SharedRecording & { _localBlobUrl?: string }) => {
     try {
-      const resp = await fetch(rec.audioUrl);
-      const blob = await resp.blob();
+      let blob: Blob;
+      if (rec._localBlobUrl) {
+        const resp = await fetch(rec._localBlobUrl);
+        blob = await resp.blob();
+      } else {
+        const resp = await fetch(rec.audioUrl);
+        blob = await resp.blob();
+      }
       const withReverb = !!(window as any).__reverbEnabled;
       await playBlobWithFx(blob, withReverb);
     } catch (err) {
@@ -1458,11 +1467,44 @@ function ExploreTab({ activeKid, recordings }: { activeKid: Kid | null; recordin
       </div>
 
       {serverOnline === false && (
-        <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 text-center text-red-900">
+        <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 text-center text-amber-900">
           <div className="text-3xl mb-2">📡</div>
-          <p className="font-bold">Server offline</p>
-          <p className="text-sm mt-1">Ask a grown-up to start it:</p>
-          <code className="block bg-white/80 rounded p-2 mt-2 text-xs font-mono">cd server && npm start</code>
+          <p className="font-bold">Sharing is offline right now</p>
+          <p className="text-sm mt-1">
+            No internet? No problem — you can still play your own recordings below.
+          </p>
+        </div>
+      )}
+
+      {/* Local-only fallback: kid's own recordings + animal highlights */}
+      {serverOnline === false && recordings.length > 0 && (
+        <div className="mt-4">
+          <h3 className="font-bold text-emerald-900 text-sm mb-2">🎤 Your recordings</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {recordings.map((rec) => (
+              <button
+                key={rec.id}
+                onClick={() => onPlayShared({
+                  id: -1,
+                  audioUrl: "",
+                  emoji: rec.emoji,
+                  name: rec.name,
+                  kidName: activeKid?.name,
+                  upvotes: 0,
+                  createdAt: 0,
+                  userVoted: false,
+                  _localBlobUrl: rec.url,
+                } as any)}
+                className="bg-gradient-to-br from-emerald-100 to-teal-200 rounded-2xl p-3 shadow-md border-2 border-white/70 active:scale-95 transition-transform"
+              >
+                <div className="text-4xl mb-1">{rec.emoji}</div>
+                <div className="text-sm font-bold text-emerald-950 truncate">{rec.name}</div>
+                {activeKid && (
+                  <div className="text-[10px] text-emerald-700/80">by {activeKid.name}</div>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
