@@ -80,7 +80,7 @@ export default function App() {
   const [active, setActive] = useState<string | null>(null);
   const [recordings, setRecordings] = useState<CustomRecording[]>([]);
   const [reverbMode, setReverbModeState] = useState(false);
-  const [showHypeMeter, setShowHypeMeter] = useState(true);
+  const [showHypeMeter, setShowHypeMeter] = useState(false); // off by default — less noise for kids
   const [recording, setRecording] = useState(false);
   const [recordDuration, setRecordDuration] = useState(0);
   const [showRecordModal, setShowRecordModal] = useState(false);
@@ -545,21 +545,21 @@ export default function App() {
         />
       )}
 
-      {/* Action Bar (only on play tab) */}
+      {/* Action Bar (only on play tab) — pinned to bottom, big tap targets */}
       {tab === "play" && (
-        <footer className="p-3 bg-gradient-to-t from-amber-200 to-transparent">
+        <footer className="sticky bottom-0 p-3 bg-gradient-to-t from-white via-white/95 to-transparent">
           <div className="flex gap-2 max-w-3xl mx-auto">
             <button
               onPointerDown={onRandom}
               onClick={onRandom}
-              className="flex-1 bg-gradient-to-br from-purple-400 to-pink-500 active:scale-95 transition-transform text-white font-bold text-lg py-4 rounded-2xl shadow-xl border-4 border-white"
+              className="flex-1 bg-gradient-to-br from-purple-400 to-pink-500 active:scale-95 transition-transform text-white font-extrabold text-xl py-5 rounded-2xl shadow-xl border-4 border-white"
             >
-              🎲 RANDOM
+              🎲 SURPRISE ME
             </button>
             <button
               onPointerDown={onCombo}
               onClick={onCombo}
-              className="flex-1 bg-gradient-to-br from-orange-500 to-red-500 active:scale-95 transition-transform text-white font-bold text-lg py-4 rounded-2xl shadow-xl border-4 border-white"
+              className="flex-1 bg-gradient-to-br from-orange-500 to-red-500 active:scale-95 transition-transform text-white font-extrabold text-xl py-5 rounded-2xl shadow-xl border-4 border-white"
             >
               💥 COMBO
             </button>
@@ -677,9 +677,9 @@ function PlayTab(props: {
 
   return (
     <>
-      {/* Sub-tab bar */}
-      <div className="px-3 pb-2 max-w-3xl mx-auto w-full">
-        <div className="flex gap-1.5">
+      {/* Sub-tab bar — segmented control style, clearly secondary to main nav */}
+      <div className="px-3 pb-3 max-w-3xl mx-auto w-full">
+        <div className="bg-white/50 backdrop-blur rounded-full p-1 flex gap-0.5 border border-amber-200/50">
           {[
             { id: "animals" as const, label: "🐾 Animals" },
             { id: "ohnos" as const, label: "😱 Oh No!" },
@@ -688,7 +688,7 @@ function PlayTab(props: {
             <button
               key={t.id}
               onClick={() => setSub(t.id)}
-              className={`flex-1 py-1.5 rounded-lg text-xs font-bold ${sub === t.id ? "bg-amber-500 text-white" : "bg-white/60 text-amber-900"}`}
+              className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${sub === t.id ? "bg-amber-500 text-white shadow" : "text-amber-900"}`}
             >
               {t.label}
             </button>

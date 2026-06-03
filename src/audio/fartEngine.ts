@@ -104,7 +104,7 @@ export const PRESETS: FartPreset[] = [
     cutoff: 3000, noise: 0.1, pitchSweep: -8, wobble: 2, wobbleRate: 4, squelch: 0, thump: false,
   },
   {
-    id: "bear", name: "Bear", emoji: "🐻", color: "from-amber-700 to-amber-900",
+    id: "bear", name: "Bear", emoji: "🐻", color: "from-amber-500 to-orange-700",
     src: "/sounds/bear.mp3", pitchShift: -5, rate: 0.75, caption: "GRIZZLY GRUMBLE",
     loopable: false, baseFreq: 50, detune: 10, attack: 0.05, hold: 1.2, release: 0.8,
     cutoff: 400, noise: 0.1, pitchSweep: -4, wobble: 4, wobbleRate: 6, squelch: 0.05, thump: true,
