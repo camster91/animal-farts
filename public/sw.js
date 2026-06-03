@@ -3,7 +3,7 @@
 // the app works fully offline on first load. Asset paths are injected at
 // build time by scripts/inject-sw-assets.mjs.
 
-const CACHE = "animal-farts-v11";
+const CACHE = "animal-farts-v13";
 
 const SHELL_ASSETS = [
   "/",
@@ -56,12 +56,41 @@ const SOUND_ASSETS = [
   "/sounds/extra/whale2.mp3",
   "/sounds/extra/elephant_v3.mp3",
   "/sounds/extra/lion_v3.mp3",
-  "/sounds/extra/goat.mp3",
-  "/sounds/extra/sheep.mp3",
-  "/sounds/extra/bee.mp3",
-  "/sounds/extra/turkey.mp3",
-  "/sounds/extra/owl.mp3",
-  "/sounds/extra/penguin.mp3",
+  // v13: 15 v3 variants for existing animals
+  "/sounds/extra/cow_v3.mp3",
+  "/sounds/extra/dog_v3.mp3",
+  "/sounds/extra/cat_v3.mp3",
+  "/sounds/extra/bird_v3.mp3",
+  "/sounds/extra/horse_v2.mp3",
+  "/sounds/extra/pig_v3.mp3",
+  "/sounds/extra/duck_v3.mp3",
+  "/sounds/extra/monkey_v3.mp3",
+  "/sounds/extra/snake_v3.mp3",
+  "/sounds/extra/frog_v3.mp3",
+  "/sounds/extra/bull_v3.mp3",
+  "/sounds/extra/rabbit_v3.mp3",
+  "/sounds/extra/bear_v3.mp3",
+  "/sounds/extra/rooster_v3.mp3",
+  "/sounds/extra/turtle_v3.mp3",
+  "/sounds/extra/whale_v3.mp3",
+  // v13: 6 v2 variants for v11 animals
+  "/sounds/extra/goat_v2.mp3",
+  "/sounds/extra/sheep_v2.mp3",
+  "/sounds/extra/bee_v2.mp3",
+  "/sounds/extra/turkey_v2.mp3",
+  "/sounds/extra/owl_v2.mp3",
+  "/sounds/extra/penguin_v2.mp3",
+  // v13: 10 new animals
+  "/sounds/extra/seal.mp3",
+  "/sounds/extra/hippo.mp3",
+  "/sounds/extra/rhino.mp3",
+  "/sounds/extra/zebra.mp3",
+  "/sounds/extra/giraffe.mp3",
+  "/sounds/extra/moose.mp3",
+  "/sounds/extra/kangaroo.mp3",
+  "/sounds/extra/sloth.mp3",
+  "/sounds/extra/skunk.mp3",
+  "/sounds/extra/raccoon.mp3",
 ];
 
 // __PRECACHE_ASSETS__
