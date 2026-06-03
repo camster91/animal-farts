@@ -8,8 +8,9 @@ FROM node:20-alpine AS client
 WORKDIR /app
 
 # Copy only the package files first for cache-friendly install
+# Use `npm install` (not --omit=dev) here so TypeScript + Vite are available for the build
 COPY package*.json ./
-RUN npm install --no-audit --no-fund
+RUN npm install --no-audit --no-fund --include=dev
 
 # Copy the source and build
 COPY . .
