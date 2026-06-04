@@ -586,6 +586,14 @@ export type CustomRecording = {
   emoji: string;
   url: string;
   createdAt: number;
+  /**
+   * "local"  = only saved on this device, never leaves it.
+   * "public" = uploaded to the feed so friends can hear it.
+   * Recordings default to "local"; a user must explicitly tap "Post to feed".
+   */
+  visibility: "local" | "public";
+  /** Server-side id once uploaded. null while still local. */
+  serverId?: string | null;
 };
 
 const RECORDINGS_KEY = "fart-custom-recordings";
@@ -598,7 +606,7 @@ export function loadRecordings(): CustomRecording[] {
   } catch { return []; }
 }
 
-export function saveRecording(rec: Omit<CustomRecording, "id" | "createdAt">): CustomRecording {
+export function saveRecording(rec: Omit<CustomRecording, "id" | "createdAt" | "visibility"> & { visibility?: "local" | "public" }): CustomRecording {
   const all = loadRecordings();
   // Find next free slot number
   let i = 1;
@@ -609,6 +617,8 @@ export function saveRecording(rec: Omit<CustomRecording, "id" | "createdAt">): C
     emoji: rec.emoji,
     url: rec.url,
     createdAt: Date.now(),
+    visibility: rec.visibility ?? "local",
+    serverId: rec.serverId ?? null,
   };
   all.push(newRec);
   localStorage.setItem(RECORDINGS_KEY, JSON.stringify(all));
@@ -633,6 +643,16 @@ export function renameRecording(id: string, name: string): void {
   const found = all.find((r) => r.id === id);
   if (found) {
     found.name = name;
+    localStorage.setItem(RECORDINGS_KEY, JSON.stringify(all));
+  }
+}
+
+export function setRecordingVisibility(id: string, visibility: "local" | "public", serverId?: string | null): void {
+  const all = loadRecordings();
+  const found = all.find((r) => r.id === id);
+  if (found) {
+    found.visibility = visibility;
+    if (serverId !== undefined) found.serverId = serverId;
     localStorage.setItem(RECORDINGS_KEY, JSON.stringify(all));
   }
 }

@@ -19,6 +19,7 @@ import {
   loadRecordings,
   saveRecording,
   deleteRecording,
+  setRecordingVisibility,
   setReverbMode,
   setReverbAmount,
   setPitchSemitones,
@@ -36,6 +37,7 @@ import {
   toggleFollow,
   getUserRecordings,
   getFeed,
+  uploadCustomRecording,
   getComments,
   addComment,
   deleteComment,
@@ -130,6 +132,15 @@ function RecordingTile({ rec, onPlay, onDelete }: { rec: CustomRecording; onPlay
         <div className="mt-1 text-sm sm:text-base font-bold text-purple-950 truncate max-w-full">{rec.name}</div>
         <div className="text-[10px] font-semibold text-purple-900/80">{rec.id.toUpperCase()}</div>
       </button>
+      {rec.visibility === "public" && (
+        <div
+          aria-label="Public recording"
+          title="Posted to feed"
+          className="absolute top-1 left-1 px-1.5 py-0.5 rounded-full bg-gradient-to-br from-pink-500 to-orange-400 text-white text-[9px] font-bold shadow"
+        >
+          🌍
+        </div>
+      )}
       <button
         onClick={() => onDelete(rec.id)}
         className="absolute top-1 right-1 w-7 h-7 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center shadow-md active:scale-90"
@@ -296,6 +307,13 @@ export default function App() {
       setActiveKidId(kid.id);
     }
     setRecordings(loadRecordings());
+  }, []);
+
+  // React to feed recordings being copied into "My Farts" (from any tab)
+  useEffect(() => {
+    const onMyFartsChanged = () => setRecordings(loadRecordings());
+    window.addEventListener("animal-farts:my-farts-changed", onMyFartsChanged);
+    return () => window.removeEventListener("animal-farts:my-farts-changed", onMyFartsChanged);
   }, []);
 
   // Check parental time-of-day
@@ -496,12 +514,14 @@ export default function App() {
     }
   }, [recording, recordings.length]);
 
-  const onSaveRecording = useCallback(() => {
+  // Save the recording to this device only. Always works offline.
+  const onSaveLocal = useCallback(() => {
     if (!pendingRecording) return;
     const rec = saveRecording({
       name: newRecName || "My Fart",
       emoji: newRecEmoji,
       url: pendingRecording.url,
+      visibility: "local",
     });
     setRecordings([...recordings, rec]);
     if (activeKid) {
@@ -511,7 +531,6 @@ export default function App() {
         recordings: s.recordings + 1,
         longestRecordingSec: Math.max(s.longestRecordingSec, pendingRecording.duration),
       }));
-      // Daily challenge
       const challenge = getTodayChallenge();
       if (challenge.metric === "longestRecording") {
         const cur = getTodayProgress(activeKid.id, "longestRecording");
@@ -524,6 +543,51 @@ export default function App() {
     setPendingRecording(null);
     setShowRecordModal(false);
   }, [pendingRecording, newRecName, newRecEmoji, recordings, activeKid, checkAchievementsAndNotify]);
+
+  // Save locally AND upload to the public feed. Uploads run async; the
+  // local row is created immediately so the user can keep playing with
+  // it even if the network fails.
+  const onPostToFeed = useCallback(async () => {
+    if (!pendingRecording) return;
+    const rec = saveRecording({
+      name: newRecName || "My Fart",
+      emoji: newRecEmoji,
+      url: pendingRecording.url,
+      visibility: "local",
+    });
+    setRecordings([...recordings, rec]);
+    if (activeKid) {
+      incrementTodayRecordings();
+      updateStats(activeKid.id, (s) => ({
+        ...s,
+        recordings: s.recordings + 1,
+        longestRecordingSec: Math.max(s.longestRecordingSec, pendingRecording.duration),
+      }));
+      checkAchievementsAndNotify(activeKid.id);
+    }
+    setPendingRecording(null);
+    setShowRecordModal(false);
+    try {
+      const shared = await uploadCustomRecording(rec, activeKid?.name);
+      setRecordings((cur) =>
+        cur.map((r) => (r.id === rec.id ? { ...r, visibility: "public" as const, serverId: String(shared.id) } : r))
+      );
+      setRecordingVisibility(rec.id, "public", String(shared.id));
+      // Notify the social tab (if mounted) that the feed has new content
+      window.dispatchEvent(new CustomEvent("animal-farts:feed-changed"));
+    } catch (err) {
+      // Network failed — keep the local copy, do NOT pretend it posted.
+      alert("Couldn't post to feed (no internet?) — saved on this device only.");
+    }
+  }, [pendingRecording, newRecName, newRecEmoji, recordings, activeKid, checkAchievementsAndNotify]);
+
+  // Discard the recording. Frees the blob URL.
+  const onDiscardPending = useCallback(() => {
+    if (pendingRecording) {
+      try { URL.revokeObjectURL(pendingRecording.url); } catch {}
+    }
+    setPendingRecording(null);
+  }, [pendingRecording]);
 
   const onDeleteRecording = useCallback((id: string) => {
     if (!confirm("Delete this recording?")) return;
@@ -750,7 +814,9 @@ export default function App() {
             onDeleteRecording={onDeleteRecording}
             onStartRecord={onStartRecord}
             onStopRecord={onStopRecord}
-            onSaveRecording={onSaveRecording}
+            onSaveLocal={onSaveLocal}
+            onPostToFeed={onPostToFeed}
+            onDiscardPending={onDiscardPending}
             recording={recording}
             recordDuration={recordDuration}
             recordError={recordError}
@@ -984,7 +1050,9 @@ function PlayTab(props: {
   onDeleteRecording: (id: string) => void;
   onStartRecord: () => void;
   onStopRecord: () => void;
-  onSaveRecording: () => void;
+  onSaveLocal: () => void;
+  onPostToFeed: () => void;
+  onDiscardPending: () => void;
   recording: boolean;
   recordDuration: number;
   recordError: string | null;
@@ -1136,20 +1204,29 @@ function PlayTab(props: {
                     ))}
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <button
-                    onClick={() => { if (props.pendingRecording) URL.revokeObjectURL(props.pendingRecording.url); props.setPendingRecording(null); }}
-                    className="flex-1 py-3 rounded-xl bg-gray-200 text-gray-800 font-bold"
+                    onClick={props.onDiscardPending}
+                    className="flex-1 min-w-[6rem] py-3 rounded-xl bg-gray-200 text-gray-800 font-bold"
                   >
-                    Discard
+                    🗑️ Discard
                   </button>
                   <button
-                    onClick={props.onSaveRecording}
-                    className="flex-1 py-3 rounded-xl bg-green-500 text-white font-bold active:scale-95"
+                    onClick={props.onSaveLocal}
+                    className="flex-1 min-w-[6rem] py-3 rounded-xl bg-purple-500 text-white font-bold active:scale-95"
                   >
-                    💾 Save
+                    💾 Save to my farts
+                  </button>
+                  <button
+                    onClick={props.onPostToFeed}
+                    className="flex-1 min-w-[6rem] py-3 rounded-xl bg-gradient-to-br from-pink-500 to-orange-400 text-white font-bold active:scale-95"
+                  >
+                    🌍 Post to feed
                   </button>
                 </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Save to my farts = only on this device. Post to feed = your friends can hear it.
+                </p>
               </div>
             )}
           </div>
@@ -1866,6 +1943,14 @@ function SocialTab(props: {
     }
   };
 
+  // React to new local recordings being posted to the feed (from any tab)
+  useEffect(() => {
+    const onFeedChanged = () => { refresh(); };
+    window.addEventListener("animal-farts:feed-changed", onFeedChanged);
+    return () => window.removeEventListener("animal-farts:feed-changed", onFeedChanged);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (loading) {
     return (
       <main className="flex-1 px-3 pb-4 max-w-3xl mx-auto w-full">
@@ -2021,7 +2106,7 @@ function FeedRecordingCard(props: { rec: FeedRecording; me: SocialUser | null; o
         </button>
       </div>
       <audio src={r.audioUrl} controls preload="none" className="w-full h-8" />
-      <div className="flex items-center gap-2 mt-1">
+      <div className="flex items-center gap-2 mt-1 flex-wrap">
         <button
           onClick={() => { setShowComment(true); props.onComment(); }}
           className="text-[10px] text-emerald-700 font-bold px-2 py-0.5 rounded-full bg-white/60 hover:bg-emerald-100"
@@ -2036,6 +2121,25 @@ function FeedRecordingCard(props: { rec: FeedRecording; me: SocialUser | null; o
           className="text-[10px] text-emerald-700 font-bold px-2 py-0.5 rounded-full bg-white/60 hover:bg-emerald-100"
         >
           🔗 Share
+        </button>
+        <button
+          onClick={async () => {
+            if (busy) return;
+            setBusy(true);
+            const { saveFeedRecordingToMyFarts } = await import("./audio/saveFromFeed");
+            const saved = await saveFeedRecordingToMyFarts(r);
+            setBusy(false);
+            if (saved) {
+              window.dispatchEvent(new CustomEvent("animal-farts:my-farts-changed"));
+              alert(`💾 Saved "${saved.name}" to My Farts!`);
+            } else {
+              alert("Couldn't save right now — try again when you're online.");
+            }
+          }}
+          disabled={busy}
+          className="text-[10px] text-emerald-700 font-bold px-2 py-0.5 rounded-full bg-white/60 hover:bg-emerald-100 disabled:opacity-50"
+        >
+          💾 Save to my farts
         </button>
       </div>
       {showComment && (
