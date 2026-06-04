@@ -98,6 +98,15 @@ db.exec(`
     PRIMARY KEY (recording_id, device_id, emoji)
   );
   CREATE INDEX IF NOT EXISTS idx_reactions_recording ON reactions(recording_id);
+
+  CREATE TABLE IF NOT EXISTS share_codes (
+    code         TEXT PRIMARY KEY,
+    audio_url    TEXT NOT NULL,
+    name         TEXT NOT NULL,
+    emoji        TEXT NOT NULL DEFAULT '💨',
+    created_at   INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_share_codes_created ON share_codes(created_at);
 `);
 
 const app = express();
@@ -149,6 +158,56 @@ const upload = multer({
 app.get("/api/health", (req, res) => {
   const count = db.prepare("SELECT COUNT(*) as n FROM recordings").get();
   res.json({ ok: true, recordings: count.n, uptime: process.uptime() });
+});
+
+// === Share codes (4-character) ===
+// Anyone can mint a code for a public recording URL. Anyone with the
+// code can fetch the audio. No accounts, no follows, no profiles.
+// Codes are 4 uppercase letters/digits, easy to read aloud.
+
+const SHARE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L confusion
+
+function generateShareCode() {
+  // 32^4 = 1M combinations, plenty for a kids' toy
+  let s = "";
+  for (let i = 0; i < 4; i++) {
+    s += SHARE_ALPHABET[Math.floor(Math.random() * SHARE_ALPHABET.length)];
+  }
+  return s;
+}
+
+app.post("/api/share", (req, res) => {
+  const { audioUrl, name, emoji } = req.body || {};
+  if (typeof audioUrl !== "string" || !audioUrl) {
+    return res.status(400).json({ error: "audioUrl is required" });
+  }
+  // The audioUrl must be a /uploads/... path on this server (not arbitrary)
+  if (!/^\/uploads\/[A-Za-z0-9._-]+$/.test(audioUrl)) {
+    return res.status(400).json({ error: "audioUrl must be a /uploads/... path" });
+  }
+  // Try up to 5 times to get a unique code (collision odds are tiny)
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = generateShareCode();
+    try {
+      db.prepare(
+        "INSERT INTO share_codes (code, audio_url, name, emoji, created_at) VALUES (?, ?, ?, ?, ?)"
+      ).run(code, audioUrl, String(name || "Shared sound").slice(0, 60), String(emoji || "💨").slice(0, 8), Date.now());
+      return res.json({ code, audioUrl, name: name || "Shared sound", emoji: emoji || "💨" });
+    } catch (err) {
+      // PK collision — try again
+      if (attempt === 4) return res.status(500).json({ error: "code collision, retry" });
+    }
+  }
+});
+
+app.get("/api/share/:code", (req, res) => {
+  const code = String(req.params.code || "").toUpperCase().slice(0, 4);
+  if (!/^[A-Z0-9]{4}$/.test(code)) {
+    return res.status(400).json({ error: "Invalid code format" });
+  }
+  const row = db.prepare("SELECT audio_url, name, emoji, created_at FROM share_codes WHERE code = ?").get(code);
+  if (!row) return res.status(404).json({ error: "Code not found" });
+  res.json({ code, audioUrl: row.audio_url, name: row.name, emoji: row.emoji, createdAt: row.created_at });
 });
 
 // List recordings (sorted by upvotes desc, then recency)

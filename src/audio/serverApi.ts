@@ -203,3 +203,28 @@ export async function toggleReaction(recordingId: number, emoji: string): Promis
     body: JSON.stringify({ emoji }),
   });
 }
+
+// === Share codes (4 characters, no accounts) ===
+// The actual "share" primitive for v23. Kid records a sound, gets a 4-char
+// code, reads it to a friend. Friend types the code into the app, the
+// sound gets added to their library. No accounts, no follow graph.
+
+export type ShareCode = {
+  code: string;
+  audioUrl: string;
+  name: string;
+  emoji: string;
+  createdAt?: number;
+};
+
+export async function mintShareCode(input: { audioUrl: string; name: string; emoji: string }): Promise<ShareCode> {
+  return jsonFetch<ShareCode>("/api/share", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function lookupShareCode(code: string): Promise<ShareCode> {
+  const clean = code.toUpperCase().trim().slice(0, 4);
+  return jsonFetch<ShareCode>(`/api/share/${encodeURIComponent(clean)}`);
+}

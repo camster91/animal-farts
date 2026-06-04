@@ -19,7 +19,6 @@ import {
   loadRecordings,
   saveRecording,
   deleteRecording,
-  setRecordingVisibility,
   setReverbMode,
   setReverbAmount,
   setPitchSemitones,
@@ -30,21 +29,7 @@ import {
   type CustomRecording,
 } from "./audio/fartEngine";
 import {
-  getHealth,
-  getMe,
-  updateMe,
-  getUsers,
-  toggleFollow,
-  getUserRecordings,
-  getFeed,
   uploadCustomRecording,
-  getComments,
-  addComment,
-  deleteComment,
-  type SocialUser,
-  type SocialComment,
-  type FeedGroup,
-  type FeedRecording,
 } from "./audio/serverApi";
 import {
   loadProfiles,
@@ -55,34 +40,17 @@ import {
   getStats,
   updateStats,
   trackAnimalTried,
-  getAnimalsTried,
-  checkAchievements,
-  getUnlockedAchievements,
-  ACHIEVEMENTS,
-  addSticker,
-  loadStickerBoard,
-  removeSticker,
-  moveSticker,
-  getUnlockedPacks,
-  SOUND_PACKS,
-  getSelectedPack,
-  setSelectedPack,
-  getTodayChallenge,
-  getTodayProgress,
-  setTodayProgress,
+  getComboName,
   loadParentalSettings,
   saveParentalSettings,
   isPlayTimeAllowed,
   getTodayRecordingsCount,
   incrementTodayRecordings,
   getAvatarChoices,
-  getComboName,
   type Kid,
-  type PlacedSticker,
   type ParentalSettings,
-  type Achievement,
 } from "./game/state";
-import { isAdultMode, setAdultMode as setAdultModePersist } from "./game/adultMode";
+// (Adult mode removed in v23 — replaced by a dedicated Parents page.
 import { PinGate } from "./game/PinGate";
 
 type Poof = { id: number; x: number; y: number; emoji: string };
@@ -121,7 +89,7 @@ function AnimalCard({ preset, active, onPlay }: AnimalCardProps) {
   );
 }
 
-function RecordingTile({ rec, onPlay, onDelete }: { rec: CustomRecording; onPlay: (rec: CustomRecording) => void; onDelete: (id: string) => void }) {
+function RecordingTile({ rec, onPlay, onDelete, onShare }: { rec: CustomRecording; onPlay: (rec: CustomRecording) => void; onDelete: (id: string) => void; onShare: (rec: CustomRecording) => void }) {
   const tap = useTap(() => onPlay(rec));
   return (
     <div className="relative aspect-square rounded-3xl bg-gradient-to-br from-fuchsia-200 to-fuchsia-400 shadow-xl border-4 border-white">
@@ -134,21 +102,62 @@ function RecordingTile({ rec, onPlay, onDelete }: { rec: CustomRecording; onPlay
         <div className="mt-1 text-sm sm:text-base font-bold text-purple-950 truncate max-w-full">{rec.name}</div>
         <div className="text-[10px] font-semibold text-purple-900/80">{rec.id.toUpperCase()}</div>
       </button>
-      {rec.visibility === "public" && (
-        <div
-          aria-label="Public recording"
-          title="Posted to feed"
-          className="absolute top-1 left-1 px-1.5 py-0.5 rounded-full bg-gradient-to-br from-pink-500 to-orange-400 text-white text-[9px] font-bold shadow"
-        >
-          🌍
-        </div>
-      )}
+      <button
+        onClick={() => onShare(rec)}
+        aria-label="Share"
+        title="Share with a code"
+        className="absolute top-1 left-1 w-7 h-7 rounded-full bg-emerald-500 text-white text-xs font-bold flex items-center justify-center shadow-md active:scale-90"
+      >
+        🔗
+      </button>
       <button
         onClick={() => onDelete(rec.id)}
+        aria-label="Delete"
+        title="Delete"
         className="absolute top-1 right-1 w-7 h-7 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center shadow-md active:scale-90"
       >
         ✕
       </button>
+    </div>
+  );
+}
+
+// AddCodeModal — paste a 4-character share code to grab a sound a friend
+// shared with you. Single big text input, instant feedback, no signup.
+function AddCodeModal({ onClose, onAdd, busy, error }: { onClose: () => void; onAdd: (code: string) => void; busy: boolean; error: string | null }) {
+  const [code, setCode] = useState("");
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => { setTimeout(() => ref.current?.focus(), 50); }, []);
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-2xl font-bold text-slate-800 mb-1 text-center">🔗 Got a code?</h2>
+        <p className="text-sm text-slate-600 text-center mb-4">Type the 4 letters or numbers your friend read to you.</p>
+        <input
+          ref={ref}
+          type="text"
+          value={code}
+          onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4))}
+          onKeyDown={(e) => { if (e.key === "Enter" && code.length === 4) onAdd(code); }}
+          placeholder="ABCD"
+          maxLength={4}
+          className="w-full text-center font-mono font-bold text-4xl tracking-[0.5em] px-4 py-5 rounded-2xl border-4 border-emerald-200 focus:border-emerald-500 focus:outline-none mb-3"
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+        />
+        {error && <div className="bg-red-100 border-2 border-red-300 text-red-800 rounded-xl p-2 mb-3 text-sm text-center">{error}</div>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-gray-200 text-gray-800 font-bold">Cancel</button>
+          <button
+            onClick={() => onAdd(code)}
+            disabled={busy || code.length !== 4}
+            className="flex-1 py-3 rounded-xl bg-emerald-500 text-white font-bold active:scale-95 disabled:opacity-50"
+          >
+            {busy ? "…" : "Get sound"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -167,11 +176,7 @@ export default function App() {
   const [launchAction, setLaunchAction] = useState<LaunchAction>(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
 
-  // Social state (Instagram-like)
-  const [me, setMe] = useState<SocialUser | null>(null);
-  const [socialView, setSocialView] = useState<"feed" | "discover" | "profile" | "viewProfile">("feed");
-  const [viewedUser, setViewedUser] = useState<SocialUser | null>(null);
-  const [editingProfile, setEditingProfile] = useState(false);
+  // (Social state removed in v23 — replaced with 4-character code sharing.)
 
   // PWA setup: install prompt, online status, launch action, SW updates
   useEffect(() => {
@@ -282,14 +287,21 @@ export default function App() {
   const [newRecEmoji, setNewRecEmoji] = useState("💨");
   const [recordError, setRecordError] = useState<string | null>(null);
   const [parental, setParental] = useState<ParentalSettings>(loadParentalSettings());
-  const [adultMode, setAdultModeState] = useState<boolean>(() => isAdultMode());
+  // Parents page is opened from the gear icon. PinGate protects it.
+  const [pinGateOpen, setPinGateOpen] = useState(false);
+
+  // Share-code modals
+  const [shareModal, setShareModal] = useState<{ code: string; name: string; emoji: string; success?: boolean } | null>(null);
+  const [addCodeOpen, setAddCodeOpen] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
   const [emojiRainActive, setEmojiRainActive] = useState(false);
   const [petState, setPetState] = useState<"happy" | "covering" | "dancing" | "shocked">("happy");
   const [recentTaps, setRecentTaps] = useState<{ id: string; time: number }[]>([]);
   // Suppress TS6133 for recentTaps when it isn't read directly; it triggers re-renders for combo popups
   const _recentTapsRef = recentTaps; void _recentTapsRef;
   const [comboPopup, setComboPopup] = useState<string | null>(null);
-  const [achievementPopup, setAchievementPopup] = useState<Achievement | null>(null);
+  // (v23: achievementPopup removed.)
   const [parentalBlocked, setParentalBlocked] = useState(false);
 
   const lastTriggerRef = useRef<{ [k: string]: number }>({});
@@ -365,14 +377,7 @@ export default function App() {
   }, [showKidMenu]);
   useEffect(() => { setShowKidMenu(false); }, [tab]);
 
-  // Check achievements after stats updates
-  const checkAchievementsAndNotify = useCallback((kidId: string) => {
-    const newlyUnlocked = checkAchievements(kidId);
-    if (newlyUnlocked.length > 0) {
-      setAchievementPopup(newlyUnlocked[0]);
-      setTimeout(() => setAchievementPopup(null), 4000);
-    }
-  }, []);
+  // (v23: achievements removed. They were never opened by kids.)
 
   // Combo detection: 3+ taps within 3 seconds = combo
   const recordTapForCombo = useCallback((animalId: string) => {
@@ -416,16 +421,6 @@ export default function App() {
       if (reverbMode) {
         updateStats(activeKid.id, (s) => ({ ...s, bathroomFarts: s.bathroomFarts + 1 }));
       }
-      // Daily challenge progress
-      const challenge = getTodayChallenge();
-      if (challenge.metric === "mostTaps") {
-        const cur = getTodayProgress(activeKid.id, "mostTaps");
-        setTodayProgress(activeKid.id, "mostTaps", cur + 1);
-      } else if (challenge.metric === "mostUniqueAnimals") {
-        const tried = getAnimalsTried(activeKid.id);
-        setTodayProgress(activeKid.id, "mostUniqueAnimals", tried.length);
-      }
-      checkAchievementsAndNotify(activeKid.id);
       recordTapForCombo(preset.id);
     }
 
@@ -458,7 +453,7 @@ export default function App() {
       }
       return newHype;
     });
-  }, [activeKid, reverbMode, parentalBlocked, parental.mute, checkAchievementsAndNotify, recordTapForCombo]);
+  }, [activeKid, reverbMode, parentalBlocked, parental.mute, recordTapForCombo]);
 
   const onRandom = useCallback(() => {
     if (parentalBlocked) return;
@@ -511,78 +506,32 @@ export default function App() {
     setRecording(false);
     const result = await stopRecording();
     if (result && result.duration > 0.2) {
-      setPendingRecording({ url: result.url, duration: result.duration, blob: result.blob });
-      setNewRecName(`My Fart ${recordings.length + 1}`);
-      setNewRecEmoji("💨");
-    }
-  }, [recording, recordings.length]);
-
-  // Save the recording to this device only. Always works offline.
-  const onSaveLocal = useCallback(() => {
-    if (!pendingRecording) return;
-    const rec = saveRecording({
-      name: newRecName || "My Fart",
-      emoji: newRecEmoji,
-      url: pendingRecording.url,
-      visibility: "local",
-    });
-    setRecordings([...recordings, rec]);
-    if (activeKid) {
-      incrementTodayRecordings();
-      updateStats(activeKid.id, (s) => ({
-        ...s,
-        recordings: s.recordings + 1,
-        longestRecordingSec: Math.max(s.longestRecordingSec, pendingRecording.duration),
-      }));
-      const challenge = getTodayChallenge();
-      if (challenge.metric === "longestRecording") {
-        const cur = getTodayProgress(activeKid.id, "longestRecording");
-        if (pendingRecording.duration > cur) {
-          setTodayProgress(activeKid.id, "longestRecording", pendingRecording.duration);
-        }
+      // Auto-save immediately (v23: no decision modal for kids)
+      const name = `My Fart ${recordings.length + 1}`;
+      const emoji = "💨";
+      const rec = saveRecording({
+        name,
+        emoji,
+        url: result.url,
+        visibility: "local",
+      });
+      setRecordings([...recordings, rec]);
+      if (activeKid) {
+        incrementTodayRecordings();
+        updateStats(activeKid.id, (s) => ({
+          ...s,
+          recordings: s.recordings + 1,
+          longestRecordingSec: Math.max(s.longestRecordingSec, result.duration),
+        }));
       }
-      checkAchievementsAndNotify(activeKid.id);
+      // Show the "Saved!" confirmation with the auto-generated name
+      setNewRecName(name);
+      setNewRecEmoji(emoji);
+      setPendingRecording({ url: result.url, duration: result.duration, blob: result.blob });
     }
-    setPendingRecording(null);
-    setShowRecordModal(false);
-  }, [pendingRecording, newRecName, newRecEmoji, recordings, activeKid, checkAchievementsAndNotify]);
+  }, [recording, recordings, activeKid]);
 
-  // Save locally AND upload to the public feed. Uploads run async; the
-  // local row is created immediately so the user can keep playing with
-  // it even if the network fails.
-  const onPostToFeed = useCallback(async () => {
-    if (!pendingRecording) return;
-    const rec = saveRecording({
-      name: newRecName || "My Fart",
-      emoji: newRecEmoji,
-      url: pendingRecording.url,
-      visibility: "local",
-    });
-    setRecordings([...recordings, rec]);
-    if (activeKid) {
-      incrementTodayRecordings();
-      updateStats(activeKid.id, (s) => ({
-        ...s,
-        recordings: s.recordings + 1,
-        longestRecordingSec: Math.max(s.longestRecordingSec, pendingRecording.duration),
-      }));
-      checkAchievementsAndNotify(activeKid.id);
-    }
-    setPendingRecording(null);
-    setShowRecordModal(false);
-    try {
-      const shared = await uploadCustomRecording(rec, activeKid?.name);
-      setRecordings((cur) =>
-        cur.map((r) => (r.id === rec.id ? { ...r, visibility: "public" as const, serverId: String(shared.id) } : r))
-      );
-      setRecordingVisibility(rec.id, "public", String(shared.id));
-      // Notify the social tab (if mounted) that the feed has new content
-      window.dispatchEvent(new CustomEvent("animal-farts:feed-changed"));
-    } catch (err) {
-      // Network failed — keep the local copy, do NOT pretend it posted.
-      alert("Couldn't post to feed (no internet?) — saved on this device only.");
-    }
-  }, [pendingRecording, newRecName, newRecEmoji, recordings, activeKid, checkAchievementsAndNotify]);
+
 
   // Discard the recording. Frees the blob URL.
   const onDiscardPending = useCallback(() => {
@@ -596,6 +545,57 @@ export default function App() {
     if (!confirm("Delete this recording?")) return;
     deleteRecording(id);
     setRecordings(recordings.filter((r) => r.id !== id));
+  }, [recordings]);
+
+  // Share via 4-character code. The recording must live on the server
+  // already (we upload it the first time share is tapped, then keep the
+  // audioUrl for future shares).
+  const onShareRecording = useCallback(async (rec: CustomRecording) => {
+    try {
+      // Reuse an existing server upload if we have one
+      let audioUrl = (rec as any).serverAudioUrl as string | undefined;
+      if (!audioUrl) {
+        const shared = await uploadCustomRecording(rec, activeKid?.name);
+        audioUrl = shared.audioUrl;
+        // Persist the audioUrl on the local row for next time
+        const next = recordings.map((r) => r.id === rec.id ? { ...r, serverAudioUrl: audioUrl } as any : r);
+        try { localStorage.setItem("fart-custom-recordings", JSON.stringify(next)); } catch {}
+        setRecordings(next as any);
+      }
+      const { mintShareCode } = await import("./audio/serverApi");
+      const result = await mintShareCode({ audioUrl, name: rec.name, emoji: rec.emoji });
+      setShareModal({ code: result.code, name: rec.name, emoji: rec.emoji });
+    } catch (err) {
+      alert("Couldn't make a share code right now. Try again when you're online.");
+    }
+  }, [recordings, activeKid]);
+
+  // Look up a 4-character code and add the sound to the local library.
+  const onAddByCode = useCallback(async (rawCode: string) => {
+    const code = rawCode.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
+    if (code.length !== 4) {
+      setShareError("Codes are 4 letters or numbers.");
+      return;
+    }
+    setShareBusy(true);
+    setShareError(null);
+    try {
+      const { lookupShareCode } = await import("./audio/serverApi");
+      const result = await lookupShareCode(code);
+      // Fetch the audio as a blob, save locally
+      const resp = await fetch(result.audioUrl);
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const saved = saveRecording({ name: result.name, emoji: result.emoji, url, visibility: "local" });
+      setRecordings([...recordings, saved]);
+      setShareError(null);
+      setAddCodeOpen(false);
+      setShareModal({ code, name: result.name, emoji: result.emoji, success: true });
+    } catch (err) {
+      setShareError("Couldn't find that code. Check the letters and try again.");
+    } finally {
+      setShareBusy(false);
+    }
   }, [recordings]);
 
   const onPlayCustom = useCallback(async (rec: CustomRecording) => {
@@ -627,12 +627,8 @@ export default function App() {
     }
   })();
 
-  // Selected pack filter
-  const selectedPackId = activeKid ? getSelectedPack(activeKid.id) : null;
-  const selectedPack = SOUND_PACKS.find((p) => p.id === selectedPackId);
-  const visiblePresets = selectedPack
-    ? PRESETS.filter((p) => selectedPack.animalIds.includes(p.id))
-    : PRESETS;
+  // (v23: sound pack filter removed — kids see all 34 animals by default.)
+  const visiblePresets = PRESETS;
 
   const hypePct = (hype / (HYPE_LABELS.length - 1)) * 100;
   const hypeColor = hype < 2 ? "bg-green-400" : hype < 4 ? "bg-yellow-400" : "bg-red-500";
@@ -696,25 +692,18 @@ export default function App() {
         )}
       </header>
 
-      {/* Top tabs — kid-facing nav: 4 tabs, room to breathe. Adult mode
-          gets 5 sections (Home / Sounds / Studio / Friends / Settings). */}
-      <div className="px-3 pb-3 flex gap-2 max-w-3xl mx-auto w-full">
-        {adultMode ? (
-          <>
-            <NavTab active={tab === "play"} onClick={() => setTab("play")} color="amber" emoji="🏠" label="Home" />
-            <NavTab active={tab === "play"} onClick={() => { setTab("play"); }} color="orange" emoji="🔊" label="Sounds" />
-            <NavTab active={tab === "mystuff"} onClick={() => setTab("mystuff")} color="purple" emoji="🎙️" label="Studio" />
-            <NavTab active={tab === "explore"} onClick={() => setTab("explore")} color="emerald" emoji="👥" label="Friends" />
-            <NavTab active={tab === "parental"} onClick={() => setTab("parental")} color="slate" emoji="⚙️" label="Settings" />
-          </>
-        ) : (
-          <>
-            <NavTab active={tab === "play"} onClick={() => setTab("play")} color="amber" emoji="🎵" label="Play" />
-            <NavTab active={tab === "explore"} onClick={() => setTab("explore")} color="emerald" emoji="🌍" label="Explore" />
-            <NavTab active={tab === "mystuff"} onClick={() => setTab("mystuff")} color="purple" emoji="📦" label="My Stuff" />
-            <NavTab active={tab === "parental"} onClick={() => setTab("parental")} color="slate" emoji="⚙️" label="Parents" />
-          </>
-        )}
+      {/* Kid nav: 2 tabs. Parents page opens from the gear icon (PIN-gated). */}
+      <div className="px-3 pb-3 flex gap-2 max-w-3xl mx-auto w-full items-center">
+        <NavTab active={tab === "play"} onClick={() => setTab("play")} color="amber" emoji="🎵" label="Play" />
+        <NavTab active={tab === "mystuff"} onClick={() => setTab("mystuff")} color="purple" emoji="🎤" label="My Sounds" />
+        <button
+          onClick={() => setPinGateOpen(true)}
+          aria-label="Parents"
+          className="ml-1 w-12 h-12 rounded-2xl bg-white/70 text-slate-600 border-2 border-slate-200 text-xl active:scale-95 flex items-center justify-center shadow-sm"
+          title="Parents (PIN)"
+        >
+          👪
+        </button>
       </div>
 
       {parentalBlocked && (
@@ -785,28 +774,7 @@ export default function App() {
 
       {tab === "play" && (
         <>
-          {/* Sound Pack Selector — small, useful for variety */}
-          {activeKid && (
-            <div className="px-3 pb-2 max-w-3xl mx-auto w-full">
-              <div className="flex gap-1.5 overflow-x-auto pb-1">
-                <button
-                  onClick={() => setSelectedPack(activeKid.id, null)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap ${!selectedPackId ? "bg-amber-500 text-white" : "bg-white/60 text-gray-700"}`}
-                >
-                  🎵 All
-                </button>
-                {getUnlockedPacks(activeKid.id).slice(0, 3).map((pack) => (
-                  <button
-                    key={pack.id}
-                    onClick={() => setSelectedPack(activeKid.id, pack.id === selectedPackId ? null : pack.id)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap ${selectedPackId === pack.id ? "bg-amber-500 text-white" : "bg-white/60 text-gray-700"}`}
-                  >
-                    {pack.emoji} {pack.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* (v23: sound pack selector removed.) */}
 
           {/* Small hype indicator — optional, parents can hide in settings */}
           {showHypeMeter && (
@@ -832,9 +800,9 @@ export default function App() {
             onDeleteRecording={onDeleteRecording}
             onStartRecord={onStartRecord}
             onStopRecord={onStopRecord}
-            onSaveLocal={onSaveLocal}
-            onPostToFeed={onPostToFeed}
             onDiscardPending={onDiscardPending}
+            onShareRecording={onShareRecording}
+            onOpenAddCode={() => { setAddCodeOpen(true); setShareError(null); }}
             recording={recording}
             recordDuration={recordDuration}
             recordError={recordError}
@@ -849,7 +817,6 @@ export default function App() {
             parental={parental}
             parentalBlocked={parentalBlocked}
             primaryTab="animals"
-            adultMode={adultMode}
           />
         </>
       )}
@@ -865,17 +832,6 @@ export default function App() {
         />
       )}
 
-      {tab === "explore" && (
-        <SocialTab
-          me={me} setMe={setMe}
-          activeKid={activeKid} recordings={recordings}
-          socialView={socialView} setSocialView={setSocialView}
-          viewedUser={viewedUser} setViewedUser={setViewedUser}
-          editingProfile={editingProfile} setEditingProfile={setEditingProfile}
-          adultMode={adultMode}
-        />
-      )}
-
       {tab === "parental" && (
         <ParentalTab
           parental={parental}
@@ -884,8 +840,6 @@ export default function App() {
           toggleReverb={toggleReverb}
           showHypeMeter={showHypeMeter}
           setShowHypeMeter={setShowHypeMeter}
-          adultMode={adultMode}
-          setAdultMode={(v) => { setAdultModePersist(v); setAdultModeState(v); }}
         />
       )}
 
@@ -984,6 +938,64 @@ export default function App() {
         </div>
       )}
 
+      {/* Parents gate — opens from the gear icon. On success, jump to the
+          parental tab. The gate is mounted at App level so it's reachable
+          from anywhere, not just inside ParentalTab. */}
+      <PinGate
+        open={pinGateOpen}
+        onClose={() => setPinGateOpen(false)}
+        onSuccess={() => { setPinGateOpen(false); setTab("parental"); }}
+        title="Parent PIN"
+      >
+        {() => null}
+      </PinGate>
+
+      {/* Show a freshly-minted share code */}
+      {shareModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4" onClick={() => setShareModal(null)}>
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl text-center" onClick={(e) => e.stopPropagation()}>
+            {shareModal.success ? (
+              <>
+                <div className="text-6xl mb-2">{shareModal.emoji}</div>
+                <h2 className="text-2xl font-bold text-emerald-900 mb-1">Got it!</h2>
+                <p className="text-sm text-slate-600 mb-4">"{shareModal.name}" is now in your library.</p>
+                <button
+                  onClick={() => setShareModal(null)}
+                  className="w-full py-3 rounded-xl bg-emerald-500 text-white font-bold active:scale-95"
+                >
+                  OK
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="text-5xl mb-2">🔗</div>
+                <h2 className="text-xl font-bold text-slate-800 mb-1">Your share code</h2>
+                <p className="text-sm text-slate-600 mb-4">Read this to your friend. They tap 🔗 CODE and type it in.</p>
+                <div className="font-mono font-bold text-5xl tracking-[0.5em] text-emerald-700 bg-emerald-50 rounded-2xl py-6 mb-4 select-all">
+                  {shareModal.code}
+                </div>
+                <button
+                  onClick={() => setShareModal(null)}
+                  className="w-full py-3 rounded-xl bg-slate-800 text-white font-bold active:scale-95"
+                >
+                  Done
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Enter a code you got from a friend */}
+      {addCodeOpen && (
+        <AddCodeModal
+          onClose={() => setAddCodeOpen(false)}
+          onAdd={onAddByCode}
+          busy={shareBusy}
+          error={shareError}
+        />
+      )}
+
       {/* Poof particles */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         {poofs.map((p) => (
@@ -997,15 +1009,6 @@ export default function App() {
       {comboPopup && (
         <div className="fixed top-24 left-1/2 -translate-x-1/2 z-40 bg-gradient-to-r from-pink-500 to-purple-500 text-white px-6 py-3 rounded-2xl shadow-2xl font-bold text-lg pointer-events-none animate-bounce">
           🎉 {comboPopup}!
-        </div>
-      )}
-
-      {/* Achievement popup */}
-      {achievementPopup && (
-        <div className="fixed top-32 left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-yellow-400 to-orange-400 text-white px-6 py-4 rounded-2xl shadow-2xl font-bold text-center pointer-events-none">
-          <div className="text-4xl mb-1">{achievementPopup.emoji}</div>
-          <div className="text-sm uppercase">Achievement Unlocked!</div>
-          <div className="text-lg">{achievementPopup.name}</div>
         </div>
       )}
 
@@ -1053,15 +1056,8 @@ function NavTab({ active, onClick, color, emoji, label }: { active: boolean; onC
     </button>
   );
 }
+      {/* (v23: removed StatCard, SubTab, and the kid stats card.) */}
 
-function StatCard({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div className="bg-white/80 rounded-lg p-2">
-      <div className="text-xs text-gray-600">{label}</div>
-      <div className="font-bold text-lg text-orange-900">{value}</div>
-    </div>
-  );
-}
 
 function PlayTab(props: {
   presets: FartPreset[];
@@ -1073,9 +1069,9 @@ function PlayTab(props: {
   onDeleteRecording: (id: string) => void;
   onStartRecord: () => void;
   onStopRecord: () => void;
-  onSaveLocal: () => void;
-  onPostToFeed: () => void;
   onDiscardPending: () => void;
+  onShareRecording: (rec: CustomRecording) => void;
+  onOpenAddCode: () => void;
   recording: boolean;
   recordDuration: number;
   recordError: string | null;
@@ -1090,69 +1086,63 @@ function PlayTab(props: {
   parental: ParentalSettings;
   parentalBlocked: boolean;
   primaryTab: string;
-  adultMode?: boolean;
 }) {
-  const [sub, setSub] = useState<"animals" | "voice" | "myfarts">("animals");
-  const EMOJI_CHOICES = ["💨", "🎤", "🤪", "😈", "👻", "👽", "💀", "🤡", "🦄", "🐸", "🐵", "🐷", "🐮", "🐔", "🐧", "🐢", "🐬", "🦖"];
+  // (v23: sub-tab bar removed. Recordings + animals share one scrollable
+  // page; the action bar at the bottom handles voice effects.)
+  const [showAllAnimals, setShowAllAnimals] = useState(false);
+  // First 12 animals on first screen; "See all" reveals the rest
+  const HERO_COUNT = 12;
+  const visiblePresets = showAllAnimals ? props.presets : props.presets.slice(0, HERO_COUNT);
 
   return (
     <>
-      {/* Sub-tab bar — segmented control style, clearly secondary to main nav.
-          In adult mode, the Studio/Friends tabs already cover Voice + My Farts,
-          so we only show the animal shortcut here. */}
-      {props.adultMode ? null : (
-      <div className="px-3 pb-3 max-w-3xl mx-auto w-full">
-        <div className="bg-white/50 backdrop-blur rounded-full p-1 flex gap-0.5 border border-amber-200/50">
-          {[
-            { id: "animals" as const, label: "🐾 Animals" },
-            { id: "voice" as const, label: "🎭 Voice" },
-            { id: "myfarts" as const, label: "🎤 My Farts" },
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setSub(t.id)}
-              className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${sub === t.id ? "bg-amber-500 text-white shadow" : "text-amber-900"}`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      )}
-
       <main className="flex-1 px-3 pb-44">
-        {sub === "voice" ? (
-          <VoiceTabInline />
-        ) : sub === "myfarts" ? (
-          <div>
-            <p className="text-center text-purple-900/70 text-sm font-semibold mb-2">
-              Hold the phone close and make a funny sound — we use your mic to save it here.
-            </p>
-            <button
-              onClick={() => { props.setShowRecordModal(true); }}
-              className="w-full mb-3 py-4 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 text-white font-bold text-lg shadow-xl border-4 border-white active:scale-95"
-            >
-              🎤 RECORD A FART
-            </button>
-            {props.recordings.length === 0 ? (
-              <div className="text-center text-purple-900/60 py-12 px-4">
-                <div className="text-6xl mb-3">🎤</div>
-                <p className="font-semibold">No recordings yet</p>
-                <p className="text-sm">Make your first one! Be silly. Be loud. 💨</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-3xl mx-auto">
-                {props.recordings.map((rec) => (
-                  <RecordingTile key={rec.id} rec={rec} onPlay={props.onPlayCustom} onDelete={props.onDeleteRecording} />
-                ))}
-              </div>
-            )}
+        <p className="text-center text-purple-900/70 text-sm font-semibold mb-2">
+          Hold the phone close and make a funny sound — we use your mic to save it here.
+        </p>
+        <div className="flex gap-2 mb-3">
+          <button
+            onClick={() => { props.setShowRecordModal(true); }}
+            className="flex-1 py-4 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 text-white font-bold text-lg shadow-xl border-4 border-white active:scale-95"
+          >
+            🎤 RECORD
+          </button>
+          <button
+            onClick={props.onOpenAddCode}
+            className="px-4 py-4 rounded-2xl bg-emerald-500 text-white font-bold text-base shadow-xl border-4 border-white active:scale-95"
+            title="Got a 4-letter code? Tap here"
+          >
+            🔗 CODE
+          </button>
+        </div>
+        {props.recordings.length === 0 ? (
+          <div className="text-center text-purple-900/60 py-8 px-4">
+            <div className="text-5xl mb-2">🎤</div>
+            <p className="font-semibold">No recordings yet</p>
+            <p className="text-sm">Make your first one! Be silly. Be loud. 💨</p>
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-4 max-w-3xl mx-auto">
-            {props.presets.map((p) => (
-              <AnimalCard key={p.id} preset={p} active={props.active === p.id} onPlay={props.trigger} />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-3xl mx-auto">
+            {props.recordings.map((rec) => (
+              <RecordingTile key={rec.id} rec={rec} onPlay={props.onPlayCustom} onDelete={props.onDeleteRecording} onShare={props.onShareRecording} />
             ))}
+          </div>
+        )}
+
+        <h2 className="text-center text-2xl sm:text-3xl font-bold text-amber-900 mt-6 mb-3">🐾 Tap an animal</h2>
+        <div className="grid grid-cols-3 gap-4 max-w-3xl mx-auto">
+          {visiblePresets.map((p) => (
+            <AnimalCard key={p.id} preset={p} active={props.active === p.id} onPlay={props.trigger} />
+          ))}
+        </div>
+        {props.presets.length > HERO_COUNT && (
+          <div className="text-center mt-4">
+            <button
+              onClick={() => setShowAllAnimals((v) => !v)}
+              className="px-5 py-2 rounded-full bg-white/80 text-amber-900 border-2 border-amber-300 font-bold text-sm active:scale-95"
+            >
+              {showAllAnimals ? "← Show fewer" : `See all ${props.presets.length} →`}
+            </button>
           </div>
         )}
       </main>
@@ -1207,54 +1197,16 @@ function PlayTab(props: {
             )}
             {props.pendingRecording && (
               <div className="text-center">
-                <div className="text-5xl mb-3">✨</div>
-                <h2 className="text-2xl font-bold text-purple-900 mb-2">Save your fart!</h2>
-                <p className="text-gray-600 mb-3 text-sm">Duration: {props.pendingRecording.duration.toFixed(1)}s</p>
-                <input
-                  type="text"
-                  value={props.newRecName}
-                  onChange={(e) => props.setNewRecName(e.target.value)}
-                  placeholder="Name it!"
-                  className="w-full px-4 py-3 rounded-xl border-2 border-purple-300 text-center font-bold text-lg mb-3"
-                  maxLength={20}
-                />
-                <div className="mb-4">
-                  <p className="text-sm text-gray-600 mb-2">Pick an emoji:</p>
-                  <div className="flex flex-wrap gap-1 justify-center">
-                    {EMOJI_CHOICES.map((e) => (
-                      <button
-                        key={e}
-                        onClick={() => props.setNewRecEmoji(e)}
-                        className={`text-2xl p-1.5 rounded-lg ${props.newRecEmoji === e ? "bg-purple-200 ring-2 ring-purple-500" : "bg-gray-100"}`}
-                      >
-                        {e}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  <button
-                    onClick={props.onDiscardPending}
-                    className="flex-1 min-w-[6rem] py-3 rounded-xl bg-gray-200 text-gray-800 font-bold"
-                  >
-                    🗑️ Discard
-                  </button>
-                  <button
-                    onClick={props.onSaveLocal}
-                    className="flex-1 min-w-[6rem] py-3 rounded-xl bg-purple-500 text-white font-bold active:scale-95"
-                  >
-                    💾 Save to my farts
-                  </button>
-                  <button
-                    onClick={props.onPostToFeed}
-                    className="flex-1 min-w-[6rem] py-3 rounded-xl bg-gradient-to-br from-pink-500 to-orange-400 text-white font-bold active:scale-95"
-                  >
-                    🌍 Post to feed
-                  </button>
-                </div>
-                <p className="text-xs text-gray-500 mt-2">
-                  Save to my farts = only on this device. Post to feed = your friends can hear it.
-                </p>
+                <div className="text-6xl mb-3">✨</div>
+                <h2 className="text-2xl font-bold text-purple-900 mb-1">Saved!</h2>
+                <p className="text-gray-600 mb-4 text-sm">"{props.newRecName}" is in your library.</p>
+                <button
+                  onClick={props.onDiscardPending}
+                  className="w-full py-3 rounded-xl bg-emerald-500 text-white font-bold active:scale-95"
+                >
+                  ✓ OK
+                </button>
+                <p className="text-xs text-gray-500 mt-2">Tap the 🔗 on the tile to share with a code.</p>
               </div>
             )}
           </div>
@@ -1273,39 +1225,12 @@ function MyStuffTab(props: {
   showProfileModal: boolean;
   setShowProfileModal: (v: boolean) => void;
 }) {
-  const [section, setSection] = useState<"player" | "stickers" | "daily">("player");
-
-  if (!props.activeKid) {
-    return (
-      <main className="flex-1 px-3 pb-4 max-w-3xl mx-auto w-full">
-        <ProfileTab {...props} />
-      </main>
-    );
-  }
-
+  // v23: my-stuff is just the kid picker / profile. Stickers and daily
+  // challenges are gone — kids don't use them.
   return (
     <main className="flex-1 px-3 pb-4 max-w-3xl mx-auto w-full">
-      <div className="flex gap-2 mb-3 bg-white/60 rounded-2xl p-1">
-        <SubTab active={section === "player"} onClick={() => setSection("player")} label="👤 Player" />
-        <SubTab active={section === "stickers"} onClick={() => setSection("stickers")} label="⭐ Stickers" />
-        <SubTab active={section === "daily"} onClick={() => setSection("daily")} label="📅 Daily" />
-      </div>
-
-      {section === "player" && <ProfileTab {...props} />}
-      {section === "stickers" && <StickerTab kidId={props.activeKid.id} />}
-      {section === "daily" && <DailyTab kidId={props.activeKid.id} />}
+      <ProfileTab {...props} />
     </main>
-  );
-}
-
-function SubTab({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${active ? "bg-purple-500 text-white shadow" : "text-purple-900"}`}
-    >
-      {label}
-    </button>
   );
 }
 
@@ -1447,178 +1372,6 @@ function ProfileTab({
     </main>
   );
 }
-
-function StickerTab({ kidId }: { kidId: string }) {
-  const [stickerBoard, setStickerBoardState] = useState<PlacedSticker[]>(loadStickerBoard(kidId));
-  const unlocked = new Set(getUnlockedAchievements(kidId));
-
-  // Refresh board when kidId changes
-  useEffect(() => { setStickerBoardState(loadStickerBoard(kidId)); }, [kidId]);
-
-  const onPlaceSticker = (achievementId: string) => {
-    if (!unlocked.has(achievementId)) return;
-    addSticker(kidId, achievementId);
-    setStickerBoardState(loadStickerBoard(kidId));
-  };
-
-  const onDragSticker = (stickerId: string, e: React.PointerEvent) => {
-    if (e.type !== "pointerdown") return;
-    const board = document.getElementById("sticker-board");
-    if (!board) return;
-    const rect = board.getBoundingClientRect();
-    const onMove = (ev: PointerEvent) => {
-      const x = ((ev.clientX - rect.left) / rect.width) * 100;
-      const y = ((ev.clientY - rect.top) / rect.height) * 100;
-      moveSticker(kidId, stickerId, Math.max(0, Math.min(100, x)), Math.max(0, Math.min(100, y)));
-    };
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      setStickerBoardState(loadStickerBoard(kidId));
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  };
-
-  const onRemoveSticker = (stickerId: string) => {
-    removeSticker(kidId, stickerId);
-    setStickerBoardState(loadStickerBoard(kidId));
-  };
-
-  return (
-    <main className="flex-1 px-3 pb-4 max-w-3xl mx-auto w-full">
-      <h2 className="text-2xl font-bold text-pink-900 mb-3 text-center">⭐ Your Sticker Board</h2>
-      <p className="text-sm text-pink-900/70 text-center mb-3">Unlock stickers by hitting achievements. Drag them around!</p>
-
-      {/* Board */}
-      <div
-        id="sticker-board"
-        className="relative bg-gradient-to-br from-pink-100 to-purple-100 rounded-3xl border-4 border-pink-300 mb-4"
-        style={{ aspectRatio: "1.4", minHeight: "300px" }}
-      >
-        {stickerBoard.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center text-pink-900/50 text-center">
-            <div>
-              <div className="text-4xl mb-2">📋</div>
-              <p className="font-semibold">Empty board</p>
-              <p className="text-sm">Tap an unlocked achievement below!</p>
-            </div>
-          </div>
-        )}
-        {stickerBoard.map((s) => {
-          const ach = ACHIEVEMENTS.find((a) => a.id === s.achievementId);
-          return (
-            <div
-              key={s.id}
-              onPointerDown={(e) => onDragSticker(s.id, e)}
-              onDoubleClick={() => onRemoveSticker(s.id)}
-              className="absolute text-5xl cursor-move select-none"
-              style={{
-                left: `${s.x}%`,
-                top: `${s.y}%`,
-                transform: `translate(-50%, -50%) rotate(${s.rotation}deg)`,
-                filter: "drop-shadow(2px 2px 4px rgba(0,0,0,0.2))",
-              }}
-              title={`${ach?.name} — double-tap to remove`}
-            >
-              {ach?.emoji || "⭐"}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Achievements grid */}
-      <h3 className="text-lg font-bold text-pink-900 mb-2">🏆 Achievements ({unlocked.size}/{ACHIEVEMENTS.length})</h3>
-      <div className="grid grid-cols-4 gap-2">
-        {ACHIEVEMENTS.map((ach) => {
-          const isUnlocked = unlocked.has(ach.id);
-          const placed = stickerBoard.some((s) => s.achievementId === ach.id);
-          return (
-            <button
-              key={ach.id}
-              onClick={() => isUnlocked && !placed && onPlaceSticker(ach.id)}
-              disabled={!isUnlocked || placed}
-              className={`p-2 rounded-xl text-center ${isUnlocked ? (placed ? "bg-green-100 opacity-50" : "bg-yellow-100 active:scale-95") : "bg-gray-100 opacity-40"}`}
-            >
-              <div className="text-3xl">{ach.emoji}</div>
-              <div className="text-[10px] font-bold mt-1">{ach.name}</div>
-            </button>
-          );
-        })}
-      </div>
-    </main>
-  );
-}
-
-function DailyTab({ kidId }: { kidId: string }) {
-  const challenge = getTodayChallenge();
-  const progress = getTodayProgress(kidId, challenge.metric);
-
-  // Format progress for a given value
-  const formatProgress = (value: number): string => {
-    switch (challenge.metric) {
-      case "longestRecording": return `${value.toFixed(1)}s`;
-      case "mostTaps": return `${value} toots`;
-      case "mostCombos": return `${value} combos`;
-      case "mostUniqueAnimals": return `${value}/${PRESETS.length} animals`;
-    }
-  };
-
-  // Top score for this challenge (across all kids)
-  const allProfiles = loadProfiles();
-  const leaderboard = allProfiles.map((kid) => ({
-    kid,
-    score: getTodayProgress(kid.id, challenge.metric),
-  })).sort((a, b) => b.score - a.score).slice(0, 5);
-
-  return (
-    <main className="flex-1 px-3 pb-4 max-w-3xl mx-auto w-full">
-      <h2 className="text-2xl font-bold text-orange-900 mb-1 text-center">📅 Today's Challenge</h2>
-      <p className="text-sm text-orange-900/70 text-center mb-4">{new Date().toDateString()}</p>
-
-      <div className="bg-gradient-to-br from-orange-100 to-yellow-100 rounded-3xl p-6 shadow-xl border-4 border-orange-300 mb-4 text-center">
-        <div className="text-5xl mb-2">🏆</div>
-        <h3 className="text-xl font-bold text-orange-900 mb-2">{challenge.prompt}</h3>
-        <div className="text-3xl font-bold text-orange-700">{formatProgress(progress)}</div>
-        <p className="text-sm text-orange-900/70 mt-2">Keep going! Set a new record today.</p>
-      </div>
-
-      <h3 className="text-lg font-bold text-orange-900 mb-2">🥇 Today's Leaderboard</h3>
-      {leaderboard.length === 0 ? (
-        <p className="text-orange-900/60 text-sm">No entries yet. Be the first!</p>
-      ) : (
-        <div className="space-y-2">
-          {leaderboard.map((entry, i) => {
-            const isMe = entry.kid.id === kidId;
-            const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "  ";
-            return (
-              <div
-                key={entry.kid.id}
-                className={`flex items-center gap-3 p-3 rounded-xl ${isMe ? "bg-orange-200 ring-2 ring-orange-500" : "bg-white/60"}`}
-              >
-                <div className="text-2xl w-8">{medal}</div>
-                <div className="text-2xl">{entry.kid.avatar}</div>
-                <div className="flex-1 font-bold text-gray-800">{entry.kid.name}</div>
-                <div className="font-bold text-orange-700">{formatProgress(entry.score)}</div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <div className="mt-6 bg-white/60 rounded-2xl p-4">
-        <h3 className="font-bold text-orange-900 mb-2">📊 Your Stats</h3>
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <StatCard label="Total toots" value={getStats(kidId).totalTaps} />
-          <StatCard label="Recordings" value={getStats(kidId).recordings} />
-          <StatCard label="Combos" value={getStats(kidId).combosPlayed} />
-          <StatCard label="Day streak" value={getStats(kidId).consecutiveDays} />
-        </div>
-      </div>
-    </main>
-  );
-}
-
 function ParentalTab({
   parental,
   setParental,
@@ -1626,8 +1379,6 @@ function ParentalTab({
   toggleReverb,
   showHypeMeter,
   setShowHypeMeter,
-  adultMode,
-  setAdultMode,
 }: {
   parental: ParentalSettings;
   setParental: (s: ParentalSettings) => void;
@@ -1635,24 +1386,10 @@ function ParentalTab({
   toggleReverb: () => void;
   showHypeMeter: boolean;
   setShowHypeMeter: (v: boolean) => void;
-  adultMode: boolean;
-  setAdultMode: (v: boolean) => void;
 }) {
   const [local, setLocal] = useState(parental);
-  const [notifPermission, setNotifPermission] = useState<NotificationPermission>(
-    typeof Notification !== "undefined" ? Notification.permission : "denied"
-  );
-  const [pinGateOpen, setPinGateOpen] = useState(false);
-
-  const requestNotif = async () => {
-    if (typeof Notification === "undefined") return;
-    const result = await Notification.requestPermission();
-    setNotifPermission(result);
-    if (result === "granted") {
-      const { subscribeToPush } = await import("./pwa");
-      await subscribeToPush();
-    }
-  };
+  // (v23: push notification shell removed — server has no push handler,
+  // so the UI was just a no-op that confused parents.)
 
   const update = <K extends keyof ParentalSettings>(key: K, value: ParentalSettings[K]) => {
     const next = { ...local, [key]: value };
@@ -1665,24 +1402,7 @@ function ParentalTab({
       <h2 className="text-2xl font-bold text-slate-800 mb-1 text-center">👪 Grown-Up Settings</h2>
       <p className="text-sm text-slate-700/70 text-center mb-4">Quiet hours, daily limits, and more.</p>
 
-      {/* Notification permission card */}
-      <div className="bg-white/80 rounded-2xl p-4 shadow-lg mb-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="font-bold text-slate-800">🔔 Daily Challenge Reminder</div>
-            <div className="text-xs text-slate-600">
-              {notifPermission === "granted" ? "✅ Reminders enabled" :
-               notifPermission === "denied" ? "❌ Blocked — change in browser settings" :
-               "Tap to enable daily push reminders"}
-            </div>
-          </div>
-          {notifPermission !== "granted" && notifPermission !== "denied" && (
-            <button onClick={requestNotif} className="bg-blue-500 text-white px-3 py-1.5 rounded-full text-sm font-bold active:scale-95">
-              Enable
-            </button>
-          )}
-        </div>
-      </div>
+      {/* (v23: notification permission card removed — server has no push handler.) */}
 
       <div className="bg-white/80 rounded-2xl p-4 shadow-lg mb-3">
         <label className="flex items-center justify-between cursor-pointer">
@@ -1800,833 +1520,13 @@ function ParentalTab({
         <p className="text-xs text-slate-600 mt-2 text-center">Kills any audio currently playing</p>
       </div>
 
-      <div className="bg-white/80 rounded-2xl p-4 shadow-lg mb-3">
-        <div className="flex items-start gap-3">
-          <div className="text-2xl">🔒</div>
-          <div className="flex-1">
-            <div className="font-bold text-slate-800">Adult mode</div>
-            <div className="text-xs text-slate-600 mt-1">
-              Tapping the lock turns on emoji reactions (👍 😂 💀) and "Find Friends" in the feed. Off is the default for kids.
-            </div>
-            <button
-              onClick={() => setPinGateOpen(true)}
-              className="mt-2 px-3 py-1.5 rounded-full bg-slate-800 text-white text-xs font-bold active:scale-95"
-            >
-              {adultMode ? "Change adult settings" : "Unlock adult mode"}
-            </button>
-            {adultMode && (
-              <div className="mt-2 text-xs text-emerald-700 font-bold">✅ Adult mode is ON — react with 👍 😂 💀 on the feed</div>
-            )}
-          </div>
-        </div>
-      </div>
-
       <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 text-sm text-red-900">
         <h3 className="font-bold mb-2">📍 All data is stored on this device only</h3>
-        <p>Recordings, stickers, and stats live in your browser's local storage. No data is sent to any server. Clearing your browser data will erase all recordings.</p>
+        <p>Recordings and stats live in your browser's local storage. No data is sent to any server. Clearing your browser data will erase all recordings.</p>
       </div>
-
-      <PinGate
-        open={pinGateOpen}
-        onClose={() => setPinGateOpen(false)}
-        title="Parent PIN"
-      >
-        {(lockAndClose) => (
-          <div className="space-y-2">
-            <label className="flex items-start gap-3 cursor-pointer bg-slate-50 rounded-xl p-3 border border-slate-200">
-              <input
-                type="checkbox"
-                checked={adultMode}
-                onChange={(e) => setAdultMode(e.target.checked)}
-                className="w-6 h-6 mt-0.5"
-              />
-              <div className="flex-1">
-                <div className="font-bold text-slate-800">👤 Adult mode</div>
-                <div className="text-xs text-slate-600 mt-1">
-                  Turns on emoji reactions and "Find Friends" on the feed.
-                </div>
-              </div>
-            </label>
-            <button
-              onClick={lockAndClose}
-              className="w-full py-2 rounded-xl bg-slate-800 text-white text-sm font-bold active:scale-95"
-            >
-              Done
-            </button>
-          </div>
-        )}
-      </PinGate>
     </main>
   );
 }
 
 // === Explore Tab — moved to SocialTab ===
 void 0; // (ExploreTab removed in v15; replaced by Instagram-style SocialTab)
-
-// === Voice Tab — pick an animal, apply pitch/speed/reverb, layer, loop ===
-function VoiceTabInline() {
-  const [selectedId, setSelectedId] = useState("cow");
-  const [pitch, setPitch] = useState(0); // semitones (-12 to +12)
-  const [speed, setSpeed] = useState(1.0); // 0.4 to 2.0
-  const [reverb, setReverb] = useState(0); // 0/1/2
-  const [layerCount, setLayerCount] = useState(1); // 1=single, 2=double, 3=triple
-  const [looper, setLooper] = useState(false);
-
-  useEffect(() => {
-    setPitchSemitones(pitch);
-    setSpeedFactor(speed);
-    setReverbAmount(reverb);
-  }, [pitch, speed, reverb]);
-
-  useEffect(() => {
-    if (!looper) return;
-    const id = setInterval(() => playSelected(), 1800);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [looper, selectedId, pitch, speed, reverb]);
-
-  const playSelected = () => {
-    const preset = PRESETS.find((p) => p.id === selectedId);
-    if (!preset) return;
-    const count = layerCount;
-    for (let i = 0; i < count; i++) {
-      setTimeout(() => playFart(preset), i * 90);
-    }
-  };
-
-  return (
-    <main className="flex-1 px-3 pb-4 max-w-3xl mx-auto w-full">
-      <h2 className="text-2xl font-bold text-amber-900 text-center mb-1">🎭 Funny Voice</h2>
-      <p className="text-sm text-amber-800/80 text-center mb-3">Pick an animal, then make it high, low, slow, fast — or stack 3 at once!</p>
-
-      {/* Source picker */}
-      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3">
-        {PRESETS.map((p) => (
-          <button
-            key={p.id}
-            onClick={() => { setSelectedId(p.id); playSelected(); }}
-            className={`relative aspect-square rounded-2xl bg-gradient-to-br ${p.color} shadow-md border-4 active:scale-95 ${selectedId === p.id ? "border-amber-900 ring-2 ring-amber-900" : "border-white"}`}
-          >
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <div className="text-3xl">{p.emoji}</div>
-              <div className="text-[10px] font-bold text-amber-950 drop-shadow leading-tight mt-0.5">{p.name}</div>
-            </div>
-          </button>
-        ))}
-      </div>
-
-      {/* Play button + layer + looper */}
-      <div className="flex gap-2 mb-3">
-        <button
-          onClick={playSelected}
-          className="flex-1 py-3 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white font-extrabold text-lg shadow-xl border-4 border-white active:scale-95"
-        >
-          ▶️ PLAY ({PRESETS.find(p=>p.id===selectedId)?.name || "—"})
-        </button>
-        <button
-          onClick={() => setLooper((v) => !v)}
-          className={`px-3 rounded-2xl font-bold border-2 ${looper ? "bg-rose-500 text-white border-rose-700 animate-pulse" : "bg-white/60 text-rose-600 border-rose-300"}`}
-          title="Loop playback"
-        >
-          🔁
-        </button>
-      </div>
-
-      {/* Sliders */}
-      <div className="bg-white/80 rounded-2xl p-3 shadow-lg mb-3 space-y-3">
-        <div>
-          <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
-            <span>🎚️ Pitch</span>
-            <span>{pitch > 0 ? "+" : ""}{pitch} st</span>
-          </div>
-          <input type="range" min="-12" max="12" step="1" value={pitch} onChange={(e) => setPitch(parseInt(e.target.value))} className="w-full" />
-        </div>
-        <div>
-          <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
-            <span>⏱️ Speed</span>
-            <span>{speed.toFixed(2)}x</span>
-          </div>
-          <input type="range" min="0.4" max="2.0" step="0.1" value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))} className="w-full" />
-        </div>
-        <div>
-          <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
-            <span>🌫️ Reverb</span>
-            <span>{reverb === 0 ? "Dry" : reverb === 1 ? "Bathroom" : "Cave"}</span>
-          </div>
-          <div className="flex gap-1">
-            {([0,1,2] as const).map((r) => (
-              <button key={r} onClick={() => setReverb(r)} className={`flex-1 py-1.5 text-xs font-bold rounded-lg border-2 ${reverb===r ? "bg-amber-500 text-white border-amber-700" : "bg-white/60 text-slate-600 border-slate-200"}`}>
-                {r===0 ? "🔈 Dry" : r===1 ? "🚿 Bath" : "🦇 Cave"}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
-            <span>📚 Layers (stacked)</span>
-            <span>{layerCount}×</span>
-          </div>
-          <div className="flex gap-1">
-            {([1,2,3] as const).map((n) => (
-              <button key={n} onClick={() => setLayerCount(n)} className={`flex-1 py-1.5 text-xs font-bold rounded-lg border-2 ${layerCount===n ? "bg-amber-500 text-white border-amber-700" : "bg-white/60 text-slate-600 border-slate-200"}`}>
-                {n}× {n === 1 ? "" : "stacked"}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <button
-        onClick={() => { setPitch(0); setSpeed(1.0); setReverb(0); setLayerCount(1); setLooper(false); }}
-        className="w-full py-2 rounded-xl bg-slate-200 text-slate-700 font-bold text-sm"
-      >
-        ↺ Reset
-      </button>
-    </main>
-  );
-}
-
-// === Social Tab — Instagram-like soundboard ===
-function SocialTab(props: {
-  me: SocialUser | null;
-  setMe: (u: SocialUser | null) => void;
-  viewedUser: SocialUser | null;
-  setViewedUser: (u: SocialUser) => void;
-  socialView: "feed" | "discover" | "profile" | "viewProfile";
-  setSocialView: (v: "feed" | "discover" | "profile" | "viewProfile") => void;
-  editingProfile: boolean;
-  setEditingProfile: (v: boolean) => void;
-  activeKid: Kid | null;
-  recordings: CustomRecording[];
-  adultMode?: boolean;
-}) {
-  const [groups, setGroups] = useState<FeedGroup[]>([]);
-  const [discoverUsers, setDiscoverUsers] = useState<SocialUser[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [serverOnline, setServerOnline] = useState<boolean | null>(null);
-
-  // Load me + feed + discover on mount
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const [me, health, feed, users] = await Promise.all([
-          getMe().catch(() => null),
-          getHealth().catch(() => null),
-          getFeed(),
-          getUsers().catch(() => ({ users: [] })),
-        ]);
-        if (cancelled) return;
-        props.setMe(me);
-        setServerOnline(!!health);
-        setGroups(feed.groups || []);
-        setDiscoverUsers((users.users || []).filter((u) => !me || u.handle !== me.handle));
-      } catch (err) {
-        console.warn("[social] load failed:", err);
-        setServerOnline(false);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const refresh = async () => {
-    try {
-      const [me, feed] = await Promise.all([getMe().catch(() => null), getFeed()]);
-      props.setMe(me);
-      setGroups(feed.groups || []);
-    } catch (err) {
-      console.warn("[social] refresh failed:", err);
-    }
-  };
-
-  // React to new local recordings being posted to the feed (from any tab)
-  useEffect(() => {
-    const onFeedChanged = () => { refresh(); };
-    window.addEventListener("animal-farts:feed-changed", onFeedChanged);
-    return () => window.removeEventListener("animal-farts:feed-changed", onFeedChanged);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (loading) {
-    return (
-      <main className="flex-1 px-3 pb-4 max-w-3xl mx-auto w-full">
-        <div className="text-center text-emerald-900/70 py-12">Loading…</div>
-      </main>
-    );
-  }
-
-  if (props.socialView === "profile" && props.me) {
-    return <MyProfileView me={props.me} setMe={props.setMe} setSocialView={props.setSocialView} editingProfile={props.editingProfile} setEditingProfile={props.setEditingProfile} activeKid={props.activeKid} recordings={props.recordings} refresh={refresh} />;
-  }
-  if (props.socialView === "viewProfile" && props.viewedUser) {
-    return <ViewProfileView viewedUser={props.viewedUser} setSocialView={props.setSocialView} me={props.me} refresh={refresh} />;
-  }
-  if (props.socialView === "discover") {
-    return <DiscoverView users={discoverUsers} setViewedUser={props.setViewedUser} setSocialView={props.setSocialView} me={props.me} refresh={refresh} />;
-  }
-  return <FeedView groups={groups} serverOnline={serverOnline} setSocialView={props.setSocialView} setViewedUser={props.setViewedUser} me={props.me} refresh={refresh} adultMode={props.adultMode} />;
-}
-
-function FeedView(props: {
-  groups: FeedGroup[];
-  serverOnline: boolean | null;
-  setSocialView: (v: "feed" | "discover" | "profile" | "viewProfile") => void;
-  setViewedUser: (u: SocialUser) => void;
-  me: SocialUser | null;
-  refresh: () => void;
-  adultMode?: boolean;
-}) {
-  const [commentingOn, setCommentingOn] = useState<number | null>(null);
-
-  return (
-    <main className="flex-1 pb-4 max-w-3xl mx-auto w-full">
-      {/* Top bar: title + tabs */}
-      <div className="sticky top-0 z-30 bg-gradient-to-b from-emerald-50 via-emerald-50 to-emerald-50/95 backdrop-blur border-b-2 border-emerald-200 px-3 py-2 flex items-center justify-between">
-        <h2 className="text-xl font-bold text-emerald-900">🌍 Soundboard</h2>
-        <div className="flex gap-1">
-          {props.adultMode && (
-            <button
-              onClick={() => props.setSocialView("discover")}
-              className="px-3 py-1.5 rounded-full bg-emerald-500 text-white font-bold text-xs active:scale-95"
-            >
-              🔍 Find Friends
-            </button>
-          )}
-          <button
-            onClick={() => props.setSocialView("profile")}
-            className="px-3 py-1.5 rounded-full bg-white text-emerald-900 font-bold text-xs border-2 border-emerald-300 active:scale-95"
-          >
-            👤 {props.me?.displayName?.split(" ")[0] || "Me"}
-          </button>
-        </div>
-      </div>
-
-      {props.serverOnline === false && (
-        <div className="m-3 bg-amber-50 border-2 border-amber-300 rounded-2xl p-3 text-amber-900 text-sm">
-          📡 Sharing is offline right now. Pull to refresh once the server is back.
-        </div>
-      )}
-
-      <div className="px-3 pt-3 space-y-4">
-        {props.groups.length === 0 ? (
-          <div className="text-center text-emerald-900/60 py-12">
-            <div className="text-6xl mb-2">🎤</div>
-            <p className="font-semibold">No farts yet</p>
-            <p className="text-sm">Record one in <strong>My Farts</strong> to start the feed.</p>
-          </div>
-        ) : (
-          props.groups.map((group) => (
-            <FeedGroupCard
-              key={group.author.handle}
-              group={group}
-              me={props.me}
-              onViewProfile={() => { props.setViewedUser(group.author); props.setSocialView("viewProfile"); }}
-              onComment={(id) => setCommentingOn(id)}
-              onUpdate={props.refresh}
-              adultMode={props.adultMode}
-            />
-          ))
-        )}
-      </div>
-
-      {commentingOn !== null && (
-        <CommentsModal recordingId={commentingOn} onClose={() => { setCommentingOn(null); props.refresh(); }} me={props.me} />
-      )}
-    </main>
-  );
-}
-
-function FeedGroupCard(props: {
-  group: FeedGroup;
-  me: SocialUser | null;
-  onViewProfile: () => void;
-  onComment: (id: number) => void;
-  onUpdate: () => void;
-  adultMode?: boolean;
-}) {
-  const g = props.group;
-  return (
-    <article className="bg-white rounded-3xl shadow-md border-2 border-emerald-200 overflow-hidden">
-      {/* Author header */}
-      <button onClick={props.onViewProfile} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-emerald-50 active:scale-95">
-        <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-2xl">{g.author.avatar}</div>
-        <div className="text-left flex-1">
-          <div className="font-bold text-emerald-900 text-sm">{g.author.displayName}</div>
-          <div className="text-[10px] text-emerald-700/70">@{g.author.handle} · {g.author.recordingCount} farts</div>
-        </div>
-        {props.me && !g.author.isMe && (
-          <FollowButton user={g.author} onUpdate={props.onUpdate} me={props.me} />
-        )}
-      </button>
-      {/* Recordings stack */}
-      <div className="space-y-2 p-2">
-        {g.recordings.map((r) => (
-          <FeedRecordingCard key={r.id} rec={r} me={props.me} onComment={() => props.onComment(r.id)} onUpdate={props.onUpdate} adultMode={props.adultMode} />
-        ))}
-      </div>
-    </article>
-  );
-}
-
-function FeedRecordingCard(props: { rec: FeedRecording; me: SocialUser | null; onComment: () => void; onUpdate: () => void; adultMode?: boolean }) {
-  const r = props.rec;
-  const [voted, setVoted] = useState(r.userVoted);
-  const [count, setCount] = useState(r.upvotes);
-  const [showComment, setShowComment] = useState(false);
-  const [busy, setBusy] = useState(false);
-  // Adult-only emoji reactions (👍 😂 💀). Loaded lazily on mount.
-  const [reactions, setReactions] = useState<{ counts: Record<string, number>; mine: string[] }>({ counts: {}, mine: [] });
-
-  useEffect(() => {
-    if (!props.adultMode) return;
-    let cancelled = false;
-    (async () => {
-      const { getReactions } = await import("./audio/serverApi");
-      if (cancelled) return;
-      const data = await getReactions(r.id);
-      if (!cancelled) setReactions(data);
-    })();
-    return () => { cancelled = true; };
-  }, [r.id, props.adultMode]);
-
-  const onVote = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const { toggleUpvote } = await import("./audio/serverApi");
-      const res = await toggleUpvote(r.id);
-      setVoted(res.userVoted);
-      setCount(res.upvotes);
-    } catch (err) {
-      console.warn("[feed] vote failed:", err);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const onReact = async (emoji: string) => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const { toggleReaction } = await import("./audio/serverApi");
-      const data = await toggleReaction(r.id, emoji);
-      setReactions(data);
-    } catch (err) {
-      console.warn("[feed] reaction failed:", err);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-2xl p-2 border border-emerald-200">
-      <div className="flex items-center gap-2 mb-1">
-        <div className="text-2xl">{r.emoji}</div>
-        <div className="flex-1 min-w-0">
-          <div className="font-bold text-emerald-950 text-sm truncate">{r.name}</div>
-          {r.kidName && <div className="text-[10px] text-emerald-700/70">by {r.kidName}</div>}
-        </div>
-        <button
-          onClick={onVote}
-          disabled={busy}
-          className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold active:scale-95 ${voted ? "bg-emerald-500 text-white" : "bg-white/80 text-emerald-700 border border-emerald-200"}`}
-        >
-          {voted ? "⭐" : "☆"} {count}
-        </button>
-      </div>
-      <audio src={r.audioUrl} controls preload="none" className="w-full h-8" />
-      <div className="flex items-center gap-2 mt-1 flex-wrap">
-        {props.adultMode && (
-          <button
-            onClick={() => { setShowComment(true); props.onComment(); }}
-            className="text-[10px] text-emerald-700 font-bold px-2 py-0.5 rounded-full bg-white/60 hover:bg-emerald-100"
-          >
-            💬 Comment
-          </button>
-        )}
-        <button
-          onClick={async () => {
-            const { share } = await import("./pwa");
-            await share({ title: `💨 ${r.name}`, text: `Check out "${r.name}" by ${r.author?.displayName || "Fart Fan"}`, url: window.location.origin + "/?action=viewProfile&user=" + r.author?.handle });
-          }}
-          className="text-[10px] text-emerald-700 font-bold px-2 py-0.5 rounded-full bg-white/60 hover:bg-emerald-100"
-        >
-          🔗 Share
-        </button>
-        <button
-          onClick={async () => {
-            if (busy) return;
-            setBusy(true);
-            const { saveFeedRecordingToMyFarts } = await import("./audio/saveFromFeed");
-            const saved = await saveFeedRecordingToMyFarts(r);
-            setBusy(false);
-            if (saved) {
-              window.dispatchEvent(new CustomEvent("animal-farts:my-farts-changed"));
-              alert(`💾 Saved "${saved.name}" to My Farts!`);
-            } else {
-              alert("Couldn't save right now — try again when you're online.");
-            }
-          }}
-          disabled={busy}
-          className="text-[10px] text-emerald-700 font-bold px-2 py-0.5 rounded-full bg-white/60 hover:bg-emerald-100 disabled:opacity-50"
-        >
-          💾 Save to my farts
-        </button>
-      </div>
-      {props.adultMode && (
-        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-          {["👍", "😂", "💀"].map((emoji) => {
-            const n = reactions.counts[emoji] || 0;
-            const mine = reactions.mine.includes(emoji);
-            return (
-              <button
-                key={emoji}
-                onClick={() => onReact(emoji)}
-                disabled={busy}
-                aria-pressed={mine}
-                className={`px-2 py-1 rounded-full text-base active:scale-90 transition select-none border ${mine ? "bg-emerald-200 border-emerald-500" : "bg-white/70 border-emerald-200 hover:bg-emerald-50"} disabled:opacity-50`}
-                title={mine ? "Tap to remove" : "Tap to react"}
-              >
-                <span className="mr-1">{emoji}</span>
-                {n > 0 && <span className="text-[10px] font-bold text-emerald-900">{n}</span>}
-              </button>
-            );
-          })}
-        </div>
-      )}
-      {showComment && (
-        <CommentsModal recordingId={r.id} onClose={() => { setShowComment(false); props.onUpdate(); }} me={props.me} />
-      )}
-    </div>
-  );
-}
-
-function FollowButton(props: { user: SocialUser; me: SocialUser; onUpdate: () => void }) {
-  const [following, setFollowing] = useState(props.user.isFollowing);
-  const [busy, setBusy] = useState(false);
-  const onClick = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const res = await toggleFollow(props.user.handle);
-      setFollowing(res.following);
-      props.onUpdate();
-    } catch (err) {
-      console.warn("[social] follow failed:", err);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <button
-      onClick={onClick}
-      disabled={busy}
-      className={`px-3 py-1 rounded-full text-xs font-bold active:scale-95 ${following ? "bg-emerald-100 text-emerald-900 border border-emerald-300" : "bg-emerald-500 text-white"}`}
-    >
-      {following ? "✓ Following" : "+ Follow"}
-    </button>
-  );
-}
-
-function CommentsModal(props: { recordingId: number; onClose: () => void; me: SocialUser | null }) {
-  const [comments, setComments] = useState<SocialComment[]>([]);
-  const [body, setBody] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const { comments } = await getComments(props.recordingId);
-      setComments(comments);
-    } catch (err) {
-      console.warn("[comments] load failed:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [props.recordingId]);
-
-  const submit = async () => {
-    if (!body.trim() || busy) return;
-    setBusy(true);
-    try {
-      await addComment(props.recordingId, body.trim());
-      setBody("");
-      await load();
-    } catch (err: any) {
-      alert(err.message || "Comment failed");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const del = async (id: number) => {
-    if (!confirm("Delete this comment?")) return;
-    try { await deleteComment(id); await load(); } catch (err) { alert("Delete failed"); }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={(e) => { if (e.target === e.currentTarget) props.onClose(); }}>
-      <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md max-h-[80vh] flex flex-col shadow-2xl">
-        <div className="px-4 py-3 border-b border-emerald-200 flex items-center justify-between">
-          <h3 className="font-bold text-emerald-900">💬 Comments</h3>
-          <button onClick={props.onClose} className="text-emerald-700 font-bold px-2">✕</button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          {loading ? <div className="text-center text-emerald-700/60 py-8">Loading…</div> :
-            comments.length === 0 ? <div className="text-center text-emerald-700/60 py-8">No comments yet. Be the first!</div> :
-            comments.map((c) => (
-              <div key={c.id} className="bg-emerald-50 rounded-xl p-2">
-                <div className="flex items-center gap-1 mb-0.5">
-                  <span className="text-base">{c.author.avatar}</span>
-                  <span className="font-bold text-emerald-900 text-sm">{c.author.displayName}</span>
-                  <span className="text-[10px] text-emerald-700/60">@{c.author.handle}</span>
-                  {props.me?.handle === c.author.handle && (
-                    <button onClick={() => del(c.id)} className="ml-auto text-[10px] text-red-500 font-bold">delete</button>
-                  )}
-                </div>
-                <p className="text-sm text-emerald-950">{c.body}</p>
-              </div>
-            ))
-          }
-        </div>
-        {props.me && (
-          <div className="border-t border-emerald-200 p-2 flex gap-2">
-            <span className="text-2xl">{props.me.avatar}</span>
-            <input
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-              maxLength={280}
-              placeholder="Say something nice…"
-              className="flex-1 px-3 py-2 rounded-full border-2 border-emerald-300 focus:border-emerald-500 outline-none text-sm"
-            />
-            <button onClick={submit} disabled={busy || !body.trim()} className="px-3 py-2 rounded-full bg-emerald-500 text-white font-bold text-sm disabled:opacity-50">Post</button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function DiscoverView(props: { users: SocialUser[]; setViewedUser: (u: SocialUser) => void; setSocialView: (v: "feed" | "discover" | "profile" | "viewProfile") => void; me: SocialUser | null; refresh: () => void }) {
-  return (
-    <main className="flex-1 pb-4 max-w-3xl mx-auto w-full">
-      <div className="sticky top-0 z-30 bg-emerald-50 border-b-2 border-emerald-200 px-3 py-2 flex items-center gap-2">
-        <button onClick={() => props.setSocialView("feed")} className="text-emerald-700 font-bold">←</button>
-        <h2 className="text-xl font-bold text-emerald-900 flex-1">🔍 Discover</h2>
-      </div>
-      <div className="p-3 space-y-2">
-        {props.users.length === 0 ? (
-          <div className="text-center text-emerald-900/60 py-12">
-            <div className="text-5xl mb-2">🌱</div>
-            <p className="font-semibold">No friends yet</p>
-            <p className="text-sm">You're the first one here. Record a fart and share it!</p>
-          </div>
-        ) : (
-          props.users.map((u) => (
-            <button
-              key={u.handle}
-              onClick={() => { props.setViewedUser(u); props.setSocialView("viewProfile"); }}
-              className="w-full bg-white rounded-2xl shadow-sm border-2 border-emerald-200 p-3 flex items-center gap-3 active:scale-95 text-left"
-            >
-              <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-3xl">{u.avatar}</div>
-              <div className="flex-1 min-w-0">
-                <div className="font-bold text-emerald-900 truncate">{u.displayName}</div>
-                <div className="text-xs text-emerald-700/70">@{u.handle}</div>
-                <div className="text-[10px] text-emerald-700/50">{u.recordingCount} farts · {u.followerCount} followers</div>
-              </div>
-              {props.me && !u.isMe && <FollowButton user={u} me={props.me} onUpdate={props.refresh} />}
-            </button>
-          ))
-        )}
-      </div>
-    </main>
-  );
-}
-
-function MyProfileView(props: { me: SocialUser; setMe: (u: SocialUser) => void; setSocialView: (v: "feed" | "discover" | "profile" | "viewProfile") => void; editingProfile: boolean; setEditingProfile: (v: boolean) => void; activeKid: Kid | null; recordings: CustomRecording[]; refresh: () => void }) {
-  const [recs, setRecs] = useState<FeedRecording[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const { recordings } = await getUserRecordings(props.me.handle);
-        setRecs(recordings);
-      } catch (err) { console.warn(err); }
-      finally { setLoading(false); }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.me.handle]);
-
-  if (props.editingProfile) {
-    return <EditProfileView me={props.me} setMe={props.setMe} onClose={() => props.setEditingProfile(false)} />;
-  }
-
-  return (
-    <main className="flex-1 pb-4 max-w-3xl mx-auto w-full">
-      <div className="sticky top-0 z-30 bg-emerald-50 border-b-2 border-emerald-200 px-3 py-2 flex items-center gap-2">
-        <button onClick={() => props.setSocialView("feed")} className="text-emerald-700 font-bold">←</button>
-        <h2 className="text-xl font-bold text-emerald-900 flex-1">👤 My Profile</h2>
-        <button onClick={() => props.setEditingProfile(true)} className="text-emerald-700 font-bold text-sm">Edit</button>
-      </div>
-      <div className="p-4 bg-gradient-to-br from-emerald-100 to-emerald-50 border-b-2 border-emerald-200">
-        <div className="flex items-center gap-3">
-          <div className="w-20 h-20 rounded-full bg-white border-4 border-emerald-300 flex items-center justify-center text-5xl shadow-md">{props.me.avatar}</div>
-          <div className="flex-1 min-w-0">
-            <div className="text-xl font-bold text-emerald-900 truncate">{props.me.displayName}</div>
-            <div className="text-sm text-emerald-700/70">@{props.me.handle}</div>
-          </div>
-        </div>
-        {props.me.bio && <p className="text-sm text-emerald-900 mt-2">{props.me.bio}</p>}
-        <div className="flex gap-3 mt-3 text-emerald-900 text-sm">
-          <span><b>{props.me.recordingCount}</b> farts</span>
-          <span><b>{props.me.followerCount}</b> followers</span>
-          <span><b>{props.me.followingCount}</b> following</span>
-        </div>
-      </div>
-      <h3 className="font-bold text-emerald-900 px-3 pt-3 pb-1">My recordings</h3>
-      {loading ? <div className="text-center text-emerald-700/60 py-8">Loading…</div> :
-        recs.length === 0 ? <div className="text-center text-emerald-700/60 py-8">No recordings yet.</div> :
-        <div className="px-3 space-y-2">
-          {recs.map((r) => (
-            <div key={r.id} className="bg-white rounded-2xl border-2 border-emerald-200 p-2">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="text-2xl">{r.emoji}</div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold text-emerald-950 text-sm truncate">{r.name}</div>
-                </div>
-                <div className="text-xs text-emerald-700">⭐ {r.upvotes}</div>
-              </div>
-              <audio src={r.audioUrl} controls preload="none" className="w-full h-8" />
-            </div>
-          ))}
-        </div>
-      }
-    </main>
-  );
-}
-
-function EditProfileView(props: { me: SocialUser; setMe: (u: SocialUser) => void; onClose: () => void }) {
-  const [displayName, setDisplayName] = useState(props.me.displayName);
-  const [handle, setHandle] = useState(props.me.handle);
-  const [avatar, setAvatar] = useState(props.me.avatar);
-  const [bio, setBio] = useState(props.me.bio || "");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-
-  const save = async () => {
-    setBusy(true); setErr("");
-    try {
-      const updated = await updateMe({ displayName, handle, avatar, bio });
-      props.setMe(updated);
-      props.onClose();
-    } catch (e: any) { setErr(e.message || "Save failed"); }
-    finally { setBusy(false); }
-  };
-
-  const AVATARS = ["🐱", "🐶", "🐰", "🐻", "🐼", "🦊", "🐯", "🦁", "🐸", "🐵", "🦄", "🐲", "🐨", "🐷", "🐮", "🐔", "🐧", "🐢", "🐬", "🦖"];
-
-  return (
-    <main className="flex-1 pb-4 max-w-3xl mx-auto w-full">
-      <div className="sticky top-0 z-30 bg-emerald-50 border-b-2 border-emerald-200 px-3 py-2 flex items-center gap-2">
-        <button onClick={props.onClose} className="text-emerald-700 font-bold">Cancel</button>
-        <h2 className="text-xl font-bold text-emerald-900 flex-1 text-center">Edit Profile</h2>
-        <button onClick={save} disabled={busy} className="text-emerald-700 font-bold disabled:opacity-50">Save</button>
-      </div>
-      <div className="p-4 space-y-3">
-        <div>
-          <label className="text-xs font-bold text-emerald-700">Display name</label>
-          <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={30} className="w-full px-3 py-2 rounded-xl border-2 border-emerald-300 focus:border-emerald-500 outline-none" />
-        </div>
-        <div>
-          <label className="text-xs font-bold text-emerald-700">Handle (3-20 chars, lowercase letters/numbers/_)</label>
-          <input value={handle} onChange={(e) => setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20))} className="w-full px-3 py-2 rounded-xl border-2 border-emerald-300 focus:border-emerald-500 outline-none font-mono" />
-        </div>
-        <div>
-          <label className="text-xs font-bold text-emerald-700">Avatar</label>
-          <div className="grid grid-cols-10 gap-1">
-            {AVATARS.map((a) => (
-              <button key={a} onClick={() => setAvatar(a)} className={`text-2xl p-1 rounded-lg ${avatar === a ? "bg-emerald-200 ring-2 ring-emerald-500" : "hover:bg-emerald-100"}`}>{a}</button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <label className="text-xs font-bold text-emerald-700">Bio (200 chars max)</label>
-          <textarea value={bio} onChange={(e) => setBio(e.target.value.slice(0, 200))} maxLength={200} className="w-full px-3 py-2 rounded-xl border-2 border-emerald-300 focus:border-emerald-500 outline-none h-20" />
-        </div>
-        {err && <div className="text-red-600 text-sm font-bold">{err}</div>}
-      </div>
-    </main>
-  );
-}
-
-function ViewProfileView(props: { viewedUser: SocialUser; setSocialView: (v: "feed" | "discover" | "profile" | "viewProfile") => void; me: SocialUser | null; refresh: () => void }) {
-  const u = props.viewedUser;
-  const [recs, setRecs] = useState<FeedRecording[]>([]);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const { recordings } = await getUserRecordings(u.handle);
-        setRecs(recordings);
-      } catch (err) { console.warn(err); }
-      finally { setLoading(false); }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [u.handle]);
-  return (
-    <main className="flex-1 pb-4 max-w-3xl mx-auto w-full">
-      <div className="sticky top-0 z-30 bg-emerald-50 border-b-2 border-emerald-200 px-3 py-2 flex items-center gap-2">
-        <button onClick={() => props.setSocialView("feed")} className="text-emerald-700 font-bold">←</button>
-        <h2 className="text-xl font-bold text-emerald-900 flex-1">@{u.handle}</h2>
-        {props.me && !u.isMe && <FollowButton user={u} me={props.me} onUpdate={props.refresh} />}
-      </div>
-      <div className="p-4 bg-gradient-to-br from-emerald-100 to-emerald-50 border-b-2 border-emerald-200">
-        <div className="flex items-center gap-3">
-          <div className="w-20 h-20 rounded-full bg-white border-4 border-emerald-300 flex items-center justify-center text-5xl shadow-md">{u.avatar}</div>
-          <div className="flex-1 min-w-0">
-            <div className="text-xl font-bold text-emerald-900 truncate">{u.displayName}</div>
-            <div className="text-sm text-emerald-700/70">@{u.handle}</div>
-          </div>
-        </div>
-        {u.bio && <p className="text-sm text-emerald-900 mt-2">{u.bio}</p>}
-        <div className="flex gap-3 mt-3 text-emerald-900 text-sm">
-          <span><b>{u.recordingCount}</b> farts</span>
-          <span><b>{u.followerCount}</b> followers</span>
-          <span><b>{u.followingCount}</b> following</span>
-        </div>
-      </div>
-      <h3 className="font-bold text-emerald-900 px-3 pt-3 pb-1">Recordings</h3>
-      {loading ? (
-        <div className="text-center text-emerald-700/60 py-8">Loading…</div>
-      ) : recs.length === 0 ? (
-        <div className="text-center text-emerald-700/60 py-8">No recordings yet.</div>
-      ) : (
-        <div className="px-3 space-y-2">
-          {recs.map((r) => (
-            <div key={r.id} className="bg-white rounded-2xl border-2 border-emerald-200 p-2">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="text-2xl">{r.emoji}</div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold text-emerald-950 text-sm truncate">{r.name}</div>
-                </div>
-                <div className="text-xs text-emerald-700">⭐ {r.upvotes}</div>
-              </div>
-              <audio src={r.audioUrl} controls preload="none" className="w-full h-8" />
-            </div>
-          ))}
-        </div>
-      )}
-    </main>
-  );
-}
