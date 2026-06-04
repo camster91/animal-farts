@@ -9,6 +9,7 @@ import {
   watchOnlineStatus,
   type LaunchAction,
 } from "./pwa";
+import { useTap } from "./hooks/useTap";
 import {
   PRESETS,
   playFart,
@@ -88,6 +89,56 @@ const HYPE_LABELS = [
   "ROOM-CLEARER", "EVACUATE THE PREMISES",
 ];
 const EMOJI_RAIN = ["💨", "💥", "🌪️", "💦", "🌀", "✨"];
+
+// AnimalCard — single tap-to-fart cell, with scroll-safe tap detection.
+// On iOS Safari, a finger that lands on a button can also be the start of
+// a scroll. `useTap` only fires the callback when the pointer stays within
+// a small movement budget AND a short time window.
+type AnimalCardProps = {
+  preset: FartPreset;
+  active: boolean;
+  onPlay: (p: FartPreset, e?: React.MouseEvent | React.TouchEvent | React.PointerEvent) => void;
+};
+
+function AnimalCard({ preset, active, onPlay }: AnimalCardProps) {
+  const tap = useTap(() => onPlay(preset));
+  return (
+    <button
+      {...tap}
+      style={{ touchAction: "manipulation" }}
+      className={`relative aspect-square rounded-3xl bg-gradient-to-br ${preset.color} shadow-xl border-4 border-white/70 active:scale-95 transition-transform select-none ${active ? "scale-95" : ""}`}
+    >
+      <div className="absolute inset-0 flex flex-col items-center justify-center p-2 pointer-events-none">
+        <div className={`text-5xl sm:text-6xl ${active ? "animate-wiggle" : ""}`}>{preset.emoji}</div>
+        <div className="mt-1 text-sm sm:text-base font-bold text-amber-950 drop-shadow truncate max-w-full">{preset.name}</div>
+        <div className="text-[9px] sm:text-[10px] font-semibold text-amber-900/80 uppercase tracking-wider truncate max-w-full">{preset.caption}</div>
+      </div>
+    </button>
+  );
+}
+
+function RecordingTile({ rec, onPlay, onDelete }: { rec: CustomRecording; onPlay: (rec: CustomRecording) => void; onDelete: (id: string) => void }) {
+  const tap = useTap(() => onPlay(rec));
+  return (
+    <div className="relative aspect-square rounded-3xl bg-gradient-to-br from-fuchsia-200 to-fuchsia-400 shadow-xl border-4 border-white">
+      <button
+        {...tap}
+        style={{ touchAction: "manipulation" }}
+        className="absolute inset-0 w-full h-full flex flex-col items-center justify-center p-2 active:scale-95 transition-transform select-none"
+      >
+        <div className="text-5xl sm:text-6xl">{rec.emoji}</div>
+        <div className="mt-1 text-sm sm:text-base font-bold text-purple-950 truncate max-w-full">{rec.name}</div>
+        <div className="text-[10px] font-semibold text-purple-900/80">{rec.id.toUpperCase()}</div>
+      </button>
+      <button
+        onClick={() => onDelete(rec.id)}
+        className="absolute top-1 right-1 w-7 h-7 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center shadow-md active:scale-90"
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("play");
@@ -996,41 +1047,15 @@ function PlayTab(props: {
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-3xl mx-auto">
                 {props.recordings.map((rec) => (
-                  <div key={rec.id} className="relative aspect-square rounded-3xl bg-gradient-to-br from-fuchsia-200 to-fuchsia-400 shadow-xl border-4 border-white">
-                    <button
-                      onClick={() => props.onPlayCustom(rec)}
-                      className="absolute inset-0 w-full h-full flex flex-col items-center justify-center p-2 active:scale-95 transition-transform"
-                    >
-                      <div className="text-5xl sm:text-6xl">{rec.emoji}</div>
-                      <div className="mt-1 text-sm sm:text-base font-bold text-purple-950 truncate max-w-full">{rec.name}</div>
-                      <div className="text-[10px] font-semibold text-purple-900/80">{rec.id.toUpperCase()}</div>
-                    </button>
-                    <button
-                      onClick={() => props.onDeleteRecording(rec.id)}
-                      className="absolute top-1 right-1 w-7 h-7 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center shadow-md active:scale-90"
-                    >
-                      ✕
-                    </button>
-                  </div>
+                  <RecordingTile key={rec.id} rec={rec} onPlay={props.onPlayCustom} onDelete={props.onDeleteRecording} />
                 ))}
               </div>
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-3 max-w-3xl mx-auto">
+          <div className="grid grid-cols-3 gap-4 max-w-3xl mx-auto">
             {props.presets.map((p) => (
-              <button
-                key={p.id}
-                onPointerDown={(e) => props.trigger(p, e)}
-                onClick={(e) => { if (props.active !== p.id) props.trigger(p, e); }}
-                className={`relative aspect-square rounded-3xl bg-gradient-to-br ${p.color} shadow-xl border-4 border-white/70 active:scale-95 transition-transform ${props.active === p.id ? "scale-95" : ""}`}
-              >
-                <div className={`absolute inset-0 flex flex-col items-center justify-center p-2`}>
-                  <div className={`text-5xl sm:text-6xl ${props.active === p.id ? "animate-wiggle" : ""}`}>{p.emoji}</div>
-                  <div className="mt-1 text-sm sm:text-base font-bold text-amber-950 drop-shadow truncate max-w-full">{p.name}</div>
-                  <div className="text-[9px] sm:text-[10px] font-semibold text-amber-900/80 uppercase tracking-wider truncate max-w-full">{p.caption}</div>
-                </div>
-              </button>
+              <AnimalCard key={p.id} preset={p} active={props.active === p.id} onPlay={props.trigger} />
             ))}
           </div>
         )}
