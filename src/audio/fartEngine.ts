@@ -262,6 +262,31 @@ export const PRESETS: FartPreset[] = [
     loopable: false, baseFreq: 200, detune: 10, attack: 0.015, hold: 0.4, release: 0.3,
     cutoff: 1800, noise: 0.3, pitchSweep: -1, wobble: 8, wobbleRate: 12, squelch: 0.2, thump: false,
   },
+  // v25: brought back the long originals (v11 era) as new "long animal"
+  // entries. These are the un-normalized 4-12s versions that kids
+  // remembered from the early rounds. Each has a distinct emoji so kids
+  // can tell them apart from the regular elephant/lion/snake.
+  {
+    id: "elephant-long", name: "Mammoth", emoji: "🦣", color: "from-stone-500 to-stone-700",
+    src: "/sounds/extra/elephant_long.mp3",
+    pitchShift: -5, rate: 0.75, caption: "LONG RUMBLE",
+    loopable: false, baseFreq: 40, detune: 8, attack: 0.05, hold: 8.0, release: 3.0,
+    cutoff: 300, noise: 0.05, pitchSweep: -8, wobble: 3, wobbleRate: 4, squelch: 0.05, thump: true,
+  },
+  {
+    id: "lion-long", name: "Mega-Lion", emoji: "🦁", color: "from-amber-400 to-red-600",
+    src: "/sounds/extra/lion_long.mp3",
+    pitchShift: -2, rate: 0.85, caption: "EPIC ROAR",
+    loopable: false, baseFreq: 50, detune: 10, attack: 0.05, hold: 5.0, release: 2.0,
+    cutoff: 450, noise: 0.1, pitchSweep: -6, wobble: 4, wobbleRate: 6, squelch: 0.05, thump: true,
+  },
+  {
+    id: "snake-long", name: "Python", emoji: "🐍", color: "from-emerald-400 to-emerald-600",
+    src: "/sounds/extra/snake_long.mp3",
+    pitchShift: 0, rate: 1.0, caption: "SLOW HISS",
+    loopable: false, baseFreq: 240, detune: 4, attack: 0.02, hold: 3.0, release: 1.0,
+    cutoff: 2000, noise: 0.6, pitchSweep: -2, wobble: 1, wobbleRate: 8, squelch: 0, thump: false,
+  },
 ];
 
 // Pool of audio elements per preset
