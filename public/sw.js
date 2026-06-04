@@ -3,7 +3,7 @@
 // the app works fully offline on first load. Asset paths are injected at
 // build time by scripts/inject-sw-assets.mjs.
 
-const CACHE = "animal-farts-v25i";
+const CACHE = "animal-farts-v25j";
 
 const SHELL_ASSETS = [
   "/",
@@ -14,70 +14,35 @@ const SHELL_ASSETS = [
 ];
 
 const SOUND_ASSETS = [
-  "/sounds/cow.mp3",
-  "/sounds/dog.mp3",
-  "/sounds/cat.mp3",
-  "/sounds/bird.mp3",
-  "/sounds/horse.mp3",
-  "/sounds/pig.mp3",
-  "/sounds/duck.mp3",
-  "/sounds/elephant.mp3",
-  "/sounds/monkey.mp3",
-  "/sounds/snake.mp3",
-  "/sounds/lion.mp3",
-  "/sounds/frog.mp3",
+  // v25j: original 12 — v1 sounds recovered from git, no pitch shift
+  "/sounds/v1/cow.mp3",
+  "/sounds/v1/dog.mp3",
+  "/sounds/v1/cat.mp3",
+  "/sounds/v1/bird.mp3",
+  "/sounds/v1/horse.mp3",
+  "/sounds/v1/pig.mp3",
+  "/sounds/v1/duck.mp3",
+  "/sounds/v1/elephant.mp3",
+  "/sounds/v1/monkey.mp3",
+  "/sounds/v1/snake.mp3",
+  "/sounds/v1/lion.mp3",
+  "/sounds/v1/frog.mp3",
+  // v25j: bull/rabbit/bear/rooster/turtle/whale (one source each)
   "/sounds/bull.mp3",
   "/sounds/rabbit.mp3",
   "/sounds/bear.mp3",
   "/sounds/rooster.mp3",
   "/sounds/turtle.mp3",
   "/sounds/whale.mp3",
-  // v11: 2nd variants + 6 new animals
-  "/sounds/extra/cow2.mp3",
-  "/sounds/extra/dog_v2.mp3",
-  "/sounds/extra/cat2.mp3",
-  "/sounds/extra/bird2.mp3",
-  "/sounds/extra/horse2.mp3",
-  "/sounds/extra/pig2.mp3",
-  "/sounds/extra/duck2.mp3",
-  "/sounds/extra/elephant2.mp3",
-  "/sounds/extra/monkey_v2.mp3",
-  "/sounds/extra/snake2.mp3",
-  "/sounds/extra/lion2.mp3",
-  "/sounds/extra/frog2.mp3",
-  "/sounds/extra/bull2.mp3",
-  "/sounds/extra/rabbit_v2.mp3",
-  "/sounds/extra/bear2.mp3",
-  "/sounds/extra/rooster2.mp3",
-  "/sounds/extra/turtle2.mp3",
-  "/sounds/extra/whale2.mp3",
-  "/sounds/extra/elephant_v3.mp3",
-  "/sounds/extra/lion_v3.mp3",
-  // v13: 15 v3 variants for existing animals
-  "/sounds/extra/cow_v3.mp3",
-  "/sounds/extra/dog_v3.mp3",
-  "/sounds/extra/cat_v3.mp3",
-  "/sounds/extra/bird_v3.mp3",
-  "/sounds/extra/horse_v2.mp3",
-  "/sounds/extra/pig_v3.mp3",
-  "/sounds/extra/duck_v3.mp3",
-  "/sounds/extra/monkey_v3.mp3",
-  "/sounds/extra/snake_v3.mp3",
-  "/sounds/extra/frog_v3.mp3",
-  "/sounds/extra/bull_v3.mp3",
-  "/sounds/extra/rabbit_v3.mp3",
-  "/sounds/extra/bear_v3.mp3",
-  "/sounds/extra/rooster_v3.mp3",
-  "/sounds/extra/turtle_v3.mp3",
-  "/sounds/extra/whale_v3.mp3",
-  // v13: 6 v2 variants for v11 animals
-  "/sounds/extra/goat_v2.mp3",
-  "/sounds/extra/sheep_v2.mp3",
-  "/sounds/extra/bee_v2.mp3",
-  "/sounds/extra/turkey_v2.mp3",
-  "/sounds/extra/owl_v2.mp3",
-  "/sounds/extra/penguin_v2.mp3",
-  // v13: 10 new animals
+  // v25j: dropped the 50+ v2/v3 altSrcs — we only ship one source per
+  // animal now. Saving ~5MB of precache and a much faster first install.
+  // v13: 10 new animals (single source each, no alts)
+  "/sounds/extra/goat.mp3",
+  "/sounds/extra/sheep.mp3",
+  "/sounds/extra/bee.mp3",
+  "/sounds/extra/turkey.mp3",
+  "/sounds/extra/owl.mp3",
+  "/sounds/extra/penguin.mp3",
   "/sounds/extra/seal.mp3",
   "/sounds/extra/hippo.mp3",
   "/sounds/extra/rhino.mp3",
@@ -88,6 +53,10 @@ const SOUND_ASSETS = [
   "/sounds/extra/sloth.mp3",
   "/sounds/extra/skunk.mp3",
   "/sounds/extra/raccoon.mp3",
+  // Long sounds (v11 era, 4-12s versions)
+  "/sounds/extra/elephant_long.mp3",
+  "/sounds/extra/lion_long.mp3",
+  "/sounds/extra/snake_long.mp3",
 ];
 
 // __PRECACHE_ASSETS__

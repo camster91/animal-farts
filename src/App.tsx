@@ -9,9 +9,7 @@ import {
   loadRecordings,
   saveRecording,
   deleteRecording,
-  setPitchSemitones,
-  setSpeedFactor,
-  setReverbAmount as setReverbAmountEngine,
+  setBathroomOn as setBathroomOnEngine,
   stopAllSounds,
   playBlobWithFx,
   type FartPreset,
@@ -100,71 +98,32 @@ function RecordingTile({ rec, onPlay, onDelete, onShare }: {
   );
 }
 
-// === Effects sheet — the only place voice controls live. ===
-function EffectsSheet({ open, onClose, audioMode, setAudioMode, speed, setSpeed, pitchShift, setPitchShift, reverbAmount, setReverbAmount }: {
+// === Effects sheet — v25j: only Bathroom reverb. v25j removed
+// Voice mode (Normal/Chipmunk/Slow-Mo), the Speed slider, and the
+// Pitch slider. Pitch-shifted samples didn't sound like farts to kids.
+function EffectsSheet({ open, onClose, bathroomOn, setBathroomOn }: {
   open: boolean;
   onClose: () => void;
-  audioMode: "normal" | "chipmunk" | "slowmo";
-  setAudioMode: (m: "normal" | "chipmunk" | "slowmo") => void;
-  speed: number; setSpeed: (n: number) => void;
-  pitchShift: number; setPitchShift: (n: number) => void;
-  reverbAmount: number; setReverbAmount: (n: number) => void;
+  bathroomOn: boolean;
+  setBathroomOn: (on: boolean) => void;
 }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-3xl p-5 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xl font-bold text-slate-800">🎚️ Make it weird</h2>
+          <h2 className="text-xl font-bold text-slate-800">🚿 Make it echo</h2>
           <button onClick={onClose} aria-label="Close" className="w-9 h-9 rounded-full bg-gray-100 text-gray-600 text-lg font-bold active:scale-95">✕</button>
         </div>
-        <p className="text-xs font-bold text-slate-500 mb-1.5 uppercase">Voice</p>
-        <div className="flex gap-1.5 mb-4">
-          {([
-            { id: "normal" as const, label: "Normal", emoji: "🔊" },
-            { id: "chipmunk" as const, label: "Chipmunk", emoji: "🐿️" },
-            { id: "slowmo" as const, label: "Slow-Mo", emoji: "🐢" },
-          ]).map((m) => (
-            <button
-              key={m.id}
-              onClick={() => setAudioMode(m.id)}
-              className={`flex-1 font-bold text-sm py-2.5 rounded-xl border-2 active:scale-95 ${audioMode === m.id ? "bg-amber-100 text-amber-900 border-amber-400" : "bg-white text-slate-600 border-slate-200"}`}
-            >
-              {m.emoji} {m.label}
-            </button>
-          ))}
-        </div>
-        <p className="text-xs font-bold text-slate-500 mb-1.5 uppercase">Tweak</p>
-        <div className="grid grid-cols-2 gap-2 mb-4">
-          <label className="flex flex-col gap-1 bg-slate-50 rounded-xl p-2.5">
-            <div className="flex justify-between items-center text-xs font-bold text-slate-600">
-              <span>🎵 Speed</span><span>{speed.toFixed(1)}x</span>
-            </div>
-            <input type="range" min="0.5" max="1.5" step="0.1" value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))} />
-          </label>
-          <label className="flex flex-col gap-1 bg-slate-50 rounded-xl p-2.5">
-            <div className="flex justify-between items-center text-xs font-bold text-slate-600">
-              <span>🎚️ Pitch</span><span>{pitchShift > 0 ? "+" : ""}{pitchShift}</span>
-            </div>
-            <input type="range" min="-12" max="12" step="1" value={pitchShift} onChange={(e) => setPitchShift(parseInt(e.target.value))} />
-          </label>
-        </div>
-        <p className="text-xs font-bold text-slate-500 mb-1.5 uppercase">Room</p>
-        <div className="flex gap-1.5">
-          {([
-            { id: 0, label: "Dry", emoji: "🔈" },
-            { id: 1, label: "Bathroom", emoji: "🚿" },
-            { id: 2, label: "Cave", emoji: "🦇" },
-          ] as const).map((r) => (
-            <button
-              key={r.id}
-              onClick={() => setReverbAmount(r.id)}
-              className={`flex-1 font-bold text-sm py-2.5 rounded-xl border-2 active:scale-95 ${reverbAmount === r.id ? (r.id === 0 ? "bg-white text-slate-700 border-slate-400" : r.id === 1 ? "bg-cyan-100 text-cyan-900 border-cyan-400" : "bg-indigo-100 text-indigo-900 border-indigo-400") : "bg-white text-slate-400 border-slate-200"}`}
-            >
-              {r.emoji} {r.label}
-            </button>
-          ))}
-        </div>
+        <button
+          onClick={() => setBathroomOn(!bathroomOn)}
+          className={`w-full font-bold text-base py-4 rounded-2xl border-2 active:scale-95 transition-colors ${bathroomOn ? "bg-cyan-100 text-cyan-900 border-cyan-400" : "bg-white text-slate-600 border-slate-200"}`}
+        >
+          {bathroomOn ? "🚿 Bathroom ON" : "🔈 Bathroom OFF"}
+        </button>
+        <p className="text-xs text-slate-500 mt-2 text-center">
+          {bathroomOn ? "Every sound echoes like it's in a bathroom." : "Plain dry sound. Tap to add a bathroom echo."}
+        </p>
       </div>
     </div>
   );
@@ -288,10 +247,9 @@ export default function App() {
   // re-render the grid. Emoji rain is the visible side-effect.
   const [, setHypeLevel] = useState(0);
   const hypeRef = useRef(0);
-  const [reverbAmount, setReverbAmount] = useState(0);
-  const [audioMode, setAudioMode] = useState<"normal" | "chipmunk" | "slowmo">("normal");
-  const [pitchShift, setPitchShift] = useState(0);
-  const [speed, setSpeed] = useState(1.0);
+  // v25j: only Bathroom reverb remains as a knob. pitch/speed/audioMode
+  // were removed — pitch-shifted samples didn't sound like farts.
+  const [bathroomOn, setBathroomOn] = useState(false);
 
   const [recording, setRecording] = useState(false);
   const [recordDuration, setRecordDuration] = useState(0);
@@ -378,9 +336,7 @@ export default function App() {
   }, [parental]);
 
   // Audio engine state syncs
-  useEffect(() => { setPitchSemitones(pitchShift); }, [pitchShift]);
-  useEffect(() => { setSpeedFactor(speed); }, [speed]);
-  useEffect(() => { setReverbAmountEngine(reverbAmount); }, [reverbAmount]);
+  useEffect(() => { setBathroomOnEngine(bathroomOn); }, [bathroomOn]);
 
   // (v25: poof particles removed. Hype meter + emoji rain cover the
   // visual feedback need; per-tap poofs were visual noise that hid the grid.)
@@ -507,14 +463,14 @@ export default function App() {
     try {
       const resp = await fetch(rec.url);
       const blob = await resp.blob();
-      await playBlobWithFx(blob, reverbAmount);
+      await playBlobWithFx(blob, bathroomOn);
     } catch {
       const audio = new Audio(rec.url);
       audio.volume = 0.9;
       audio.play().catch(() => {});
     }
     setHypeLevel((h) => Math.min(5, h + 1));
-  }, [reverbAmount]);
+  }, []);
 
   const onShareRecording = useCallback(async (rec: CustomRecording) => {
     try {
@@ -671,11 +627,11 @@ export default function App() {
           </button>
           <button
             onClick={() => setShowEffectsSheet(true)}
-            className="w-12 h-12 rounded-2xl bg-white border-2 border-slate-200 text-2xl active:scale-95 flex items-center justify-center shadow"
-            title="Effects"
-            aria-label="Effects"
+            className={`w-12 h-12 rounded-2xl text-2xl active:scale-95 flex items-center justify-center shadow ${bathroomOn ? "bg-cyan-100 border-2 border-cyan-400" : "bg-white border-2 border-slate-200"}`}
+            title="Bathroom"
+            aria-label="Bathroom"
           >
-            🎚️
+            🚿
           </button>
         </div>
       </footer>
@@ -730,18 +686,12 @@ export default function App() {
         />
       )}
 
-      {/* Effects sheet */}
+      {/* Effects sheet — v25j: only Bathroom reverb knob. */}
       <EffectsSheet
         open={showEffectsSheet}
         onClose={() => setShowEffectsSheet(false)}
-        audioMode={audioMode}
-        setAudioMode={setAudioMode}
-        speed={speed}
-        setSpeed={setSpeed}
-        pitchShift={pitchShift}
-        setPitchShift={setPitchShift}
-        reverbAmount={reverbAmount}
-        setReverbAmount={setReverbAmount}
+        bathroomOn={bathroomOn}
+        setBathroomOn={setBathroomOn}
       />
 
       {/* Parents gate */}
