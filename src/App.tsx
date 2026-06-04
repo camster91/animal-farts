@@ -327,6 +327,28 @@ export default function App() {
     setRecordings(loadRecordings());
   }, []);
 
+  // Prime audio on first user gesture (v25f). iOS Safari requires a user
+  // gesture to unlock AudioContext, and we want the sample pool to start
+  // preloading BEFORE the kid's first tap so the first tap actually plays
+  // sound instead of falling through to the synth fallback. Any pointerdown
+  // counts — not just an animal tap.
+  useEffect(() => {
+    let primed = false;
+    const prime = () => {
+      if (primed) return;
+      primed = true;
+      void primeAudio();
+      document.removeEventListener("pointerdown", prime);
+      document.removeEventListener("touchstart", prime);
+    };
+    document.addEventListener("pointerdown", prime, { passive: true, once: true });
+    document.addEventListener("touchstart", prime, { passive: true, once: true });
+    return () => {
+      document.removeEventListener("pointerdown", prime);
+      document.removeEventListener("touchstart", prime);
+    };
+  }, []);
+
   // Re-load recordings on the cross-tab event
   useEffect(() => {
     const onMyFartsChanged = () => setRecordings(loadRecordings());

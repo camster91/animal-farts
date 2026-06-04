@@ -331,11 +331,36 @@ function isSampleHealthy(preset: FartPreset): boolean {
 let lastIndex = 0;
 function pickNext(pool: HTMLAudioElement[]): HTMLAudioElement {
   if (pool.length === 0) throw new Error("empty audio pool");
-  // Round-robin through the pool so different variants (when altSrcs is set)
-  // get played in sequence rather than always picking the same one.
-  const audio = pool[lastIndex % pool.length];
-  lastIndex++;
-  return audio;
+  // Prefer an audio element that has buffered enough to play.
+  // iOS Safari silently rejects play() on readyState < 2 (HAVE_CURRENT_DATA)
+  // on a freshly-created audio, which is what made the first tap silent.
+  // Walk the pool starting from lastIndex, return the first element
+  // with readyState >= 2. If none are ready, return the first one
+  // (the caller will await canplay before playing).
+  for (let i = 0; i < pool.length; i++) {
+    const a = pool[(lastIndex + i) % pool.length];
+    if (a.readyState >= 2) {
+      lastIndex = (lastIndex + i + 1) % pool.length;
+      return a;
+    }
+  }
+  // Nothing ready — return the next one in the round-robin order.
+  const fallback = pool[lastIndex % pool.length];
+  lastIndex = (lastIndex + 1) % pool.length;
+  return fallback;
+}
+
+// Wait for an audio element to have enough data to play. Resolves
+// immediately if it's already ready.
+function waitReady(a: HTMLAudioElement): Promise<void> {
+  if (a.readyState >= 2) return Promise.resolve();
+  return new Promise((resolve) => {
+    const onReady = () => { a.removeEventListener("canplay", onReady); a.removeEventListener("canplaythrough", onReady); a.removeEventListener("error", onErr); resolve(); };
+    const onErr = () => { a.removeEventListener("canplay", onReady); a.removeEventListener("canplaythrough", onReady); a.removeEventListener("error", onErr); resolve(); /* resolve anyway; play() will reject and the caller will fall back to synth */ };
+    a.addEventListener("canplay", onReady, { once: true });
+    a.addEventListener("canplaythrough", onReady, { once: true });
+    a.addEventListener("error", onErr, { once: true });
+  });
 }
 
 async function unlockAudio() {
@@ -463,7 +488,7 @@ export async function playBlobWithFx(blob: Blob, reverbAmount: number): Promise<
   playAudioBufferWithFx(audioBuffer, reverbAmount);
 }
 
-export function playFart(preset: FartPreset, options: { loop?: boolean } = {}) {
+export async function playFart(preset: FartPreset, options: { loop?: boolean } = {}) {
   if (!preset.src || !isSampleHealthy(preset)) {
     try { playFartSynth(preset); } catch {}
     return;
@@ -483,6 +508,13 @@ export function playFart(preset: FartPreset, options: { loop?: boolean } = {}) {
     void playSampleWithReverb(audio.src, reverbAmount);
     return;
   }
+
+  // Wait for the audio to have enough data buffered before calling play().
+  // iOS Safari silently rejects play() on a freshly-created audio (readyState < 2),
+  // and the rejection falls through to the synth fallback — which is why the
+  // kid heard nothing on the first tap. Capping at 2s so a missing file
+  // doesn't hang the UI.
+  await waitReady(audio);
 
   const p = audio.play();
   if (p && typeof p.catch === "function") {
