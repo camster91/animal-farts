@@ -20,18 +20,29 @@ import {
   saveRecording,
   deleteRecording,
   setReverbMode,
+  setReverbAmount,
+  setPitchSemitones,
+  setSpeedFactor,
   stopAllSounds,
   playBlobWithFx,
   type FartPreset,
   type CustomRecording,
 } from "./audio/fartEngine";
 import {
-  listRecordings as fetchSharedRecordings,
-  uploadCustomRecording,
-  toggleUpvote,
-  deleteSharedRecording,
   getHealth,
-  type SharedRecording,
+  getMe,
+  updateMe,
+  getUsers,
+  toggleFollow,
+  getUserRecordings,
+  getFeed,
+  getComments,
+  addComment,
+  deleteComment,
+  type SocialUser,
+  type SocialComment,
+  type FeedGroup,
+  type FeedRecording,
 } from "./audio/serverApi";
 import {
   loadProfiles,
@@ -92,6 +103,12 @@ export default function App() {
   const [showShareToast, setShowShareToast] = useState<"shared" | "copied" | "unsupported" | null>(null);
   const [launchAction, setLaunchAction] = useState<LaunchAction>(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
+
+  // Social state (Instagram-like)
+  const [me, setMe] = useState<SocialUser | null>(null);
+  const [socialView, setSocialView] = useState<"feed" | "discover" | "profile" | "viewProfile">("feed");
+  const [viewedUser, setViewedUser] = useState<SocialUser | null>(null);
+  const [editingProfile, setEditingProfile] = useState(false);
 
   // PWA setup: install prompt, online status, launch action, SW updates
   useEffect(() => {
@@ -165,6 +182,34 @@ export default function App() {
   const [active, setActive] = useState<string | null>(null);
   const [recordings, setRecordings] = useState<CustomRecording[]>([]);
   const [reverbMode, setReverbModeState] = useState(false);
+  const [reverbAmount, setReverbAmountState] = useState(0); // 0=none, 1=bathroom, 2=cave
+  const [audioMode, setAudioMode] = useState<"normal" | "chipmunk" | "slowmo">("normal");
+  const [pitchShift, setPitchShift] = useState(0); // semitones
+  const [speed, setSpeed] = useState(1.0); // playback rate
+
+  // Sync the engine's mode state with the UI
+  useEffect(() => {
+    setReverbAmount(reverbAmount);
+    // chipmunk = high pitch + fast, slowmo = low pitch + slow
+    if (audioMode === "chipmunk") {
+      setSpeedFactor(1.6);
+      setPitchSemitones(7);
+    } else if (audioMode === "slowmo") {
+      setSpeedFactor(0.5);
+      setPitchSemitones(-7);
+    } else {
+      setSpeedFactor(speed);
+      setPitchSemitones(pitchShift);
+    }
+  }, [reverbAmount, audioMode, pitchShift, speed]);
+
+  // When audio mode changes, force speed/pitch sliders back to neutral
+  useEffect(() => {
+    if (audioMode === "chipmunk" || audioMode === "slowmo") {
+      setPitchShift(0);
+      setSpeed(1.0);
+    }
+  }, [audioMode]);
   const [showHypeMeter, setShowHypeMeter] = useState(false); // off by default — less noise for kids
   const [recording, setRecording] = useState(false);
   const [recordDuration, setRecordDuration] = useState(0);
@@ -445,8 +490,8 @@ export default function App() {
     try {
       const resp = await fetch(rec.url);
       const blob = await resp.blob();
-      const withReverb = !!(window as any).__reverbEnabled;
-      await playBlobWithFx(blob, withReverb);
+      const reverbAmount = (window as any).__reverbAmount ?? ((window as any).__reverbEnabled ? 1 : 0);
+      await playBlobWithFx(blob, reverbAmount);
     } catch (err) {
       const audio = new Audio(rec.url);
       audio.volume = 0.9;
@@ -691,7 +736,15 @@ export default function App() {
         />
       )}
 
-      {tab === "explore" && <ExploreTab activeKid={activeKid} recordings={recordings} />}
+      {tab === "explore" && (
+        <SocialTab
+          me={me} setMe={setMe}
+          activeKid={activeKid} recordings={recordings}
+          socialView={socialView} setSocialView={setSocialView}
+          viewedUser={viewedUser} setViewedUser={setViewedUser}
+          editingProfile={editingProfile} setEditingProfile={setEditingProfile}
+        />
+      )}
 
       {tab === "parental" && (
         <ParentalTab
@@ -740,6 +793,53 @@ export default function App() {
           >
             🔗 Share Animal Farts
           </button>
+          {/* Audio modes row */}
+          <div className="mt-2 w-full max-w-3xl mx-auto flex gap-1.5">
+            {([
+              { id: "normal", label: "Normal", emoji: "🔊", bg: "bg-white/70 text-slate-700 border-slate-300" },
+              { id: "chipmunk", label: "Chipmunk", emoji: "🐿️", bg: "bg-yellow-100 text-yellow-900 border-yellow-400" },
+              { id: "slowmo", label: "Slow-Mo", emoji: "🐢", bg: "bg-blue-100 text-blue-900 border-blue-400" },
+            ] as const).map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setAudioMode(m.id)}
+                className={`flex-1 font-bold text-xs py-1.5 rounded-xl border-2 active:scale-95 ${audioMode === m.id ? m.bg + " ring-2 ring-amber-400" : "bg-white/50 text-slate-500 border-slate-200"}`}
+              >
+                {m.emoji} {m.label}
+              </button>
+            ))}
+          </div>
+          {/* Reverb + pitch/speed sliders (only show when in normal mode) */}
+          {audioMode === "normal" && (
+            <div className="mt-2 w-full max-w-3xl mx-auto grid grid-cols-2 gap-2 text-xs">
+              <label className="flex items-center gap-2 bg-white/60 rounded-xl px-2 py-1.5">
+                <span>🎵</span>
+                <input type="range" min="0.5" max="1.5" step="0.1" value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))} className="flex-1" />
+                <span className="font-bold w-8 text-right">{speed.toFixed(1)}x</span>
+              </label>
+              <label className="flex items-center gap-2 bg-white/60 rounded-xl px-2 py-1.5">
+                <span>🎚️</span>
+                <input type="range" min="-12" max="12" step="1" value={pitchShift} onChange={(e) => setPitchShift(parseInt(e.target.value))} className="flex-1" />
+                <span className="font-bold w-8 text-right">{pitchShift > 0 ? "+" : ""}{pitchShift}</span>
+              </label>
+            </div>
+          )}
+          {/* Reverb toggle row */}
+          <div className="mt-2 w-full max-w-3xl mx-auto flex gap-1.5">
+            {([
+              { id: 0, label: "Dry", emoji: "🔈" },
+              { id: 1, label: "Bathroom", emoji: "🚿" },
+              { id: 2, label: "Cave", emoji: "🦇" },
+            ] as const).map((r) => (
+              <button
+                key={r.id}
+                onClick={() => setReverbAmountState(r.id)}
+                className={`flex-1 font-bold text-xs py-1.5 rounded-xl border-2 active:scale-95 ${reverbAmount === r.id ? (r.id === 0 ? "bg-white/70 text-slate-700 border-slate-400 ring-2 ring-amber-400" : r.id === 1 ? "bg-cyan-100 text-cyan-900 border-cyan-400 ring-2 ring-amber-400" : "bg-indigo-100 text-indigo-900 border-indigo-400 ring-2 ring-amber-400") : "bg-white/40 text-slate-400 border-slate-200"}`}
+              >
+                {r.emoji} {r.label}
+              </button>
+            ))}
+          </div>
         </footer>
       )}
 
@@ -857,7 +957,7 @@ function PlayTab(props: {
   parentalBlocked: boolean;
   primaryTab: string;
 }) {
-  const [sub, setSub] = useState<"animals" | "ohnos" | "myfarts">("animals");
+  const [sub, setSub] = useState<"animals" | "ohnos" | "voice" | "myfarts">("animals");
   const EMOJI_CHOICES = ["💨", "🎤", "🤪", "😈", "👻", "👽", "💀", "🤡", "🦄", "🐸", "🐵", "🐷", "🐮", "🐔", "🐧", "🐢", "🐬", "🦖"];
 
   return (
@@ -868,6 +968,7 @@ function PlayTab(props: {
           {[
             { id: "animals" as const, label: "🐾 Animals" },
             { id: "ohnos" as const, label: "😱 Oh No!" },
+            { id: "voice" as const, label: "🎭 Voice" },
             { id: "myfarts" as const, label: "🎤 My Farts" },
           ].map((t) => (
             <button
@@ -881,8 +982,10 @@ function PlayTab(props: {
         </div>
       </div>
 
-      <main className="flex-1 px-3 pb-32">
-        {sub === "myfarts" ? (
+      <main className="flex-1 px-3 pb-44">
+        {sub === "voice" ? (
+          <VoiceTabInline />
+        ) : sub === "myfarts" ? (
           <div>
             <p className="text-center text-purple-900/70 text-sm font-semibold mb-2">
               Hold the phone close and make a funny sound — we use your mic to save it here.
@@ -1565,204 +1668,710 @@ function ParentalTab({ parental, setParental, reverbMode, toggleReverb, showHype
   );
 }
 
-// === Explore Tab — shared server recordings ===
-function ExploreTab({ activeKid, recordings }: { activeKid: Kid | null; recordings: CustomRecording[] }) {
-  const [shared, setShared] = useState<SharedRecording[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [serverOnline, setServerOnline] = useState<boolean | null>(null);
-  const [filter, setFilter] = useState<"top" | "new">("top");
-  const [uploadingId, setUploadingId] = useState<string | null>(null);
+// === Explore Tab — moved to SocialTab ===
+void 0; // (ExploreTab removed in v15; replaced by Instagram-style SocialTab)
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const [health, list] = await Promise.all([
-      getHealth().catch(() => null),
-      fetchSharedRecordings(),
-    ]);
-    setServerOnline(!!health);
-    setShared(list.recordings.sort((a, b) => filter === "top" ? b.upvotes - a.upvotes : b.createdAt - a.createdAt));
-    setLoading(false);
-  }, [filter]);
+// === Voice Tab — pitch-shift, slow down, layer, and remix sounds ===
+function VoiceTabInline() {
+  const [source, setSource] = useState<"ohnos" | "animals">("ohnos");
+  const [selectedId, setSelectedId] = useState("ohno1");
+  const [pitch, setPitch] = useState(0); // semitones (-12 to +12)
+  const [speed, setSpeed] = useState(1.0); // 0.4 to 2.0
+  const [reverb, setReverb] = useState(0); // 0/1/2
+  const [layerCount, setLayerCount] = useState(1); // 1=single, 2=double, 3=triple
+  const [looper, setLooper] = useState(false);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    setPitchSemitones(pitch);
+    setSpeedFactor(speed);
+    setReverbAmount(reverb);
+  }, [pitch, speed, reverb]);
 
-  const onUpvote = async (id: number) => {
-    const result = await toggleUpvote(id);
-    if (result) {
-      setShared((prev) => prev.map((r) => r.id === id ? { ...r, upvotes: result.upvotes, userVoted: result.userVoted } : r).sort((a, b) => filter === "top" ? b.upvotes - a.upvotes : b.createdAt - a.createdAt));
+  useEffect(() => {
+    if (!looper) return;
+    const id = setInterval(() => playSelected(), 1800);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [looper, selectedId, source, pitch, speed, reverb]);
+
+  const playSelected = () => {
+    const presets = source === "ohnos" ? OHNO_PRESETS : PRESETS;
+    const preset = presets.find((p) => p.id === selectedId);
+    if (!preset) return;
+    const count = layerCount;
+    for (let i = 0; i < count; i++) {
+      setTimeout(() => playFart(preset), i * 90);
     }
   };
 
-  const onPlayShared = async (rec: SharedRecording & { _localBlobUrl?: string }) => {
-    try {
-      let blob: Blob;
-      if (rec._localBlobUrl) {
-        const resp = await fetch(rec._localBlobUrl);
-        blob = await resp.blob();
-      } else {
-        const resp = await fetch(rec.audioUrl);
-        blob = await resp.blob();
-      }
-      const withReverb = !!(window as any).__reverbEnabled;
-      await playBlobWithFx(blob, withReverb);
-    } catch (err) {
-      console.warn("[explore] play failed:", err);
-    }
-  };
-
-  const onShare = async (rec: CustomRecording) => {
-    if (!serverOnline) {
-      alert("Server is offline. Ask a grown-up to start it.");
-      return;
-    }
-    setUploadingId(rec.id);
-    try {
-      await uploadCustomRecording(rec, activeKid?.name);
-      await load();
-    } catch (err) {
-      alert("Upload failed: " + (err as Error).message);
-    } finally {
-      setUploadingId(null);
-    }
-  };
-
-  const onDeleteShared = async (id: number) => {
-    if (!confirm("Delete this shared recording? Everyone will lose it.")) return;
-    try {
-      await deleteSharedRecording(id);
-      setShared((prev) => prev.filter((r) => r.id !== id));
-    } catch {}
-  };
+  const presets = source === "ohnos" ? OHNO_PRESETS : PRESETS;
+  const sourceEmojis = source === "ohnos" ? "😱" : "🐾";
 
   return (
     <main className="flex-1 px-3 pb-4 max-w-3xl mx-auto w-full">
-      <div className="flex justify-between items-center mb-3">
-        <h2 className="text-2xl font-bold text-emerald-900">🌍 Shared Farts</h2>
-        <div className="flex items-center gap-1">
-          <div className={`w-2 h-2 rounded-full ${serverOnline === null ? "bg-gray-400" : serverOnline ? "bg-green-500" : "bg-red-500"}`} />
-          <span className="text-xs text-gray-600">{serverOnline === null ? "checking" : serverOnline ? "online" : "offline"}</span>
-        </div>
-      </div>
+      <h2 className="text-2xl font-bold text-amber-900 text-center mb-1">🎭 Funny Voice</h2>
+      <p className="text-sm text-amber-800/80 text-center mb-3">Make it high, low, slow, fast — or stack 3 at once!</p>
 
-      {/* Share your recordings */}
-      {recordings.length > 0 && (
-        <div className="bg-white/60 rounded-2xl p-3 mb-4">
-          <h3 className="font-bold text-sm text-gray-800 mb-2">📤 Share your recordings</h3>
-          <div className="flex flex-wrap gap-2">
-            {recordings.map((r) => (
-              <button
-                key={r.id}
-                onClick={() => onShare(r)}
-                disabled={uploadingId === r.id}
-                className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 rounded-full text-sm font-bold text-emerald-900 active:scale-95 disabled:opacity-50"
-              >
-                {uploadingId === r.id ? "⏳" : "☁️"} {r.emoji} {r.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Filter */}
+      {/* Source toggle */}
       <div className="flex gap-2 mb-3">
         <button
-          onClick={() => { setFilter("top"); }}
-          className={`px-4 py-1.5 rounded-full text-sm font-bold ${filter === "top" ? "bg-emerald-500 text-white" : "bg-white/60 text-gray-700"}`}
+          onClick={() => { setSource("ohnos"); setSelectedId("ohno1"); }}
+          className={`flex-1 py-2 rounded-xl font-bold text-sm border-2 ${source === "ohnos" ? "bg-amber-100 text-amber-900 border-amber-400" : "bg-white/60 text-amber-700/60 border-amber-200"}`}
         >
-          🏆 Top
+          😱 Oh No voices
         </button>
         <button
-          onClick={() => { setFilter("new"); }}
-          className={`px-4 py-1.5 rounded-full text-sm font-bold ${filter === "new" ? "bg-emerald-500 text-white" : "bg-white/60 text-gray-700"}`}
+          onClick={() => { setSource("animals"); setSelectedId("cow"); }}
+          className={`flex-1 py-2 rounded-xl font-bold text-sm border-2 ${source === "animals" ? "bg-amber-100 text-amber-900 border-amber-400" : "bg-white/60 text-amber-700/60 border-amber-200"}`}
         >
-          ✨ New
+          🐾 Animals
         </button>
-        <button onClick={load} className="ml-auto px-3 py-1.5 rounded-full text-sm bg-white/60 text-gray-700">🔄</button>
       </div>
 
-      {serverOnline === false && (
-        <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 text-center text-amber-900">
-          <div className="text-3xl mb-2">📡</div>
-          <p className="font-bold">Sharing is offline right now</p>
-          <p className="text-sm mt-1">
-            No internet? No problem — you can still play your own recordings below.
-          </p>
-        </div>
-      )}
+      {/* Source picker */}
+      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3">
+        {presets.map((p) => (
+          <button
+            key={p.id}
+            onClick={() => { setSelectedId(p.id); playSelected(); }}
+            className={`relative aspect-square rounded-2xl bg-gradient-to-br ${p.color} shadow-md border-4 active:scale-95 ${selectedId === p.id ? "border-amber-900 ring-2 ring-amber-900" : "border-white"}`}
+          >
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <div className="text-3xl">{p.emoji}</div>
+              <div className="text-[10px] font-bold text-amber-950 drop-shadow leading-tight mt-0.5">{p.name}</div>
+            </div>
+          </button>
+        ))}
+      </div>
 
-      {/* Local-only fallback: kid's own recordings + animal highlights */}
-      {serverOnline === false && recordings.length > 0 && (
-        <div className="mt-4">
-          <h3 className="font-bold text-emerald-900 text-sm mb-2">🎤 Your recordings</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {recordings.map((rec) => (
-              <button
-                key={rec.id}
-                onClick={() => onPlayShared({
-                  id: -1,
-                  audioUrl: "",
-                  emoji: rec.emoji,
-                  name: rec.name,
-                  kidName: activeKid?.name,
-                  upvotes: 0,
-                  createdAt: 0,
-                  userVoted: false,
-                  _localBlobUrl: rec.url,
-                } as any)}
-                className="bg-gradient-to-br from-emerald-100 to-teal-200 rounded-2xl p-3 shadow-md border-2 border-white/70 active:scale-95 transition-transform"
-              >
-                <div className="text-4xl mb-1">{rec.emoji}</div>
-                <div className="text-sm font-bold text-emerald-950 truncate">{rec.name}</div>
-                {activeKid && (
-                  <div className="text-[10px] text-emerald-700/80">by {activeKid.name}</div>
-                )}
+      {/* Play button + layer + looper */}
+      <div className="flex gap-2 mb-3">
+        <button
+          onClick={playSelected}
+          className="flex-1 py-3 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white font-extrabold text-lg shadow-xl border-4 border-white active:scale-95"
+        >
+          ▶️ PLAY ({sourceEmojis} {presets.find(p=>p.id===selectedId)?.name || "—"})
+        </button>
+        <button
+          onClick={() => setLooper((v) => !v)}
+          className={`px-3 rounded-2xl font-bold border-2 ${looper ? "bg-rose-500 text-white border-rose-700 animate-pulse" : "bg-white/60 text-rose-600 border-rose-300"}`}
+          title="Loop playback"
+        >
+          🔁
+        </button>
+      </div>
+
+      {/* Sliders */}
+      <div className="bg-white/80 rounded-2xl p-3 shadow-lg mb-3 space-y-3">
+        <div>
+          <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
+            <span>🎚️ Pitch</span>
+            <span>{pitch > 0 ? "+" : ""}{pitch} st</span>
+          </div>
+          <input type="range" min="-12" max="12" step="1" value={pitch} onChange={(e) => setPitch(parseInt(e.target.value))} className="w-full" />
+        </div>
+        <div>
+          <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
+            <span>⏱️ Speed</span>
+            <span>{speed.toFixed(2)}x</span>
+          </div>
+          <input type="range" min="0.4" max="2.0" step="0.1" value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))} className="w-full" />
+        </div>
+        <div>
+          <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
+            <span>🌫️ Reverb</span>
+            <span>{reverb === 0 ? "Dry" : reverb === 1 ? "Bathroom" : "Cave"}</span>
+          </div>
+          <div className="flex gap-1">
+            {([0,1,2] as const).map((r) => (
+              <button key={r} onClick={() => setReverb(r)} className={`flex-1 py-1.5 text-xs font-bold rounded-lg border-2 ${reverb===r ? "bg-amber-500 text-white border-amber-700" : "bg-white/60 text-slate-600 border-slate-200"}`}>
+                {r===0 ? "🔈 Dry" : r===1 ? "🚿 Bath" : "🦇 Cave"}
               </button>
             ))}
           </div>
         </div>
-      )}
+        <div>
+          <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
+            <span>📚 Layers (stacked)</span>
+            <span>{layerCount}×</span>
+          </div>
+          <div className="flex gap-1">
+            {([1,2,3] as const).map((n) => (
+              <button key={n} onClick={() => setLayerCount(n)} className={`flex-1 py-1.5 text-xs font-bold rounded-lg border-2 ${layerCount===n ? "bg-amber-500 text-white border-amber-700" : "bg-white/60 text-slate-600 border-slate-200"}`}>
+                {n}× {n === 1 ? "" : "stacked"}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
-      {loading && serverOnline !== false && (
-        <div className="text-center text-gray-500 py-8">Loading shared farts...</div>
-      )}
+      <button
+        onClick={() => { setPitch(0); setSpeed(1.0); setReverb(0); setLayerCount(1); setLooper(false); }}
+        className="w-full py-2 rounded-xl bg-slate-200 text-slate-700 font-bold text-sm"
+      >
+        ↺ Reset
+      </button>
+    </main>
+  );
+}
 
-      {!loading && serverOnline !== false && shared.length === 0 && (
-        <div className="text-center text-emerald-900/60 py-8">
-          <div className="text-4xl mb-2">🦗</div>
-          <p className="font-semibold">No shared farts yet</p>
-          <p className="text-sm">Be the first to share one above!</p>
+// === Social Tab — Instagram-like soundboard ===
+function SocialTab(props: {
+  me: SocialUser | null;
+  setMe: (u: SocialUser | null) => void;
+  activeKid: Kid | null;
+  recordings: CustomRecording[];
+  socialView: "feed" | "discover" | "profile" | "viewProfile";
+  setSocialView: (v: "feed" | "discover" | "profile" | "viewProfile") => void;
+  viewedUser: SocialUser | null;
+  setViewedUser: (u: SocialUser | null) => void;
+  editingProfile: boolean;
+  setEditingProfile: (v: boolean) => void;
+}) {
+  const [groups, setGroups] = useState<FeedGroup[]>([]);
+  const [discoverUsers, setDiscoverUsers] = useState<SocialUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [serverOnline, setServerOnline] = useState<boolean | null>(null);
+
+  // Load me + feed + discover on mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const [me, health, feed, users] = await Promise.all([
+          getMe().catch(() => null),
+          getHealth().catch(() => null),
+          getFeed(),
+          getUsers().catch(() => ({ users: [] })),
+        ]);
+        if (cancelled) return;
+        props.setMe(me);
+        setServerOnline(!!health);
+        setGroups(feed.groups || []);
+        setDiscoverUsers((users.users || []).filter((u) => !me || u.handle !== me.handle));
+      } catch (err) {
+        console.warn("[social] load failed:", err);
+        setServerOnline(false);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const refresh = async () => {
+    try {
+      const [me, feed] = await Promise.all([getMe().catch(() => null), getFeed()]);
+      props.setMe(me);
+      setGroups(feed.groups || []);
+    } catch (err) {
+      console.warn("[social] refresh failed:", err);
+    }
+  };
+
+  if (loading) {
+    return (
+      <main className="flex-1 px-3 pb-4 max-w-3xl mx-auto w-full">
+        <div className="text-center text-emerald-900/70 py-12">Loading…</div>
+      </main>
+    );
+  }
+
+  if (props.socialView === "profile" && props.me) {
+    return <MyProfileView me={props.me} setMe={props.setMe} setSocialView={props.setSocialView} editingProfile={props.editingProfile} setEditingProfile={props.setEditingProfile} activeKid={props.activeKid} recordings={props.recordings} refresh={refresh} />;
+  }
+  if (props.socialView === "viewProfile" && props.viewedUser) {
+    return <ViewProfileView viewedUser={props.viewedUser} setSocialView={props.setSocialView} me={props.me} refresh={refresh} />;
+  }
+  if (props.socialView === "discover") {
+    return <DiscoverView users={discoverUsers} setViewedUser={props.setViewedUser} setSocialView={props.setSocialView} me={props.me} refresh={refresh} />;
+  }
+  return <FeedView groups={groups} serverOnline={serverOnline} setSocialView={props.setSocialView} setViewedUser={props.setViewedUser} me={props.me} refresh={refresh} />;
+}
+
+function FeedView(props: {
+  groups: FeedGroup[];
+  serverOnline: boolean | null;
+  setSocialView: (v: "feed" | "discover" | "profile" | "viewProfile") => void;
+  setViewedUser: (u: SocialUser) => void;
+  me: SocialUser | null;
+  refresh: () => void;
+}) {
+  const [commentingOn, setCommentingOn] = useState<number | null>(null);
+
+  return (
+    <main className="flex-1 pb-4 max-w-3xl mx-auto w-full">
+      {/* Top bar: title + tabs */}
+      <div className="sticky top-0 z-30 bg-gradient-to-b from-emerald-50 via-emerald-50 to-emerald-50/95 backdrop-blur border-b-2 border-emerald-200 px-3 py-2 flex items-center justify-between">
+        <h2 className="text-xl font-bold text-emerald-900">🌍 Soundboard</h2>
+        <div className="flex gap-1">
+          <button
+            onClick={() => props.setSocialView("discover")}
+            className="px-3 py-1.5 rounded-full bg-emerald-500 text-white font-bold text-xs active:scale-95"
+          >
+            🔍 Find Friends
+          </button>
+          <button
+            onClick={() => props.setSocialView("profile")}
+            className="px-3 py-1.5 rounded-full bg-white text-emerald-900 font-bold text-xs border-2 border-emerald-300 active:scale-95"
+          >
+            👤 {props.me?.displayName?.split(" ")[0] || "Me"}
+          </button>
+        </div>
+      </div>
+
+      {props.serverOnline === false && (
+        <div className="m-3 bg-amber-50 border-2 border-amber-300 rounded-2xl p-3 text-amber-900 text-sm">
+          📡 Sharing is offline right now. Pull to refresh once the server is back.
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {shared.map((rec) => (
-          <div key={rec.id} className="bg-gradient-to-br from-emerald-100 to-teal-200 rounded-2xl p-3 shadow-md border-2 border-white/70 relative">
-            <button
-              onClick={() => onPlayShared(rec)}
-              className="w-full active:scale-95 transition-transform"
-            >
-              <div className="text-4xl mb-1">{rec.emoji}</div>
-              <div className="text-sm font-bold text-emerald-950 truncate">{rec.name}</div>
-              {rec.kidName && (
-                <div className="text-[10px] text-emerald-700/80">by {rec.kidName}</div>
-              )}
-            </button>
-            <button
-              onClick={() => onUpvote(rec.id)}
-              className={`mt-2 w-full text-xs font-bold py-1 px-2 rounded-lg flex items-center justify-center gap-1 ${rec.userVoted ? "bg-emerald-500 text-white" : "bg-white/80 text-emerald-700"}`}
-            >
-              {rec.userVoted ? "⭐" : "☆"} {rec.upvotes}
-            </button>
-            <button
-              onClick={() => onDeleteShared(rec.id)}
-              className="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center shadow active:scale-90"
-              title="Delete"
-            >
-              ✕
-            </button>
+      <div className="px-3 pt-3 space-y-4">
+        {props.groups.length === 0 ? (
+          <div className="text-center text-emerald-900/60 py-12">
+            <div className="text-6xl mb-2">🎤</div>
+            <p className="font-semibold">No farts yet</p>
+            <p className="text-sm">Record one in <strong>My Farts</strong> to start the feed.</p>
           </div>
+        ) : (
+          props.groups.map((group) => (
+            <FeedGroupCard
+              key={group.author.handle}
+              group={group}
+              me={props.me}
+              onViewProfile={() => { props.setViewedUser(group.author); props.setSocialView("viewProfile"); }}
+              onComment={(id) => setCommentingOn(id)}
+              onUpdate={props.refresh}
+            />
+          ))
+        )}
+      </div>
+
+      {commentingOn !== null && (
+        <CommentsModal recordingId={commentingOn} onClose={() => { setCommentingOn(null); props.refresh(); }} me={props.me} />
+      )}
+    </main>
+  );
+}
+
+function FeedGroupCard(props: {
+  group: FeedGroup;
+  me: SocialUser | null;
+  onViewProfile: () => void;
+  onComment: (id: number) => void;
+  onUpdate: () => void;
+}) {
+  const g = props.group;
+  return (
+    <article className="bg-white rounded-3xl shadow-md border-2 border-emerald-200 overflow-hidden">
+      {/* Author header */}
+      <button onClick={props.onViewProfile} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-emerald-50 active:scale-95">
+        <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-2xl">{g.author.avatar}</div>
+        <div className="text-left flex-1">
+          <div className="font-bold text-emerald-900 text-sm">{g.author.displayName}</div>
+          <div className="text-[10px] text-emerald-700/70">@{g.author.handle} · {g.author.recordingCount} farts</div>
+        </div>
+        {props.me && !g.author.isMe && (
+          <FollowButton user={g.author} onUpdate={props.onUpdate} me={props.me} />
+        )}
+      </button>
+      {/* Recordings stack */}
+      <div className="space-y-2 p-2">
+        {g.recordings.map((r) => (
+          <FeedRecordingCard key={r.id} rec={r} me={props.me} onComment={() => props.onComment(r.id)} onUpdate={props.onUpdate} />
         ))}
       </div>
+    </article>
+  );
+}
+
+function FeedRecordingCard(props: { rec: FeedRecording; me: SocialUser | null; onComment: () => void; onUpdate: () => void }) {
+  const r = props.rec;
+  const [voted, setVoted] = useState(r.userVoted);
+  const [count, setCount] = useState(r.upvotes);
+  const [showComment, setShowComment] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const onVote = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { toggleUpvote } = await import("./audio/serverApi");
+      const res = await toggleUpvote(r.id);
+      setVoted(res.userVoted);
+      setCount(res.upvotes);
+    } catch (err) {
+      console.warn("[feed] vote failed:", err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-2xl p-2 border border-emerald-200">
+      <div className="flex items-center gap-2 mb-1">
+        <div className="text-2xl">{r.emoji}</div>
+        <div className="flex-1 min-w-0">
+          <div className="font-bold text-emerald-950 text-sm truncate">{r.name}</div>
+          {r.kidName && <div className="text-[10px] text-emerald-700/70">by {r.kidName}</div>}
+        </div>
+        <button
+          onClick={onVote}
+          disabled={busy}
+          className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold active:scale-95 ${voted ? "bg-emerald-500 text-white" : "bg-white/80 text-emerald-700 border border-emerald-200"}`}
+        >
+          {voted ? "⭐" : "☆"} {count}
+        </button>
+      </div>
+      <audio src={r.audioUrl} controls preload="none" className="w-full h-8" />
+      <div className="flex items-center gap-2 mt-1">
+        <button
+          onClick={() => { setShowComment(true); props.onComment(); }}
+          className="text-[10px] text-emerald-700 font-bold px-2 py-0.5 rounded-full bg-white/60 hover:bg-emerald-100"
+        >
+          💬 Comment
+        </button>
+        <button
+          onClick={async () => {
+            const { share } = await import("./pwa");
+            await share({ title: `💨 ${r.name}`, text: `Check out "${r.name}" by ${r.author?.displayName || "Fart Fan"}`, url: window.location.origin + "/?action=viewProfile&user=" + r.author?.handle });
+          }}
+          className="text-[10px] text-emerald-700 font-bold px-2 py-0.5 rounded-full bg-white/60 hover:bg-emerald-100"
+        >
+          🔗 Share
+        </button>
+      </div>
+      {showComment && (
+        <CommentsModal recordingId={r.id} onClose={() => { setShowComment(false); props.onUpdate(); }} me={props.me} />
+      )}
+    </div>
+  );
+}
+
+function FollowButton(props: { user: SocialUser; me: SocialUser; onUpdate: () => void }) {
+  const [following, setFollowing] = useState(props.user.isFollowing);
+  const [busy, setBusy] = useState(false);
+  const onClick = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await toggleFollow(props.user.handle);
+      setFollowing(res.following);
+      props.onUpdate();
+    } catch (err) {
+      console.warn("[social] follow failed:", err);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button
+      onClick={onClick}
+      disabled={busy}
+      className={`px-3 py-1 rounded-full text-xs font-bold active:scale-95 ${following ? "bg-emerald-100 text-emerald-900 border border-emerald-300" : "bg-emerald-500 text-white"}`}
+    >
+      {following ? "✓ Following" : "+ Follow"}
+    </button>
+  );
+}
+
+function CommentsModal(props: { recordingId: number; onClose: () => void; me: SocialUser | null }) {
+  const [comments, setComments] = useState<SocialComment[]>([]);
+  const [body, setBody] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { comments } = await getComments(props.recordingId);
+      setComments(comments);
+    } catch (err) {
+      console.warn("[comments] load failed:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [props.recordingId]);
+
+  const submit = async () => {
+    if (!body.trim() || busy) return;
+    setBusy(true);
+    try {
+      await addComment(props.recordingId, body.trim());
+      setBody("");
+      await load();
+    } catch (err: any) {
+      alert(err.message || "Comment failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const del = async (id: number) => {
+    if (!confirm("Delete this comment?")) return;
+    try { await deleteComment(id); await load(); } catch (err) { alert("Delete failed"); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={(e) => { if (e.target === e.currentTarget) props.onClose(); }}>
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md max-h-[80vh] flex flex-col shadow-2xl">
+        <div className="px-4 py-3 border-b border-emerald-200 flex items-center justify-between">
+          <h3 className="font-bold text-emerald-900">💬 Comments</h3>
+          <button onClick={props.onClose} className="text-emerald-700 font-bold px-2">✕</button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {loading ? <div className="text-center text-emerald-700/60 py-8">Loading…</div> :
+            comments.length === 0 ? <div className="text-center text-emerald-700/60 py-8">No comments yet. Be the first!</div> :
+            comments.map((c) => (
+              <div key={c.id} className="bg-emerald-50 rounded-xl p-2">
+                <div className="flex items-center gap-1 mb-0.5">
+                  <span className="text-base">{c.author.avatar}</span>
+                  <span className="font-bold text-emerald-900 text-sm">{c.author.displayName}</span>
+                  <span className="text-[10px] text-emerald-700/60">@{c.author.handle}</span>
+                  {props.me?.handle === c.author.handle && (
+                    <button onClick={() => del(c.id)} className="ml-auto text-[10px] text-red-500 font-bold">delete</button>
+                  )}
+                </div>
+                <p className="text-sm text-emerald-950">{c.body}</p>
+              </div>
+            ))
+          }
+        </div>
+        {props.me && (
+          <div className="border-t border-emerald-200 p-2 flex gap-2">
+            <span className="text-2xl">{props.me.avatar}</span>
+            <input
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+              maxLength={280}
+              placeholder="Say something nice…"
+              className="flex-1 px-3 py-2 rounded-full border-2 border-emerald-300 focus:border-emerald-500 outline-none text-sm"
+            />
+            <button onClick={submit} disabled={busy || !body.trim()} className="px-3 py-2 rounded-full bg-emerald-500 text-white font-bold text-sm disabled:opacity-50">Post</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DiscoverView(props: { users: SocialUser[]; setViewedUser: (u: SocialUser) => void; setSocialView: (v: "feed" | "discover" | "profile" | "viewProfile") => void; me: SocialUser | null; refresh: () => void }) {
+  return (
+    <main className="flex-1 pb-4 max-w-3xl mx-auto w-full">
+      <div className="sticky top-0 z-30 bg-emerald-50 border-b-2 border-emerald-200 px-3 py-2 flex items-center gap-2">
+        <button onClick={() => props.setSocialView("feed")} className="text-emerald-700 font-bold">←</button>
+        <h2 className="text-xl font-bold text-emerald-900 flex-1">🔍 Discover</h2>
+      </div>
+      <div className="p-3 space-y-2">
+        {props.users.length === 0 ? (
+          <div className="text-center text-emerald-900/60 py-12">
+            <div className="text-5xl mb-2">🌱</div>
+            <p className="font-semibold">No friends yet</p>
+            <p className="text-sm">You're the first one here. Record a fart and share it!</p>
+          </div>
+        ) : (
+          props.users.map((u) => (
+            <button
+              key={u.handle}
+              onClick={() => { props.setViewedUser(u); props.setSocialView("viewProfile"); }}
+              className="w-full bg-white rounded-2xl shadow-sm border-2 border-emerald-200 p-3 flex items-center gap-3 active:scale-95 text-left"
+            >
+              <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-3xl">{u.avatar}</div>
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-emerald-900 truncate">{u.displayName}</div>
+                <div className="text-xs text-emerald-700/70">@{u.handle}</div>
+                <div className="text-[10px] text-emerald-700/50">{u.recordingCount} farts · {u.followerCount} followers</div>
+              </div>
+              {props.me && !u.isMe && <FollowButton user={u} me={props.me} onUpdate={props.refresh} />}
+            </button>
+          ))
+        )}
+      </div>
+    </main>
+  );
+}
+
+function MyProfileView(props: { me: SocialUser; setMe: (u: SocialUser) => void; setSocialView: (v: "feed" | "discover" | "profile" | "viewProfile") => void; editingProfile: boolean; setEditingProfile: (v: boolean) => void; activeKid: Kid | null; recordings: CustomRecording[]; refresh: () => void }) {
+  const [recs, setRecs] = useState<FeedRecording[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const { recordings } = await getUserRecordings(props.me.handle);
+        setRecs(recordings);
+      } catch (err) { console.warn(err); }
+      finally { setLoading(false); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.me.handle]);
+
+  if (props.editingProfile) {
+    return <EditProfileView me={props.me} setMe={props.setMe} onClose={() => props.setEditingProfile(false)} />;
+  }
+
+  return (
+    <main className="flex-1 pb-4 max-w-3xl mx-auto w-full">
+      <div className="sticky top-0 z-30 bg-emerald-50 border-b-2 border-emerald-200 px-3 py-2 flex items-center gap-2">
+        <button onClick={() => props.setSocialView("feed")} className="text-emerald-700 font-bold">←</button>
+        <h2 className="text-xl font-bold text-emerald-900 flex-1">👤 My Profile</h2>
+        <button onClick={() => props.setEditingProfile(true)} className="text-emerald-700 font-bold text-sm">Edit</button>
+      </div>
+      <div className="p-4 bg-gradient-to-br from-emerald-100 to-emerald-50 border-b-2 border-emerald-200">
+        <div className="flex items-center gap-3">
+          <div className="w-20 h-20 rounded-full bg-white border-4 border-emerald-300 flex items-center justify-center text-5xl shadow-md">{props.me.avatar}</div>
+          <div className="flex-1 min-w-0">
+            <div className="text-xl font-bold text-emerald-900 truncate">{props.me.displayName}</div>
+            <div className="text-sm text-emerald-700/70">@{props.me.handle}</div>
+          </div>
+        </div>
+        {props.me.bio && <p className="text-sm text-emerald-900 mt-2">{props.me.bio}</p>}
+        <div className="flex gap-3 mt-3 text-emerald-900 text-sm">
+          <span><b>{props.me.recordingCount}</b> farts</span>
+          <span><b>{props.me.followerCount}</b> followers</span>
+          <span><b>{props.me.followingCount}</b> following</span>
+        </div>
+      </div>
+      <h3 className="font-bold text-emerald-900 px-3 pt-3 pb-1">My recordings</h3>
+      {loading ? <div className="text-center text-emerald-700/60 py-8">Loading…</div> :
+        recs.length === 0 ? <div className="text-center text-emerald-700/60 py-8">No recordings yet.</div> :
+        <div className="px-3 space-y-2">
+          {recs.map((r) => (
+            <div key={r.id} className="bg-white rounded-2xl border-2 border-emerald-200 p-2">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="text-2xl">{r.emoji}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-emerald-950 text-sm truncate">{r.name}</div>
+                </div>
+                <div className="text-xs text-emerald-700">⭐ {r.upvotes}</div>
+              </div>
+              <audio src={r.audioUrl} controls preload="none" className="w-full h-8" />
+            </div>
+          ))}
+        </div>
+      }
+    </main>
+  );
+}
+
+function EditProfileView(props: { me: SocialUser; setMe: (u: SocialUser) => void; onClose: () => void }) {
+  const [displayName, setDisplayName] = useState(props.me.displayName);
+  const [handle, setHandle] = useState(props.me.handle);
+  const [avatar, setAvatar] = useState(props.me.avatar);
+  const [bio, setBio] = useState(props.me.bio || "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const save = async () => {
+    setBusy(true); setErr("");
+    try {
+      const updated = await updateMe({ displayName, handle, avatar, bio });
+      props.setMe(updated);
+      props.onClose();
+    } catch (e: any) { setErr(e.message || "Save failed"); }
+    finally { setBusy(false); }
+  };
+
+  const AVATARS = ["🐱", "🐶", "🐰", "🐻", "🐼", "🦊", "🐯", "🦁", "🐸", "🐵", "🦄", "🐲", "🐨", "🐷", "🐮", "🐔", "🐧", "🐢", "🐬", "🦖"];
+
+  return (
+    <main className="flex-1 pb-4 max-w-3xl mx-auto w-full">
+      <div className="sticky top-0 z-30 bg-emerald-50 border-b-2 border-emerald-200 px-3 py-2 flex items-center gap-2">
+        <button onClick={props.onClose} className="text-emerald-700 font-bold">Cancel</button>
+        <h2 className="text-xl font-bold text-emerald-900 flex-1 text-center">Edit Profile</h2>
+        <button onClick={save} disabled={busy} className="text-emerald-700 font-bold disabled:opacity-50">Save</button>
+      </div>
+      <div className="p-4 space-y-3">
+        <div>
+          <label className="text-xs font-bold text-emerald-700">Display name</label>
+          <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={30} className="w-full px-3 py-2 rounded-xl border-2 border-emerald-300 focus:border-emerald-500 outline-none" />
+        </div>
+        <div>
+          <label className="text-xs font-bold text-emerald-700">Handle (3-20 chars, lowercase letters/numbers/_)</label>
+          <input value={handle} onChange={(e) => setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20))} className="w-full px-3 py-2 rounded-xl border-2 border-emerald-300 focus:border-emerald-500 outline-none font-mono" />
+        </div>
+        <div>
+          <label className="text-xs font-bold text-emerald-700">Avatar</label>
+          <div className="grid grid-cols-10 gap-1">
+            {AVATARS.map((a) => (
+              <button key={a} onClick={() => setAvatar(a)} className={`text-2xl p-1 rounded-lg ${avatar === a ? "bg-emerald-200 ring-2 ring-emerald-500" : "hover:bg-emerald-100"}`}>{a}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="text-xs font-bold text-emerald-700">Bio (200 chars max)</label>
+          <textarea value={bio} onChange={(e) => setBio(e.target.value.slice(0, 200))} maxLength={200} className="w-full px-3 py-2 rounded-xl border-2 border-emerald-300 focus:border-emerald-500 outline-none h-20" />
+        </div>
+        {err && <div className="text-red-600 text-sm font-bold">{err}</div>}
+      </div>
+    </main>
+  );
+}
+
+function ViewProfileView(props: { viewedUser: SocialUser; setSocialView: (v: "feed" | "discover" | "profile" | "viewProfile") => void; me: SocialUser | null; refresh: () => void }) {
+  const u = props.viewedUser;
+  const [recs, setRecs] = useState<FeedRecording[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const { recordings } = await getUserRecordings(u.handle);
+        setRecs(recordings);
+      } catch (err) { console.warn(err); }
+      finally { setLoading(false); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [u.handle]);
+  return (
+    <main className="flex-1 pb-4 max-w-3xl mx-auto w-full">
+      <div className="sticky top-0 z-30 bg-emerald-50 border-b-2 border-emerald-200 px-3 py-2 flex items-center gap-2">
+        <button onClick={() => props.setSocialView("feed")} className="text-emerald-700 font-bold">←</button>
+        <h2 className="text-xl font-bold text-emerald-900 flex-1">@{u.handle}</h2>
+        {props.me && !u.isMe && <FollowButton user={u} me={props.me} onUpdate={props.refresh} />}
+      </div>
+      <div className="p-4 bg-gradient-to-br from-emerald-100 to-emerald-50 border-b-2 border-emerald-200">
+        <div className="flex items-center gap-3">
+          <div className="w-20 h-20 rounded-full bg-white border-4 border-emerald-300 flex items-center justify-center text-5xl shadow-md">{u.avatar}</div>
+          <div className="flex-1 min-w-0">
+            <div className="text-xl font-bold text-emerald-900 truncate">{u.displayName}</div>
+            <div className="text-sm text-emerald-700/70">@{u.handle}</div>
+          </div>
+        </div>
+        {u.bio && <p className="text-sm text-emerald-900 mt-2">{u.bio}</p>}
+        <div className="flex gap-3 mt-3 text-emerald-900 text-sm">
+          <span><b>{u.recordingCount}</b> farts</span>
+          <span><b>{u.followerCount}</b> followers</span>
+          <span><b>{u.followingCount}</b> following</span>
+        </div>
+      </div>
+      <h3 className="font-bold text-emerald-900 px-3 pt-3 pb-1">Recordings</h3>
+      {loading ? (
+        <div className="text-center text-emerald-700/60 py-8">Loading…</div>
+      ) : recs.length === 0 ? (
+        <div className="text-center text-emerald-700/60 py-8">No recordings yet.</div>
+      ) : (
+        <div className="px-3 space-y-2">
+          {recs.map((r) => (
+            <div key={r.id} className="bg-white rounded-2xl border-2 border-emerald-200 p-2">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="text-2xl">{r.emoji}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-emerald-950 text-sm truncate">{r.name}</div>
+                </div>
+                <div className="text-xs text-emerald-700">⭐ {r.upvotes}</div>
+              </div>
+              <audio src={r.audioUrl} controls preload="none" className="w-full h-8" />
+            </div>
+          ))}
+        </div>
+      )}
     </main>
   );
 }

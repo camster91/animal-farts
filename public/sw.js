@@ -3,7 +3,7 @@
 // the app works fully offline on first load. Asset paths are injected at
 // build time by scripts/inject-sw-assets.mjs.
 
-const CACHE = "animal-farts-v14";
+const CACHE = "animal-farts-v15";
 
 const SHELL_ASSETS = [
   "/",

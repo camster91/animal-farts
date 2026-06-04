@@ -106,3 +106,81 @@ export async function uploadCustomRecording(rec: CustomRecording, kidName?: stri
     durationSec: undefined,
   });
 }
+
+// === Social API (users, follows, comments, feed) ===
+
+export type SocialUser = {
+  handle: string;
+  displayName: string;
+  avatar: string;
+  bio: string | null;
+  createdAt: number;
+  followerCount: number;
+  followingCount: number;
+  recordingCount: number;
+  isFollowing: boolean;
+  isMe: boolean;
+};
+
+export type SocialComment = {
+  id: number;
+  body: string;
+  createdAt: number;
+  author: { handle: string; displayName: string; avatar: string };
+};
+
+export type FeedRecording = SharedRecording & { author?: SocialUser };
+export type FeedGroup = { author: SocialUser; recordings: FeedRecording[] };
+
+export async function getMe(): Promise<SocialUser> {
+  return jsonFetch("/api/me");
+}
+
+export async function updateMe(patch: Partial<Pick<SocialUser, "displayName" | "avatar" | "bio" | "handle">>): Promise<SocialUser> {
+  return jsonFetch("/api/me", { method: "PATCH", body: JSON.stringify(patch) });
+}
+
+export async function getUser(handle: string): Promise<SocialUser> {
+  return jsonFetch(`/api/users/${encodeURIComponent(handle)}`);
+}
+
+export async function getUsers(): Promise<{ users: SocialUser[] }> {
+  return jsonFetch("/api/users");
+}
+
+export async function toggleFollow(handle: string): Promise<{ following: boolean }> {
+  return jsonFetch(`/api/users/${encodeURIComponent(handle)}/follow`, { method: "POST" });
+}
+
+export async function getFollowers(handle: string): Promise<{ users: SocialUser[] }> {
+  return jsonFetch(`/api/users/${encodeURIComponent(handle)}/followers`);
+}
+
+export async function getFollowing(handle: string): Promise<{ users: SocialUser[] }> {
+  return jsonFetch(`/api/users/${encodeURIComponent(handle)}/following`);
+}
+
+export async function getUserRecordings(handle: string): Promise<{ recordings: FeedRecording[] }> {
+  return jsonFetch(`/api/users/${encodeURIComponent(handle)}/recordings`);
+}
+
+export async function getFeed(): Promise<{ groups: FeedGroup[]; offline?: boolean }> {
+  try {
+    return await jsonFetch("/api/feed");
+  } catch (err) {
+    console.warn("[api] getFeed failed:", err);
+    return { groups: [], offline: true };
+  }
+}
+
+export async function getComments(recordingId: number): Promise<{ comments: SocialComment[] }> {
+  return jsonFetch(`/api/recordings/${recordingId}/comments`);
+}
+
+export async function addComment(recordingId: number, body: string): Promise<{ id: number; body: string; createdAt: number }> {
+  return jsonFetch(`/api/recordings/${recordingId}/comments`, { method: "POST", body: JSON.stringify({ body }) });
+}
+
+export async function deleteComment(id: number): Promise<void> {
+  await jsonFetch(`/api/comments/${id}`, { method: "DELETE" });
+}

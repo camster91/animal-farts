@@ -1,14 +1,27 @@
 // Local server for Animal Farts.
 // Endpoints:
-//   GET  /api/recordings       — list shared recordings
-//   POST /api/recordings       — upload a new recording (multipart, audio file + metadata)
-//   POST /api/recordings/:id/upvote — upvote (deduped by device id)
-//   GET  /api/recordings/:id/audio — fetch the audio file
-//   GET  /api/health           — health check
+//   GET  /api/health             — health check
+//   GET  /api/recordings         — list shared recordings
+//   POST /api/recordings         — upload a new recording
+//   POST /api/recordings/:id/upvote — toggle upvote
+//   GET  /api/recordings/:id/audio — fetch audio
+//   DELETE /api/recordings/:id   — delete (creator only)
+//   GET  /api/me                 — get/create my user
+//   GET  /api/users/:handle      — get public user profile
+//   POST /api/users/:handle/follow — follow a user
+//   DELETE /api/users/:handle/follow — unfollow
+//   GET  /api/users/:handle/followers — list followers
+//   GET  /api/users/:handle/following — list following
+//   GET  /api/feed                — feed of friends + all
+//   GET  /api/recordings/:id/comments — list comments
+//   POST /api/recordings/:id/comments — add a comment
+//   DELETE /api/comments/:id     — delete own comment
 //
 // Storage: SQLite for metadata, /server/uploads/ for audio files (webm/mp4).
-// No auth — device-id header is used to dedupe upvotes and identify the "creator".
-
+// No real auth — device-id header is used to identify users, auto-creates
+// a user record on first request. The user picks a "handle" (any string they
+// want, no uniqueness check needed since it's local).
+//
 import express from "express";
 import cors from "cors";
 import multer from "multer";
@@ -47,12 +60,38 @@ db.exec(`
     created_at INTEGER NOT NULL,
     PRIMARY KEY (recording_id, device_id)
   );
+
+  CREATE TABLE IF NOT EXISTS users (
+    device_id TEXT PRIMARY KEY,
+    handle TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    avatar TEXT NOT NULL DEFAULT '🐱',
+    bio TEXT,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_users_handle ON users(handle);
+
+  CREATE TABLE IF NOT EXISTS follows (
+    follower_device_id TEXT NOT NULL,
+    followee_device_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (follower_device_id, followee_device_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows(followee_device_id);
+
+  CREATE TABLE IF NOT EXISTS comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    recording_id INTEGER NOT NULL,
+    device_id TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_comments_recording ON comments(recording_id, created_at);
 `);
 
 const app = express();
 app.use(cors());
-// No body parser needed — multer handles multipart for uploads, and the other
-// endpoints don't need a JSON body (they read headers + URL params).
+app.use(express.json({ limit: "1mb" })); // for social endpoints (users, follows, comments)
 
 // Serve uploaded audio files
 app.use("/uploads", express.static(UPLOAD_DIR, { maxAge: "7d" }));
@@ -201,8 +240,247 @@ app.delete("/api/recordings/:id", (req, res) => {
   if (row.device_id !== deviceId) return res.status(403).json({ error: "Not your recording" });
   try { fs.unlinkSync(path.join(UPLOAD_DIR, row.filename)); } catch {}
   db.prepare("DELETE FROM votes WHERE recording_id = ?").run(id);
+  db.prepare("DELETE FROM comments WHERE recording_id = ?").run(id);
   db.prepare("DELETE FROM recordings WHERE id = ?").run(id);
   res.json({ ok: true });
+});
+
+// === Social endpoints (users, follows, comments, feed) ===
+
+function getOrCreateUser(deviceId) {
+  let user = db.prepare("SELECT * FROM users WHERE device_id = ?").get(deviceId);
+  if (!user) {
+    const id = crypto.randomBytes(4).toString("hex");
+    const handle = `guest_${id}`;
+    const displayName = `Fart Fan ${id.slice(0, 3).toUpperCase()}`;
+    const avatar = "🐱";
+    db.prepare(`INSERT INTO users (device_id, handle, display_name, avatar, created_at) VALUES (?, ?, ?, ?, ?)`)
+      .run(deviceId, handle, displayName, avatar, Date.now());
+    user = db.prepare("SELECT * FROM users WHERE device_id = ?").get(deviceId);
+  }
+  return user;
+}
+
+function userToPublic(u, viewerDeviceId) {
+  if (!u) return null;
+  const followerCount = db.prepare("SELECT COUNT(*) as n FROM follows WHERE followee_device_id = ?").get(u.device_id).n;
+  const followingCount = db.prepare("SELECT COUNT(*) as n FROM follows WHERE follower_device_id = ?").get(u.device_id).n;
+  const recordingCount = db.prepare("SELECT COUNT(*) as n FROM recordings WHERE device_id = ?").get(u.device_id).n;
+  const isFollowing = viewerDeviceId
+    ? !!db.prepare("SELECT 1 FROM follows WHERE follower_device_id = ? AND followee_device_id = ?").get(viewerDeviceId, u.device_id)
+    : false;
+  return {
+    handle: u.handle,
+    displayName: u.display_name,
+    avatar: u.avatar,
+    bio: u.bio,
+    createdAt: u.created_at,
+    followerCount,
+    followingCount,
+    recordingCount,
+    isFollowing,
+    isMe: viewerDeviceId === u.device_id,
+  };
+}
+
+// GET /api/me — get or create the current user
+app.get("/api/me", (req, res) => {
+  const deviceId = req.headers["x-device-id"];
+  if (!deviceId) return res.status(400).json({ error: "Missing x-device-id" });
+  const u = getOrCreateUser(deviceId);
+  res.json(userToPublic(u, deviceId));
+});
+
+// PATCH /api/me — update profile
+app.patch("/api/me", (req, res) => {
+  const deviceId = req.headers["x-device-id"];
+  if (!deviceId) return res.status(400).json({ error: "Missing x-device-id" });
+  getOrCreateUser(deviceId);
+  const { displayName, avatar, bio, handle } = req.body || {};
+  if (displayName) {
+    if (String(displayName).length > 30) return res.status(400).json({ error: "Display name too long" });
+    db.prepare("UPDATE users SET display_name = ? WHERE device_id = ?").run(String(displayName).slice(0, 30), deviceId);
+  }
+  if (avatar) {
+    db.prepare("UPDATE users SET avatar = ? WHERE device_id = ?").run(String(avatar).slice(0, 8), deviceId);
+  }
+  if (bio !== undefined) {
+    if (String(bio).length > 200) return res.status(400).json({ error: "Bio too long" });
+    db.prepare("UPDATE users SET bio = ? WHERE device_id = ?").run(String(bio).slice(0, 200), deviceId);
+  }
+  if (handle) {
+    const cleanHandle = String(handle).toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20);
+    if (cleanHandle.length < 3) return res.status(400).json({ error: "Handle too short" });
+    const existing = db.prepare("SELECT 1 FROM users WHERE handle = ? AND device_id != ?").get(cleanHandle, deviceId);
+    if (existing) return res.status(409).json({ error: "Handle taken" });
+    db.prepare("UPDATE users SET handle = ? WHERE device_id = ?").run(cleanHandle, deviceId);
+  }
+  const u = db.prepare("SELECT * FROM users WHERE device_id = ?").get(deviceId);
+  res.json(userToPublic(u, deviceId));
+});
+
+// GET /api/users/:handle — public profile
+app.get("/api/users/:handle", (req, res) => {
+  const viewer = req.headers["x-device-id"];
+  const u = db.prepare("SELECT * FROM users WHERE handle = ?").get(req.params.handle);
+  if (!u) return res.status(404).json({ error: "User not found" });
+  res.json(userToPublic(u, viewer));
+});
+
+// POST /api/users/:handle/follow — toggle follow
+app.post("/api/users/:handle/follow", (req, res) => {
+  const viewer = req.headers["x-device-id"];
+  if (!viewer) return res.status(400).json({ error: "Missing x-device-id" });
+  const u = db.prepare("SELECT * FROM users WHERE handle = ?").get(req.params.handle);
+  if (!u) return res.status(404).json({ error: "User not found" });
+  if (u.device_id === viewer) return res.status(400).json({ error: "Can't follow yourself" });
+  const existing = db.prepare("SELECT 1 FROM follows WHERE follower_device_id = ? AND followee_device_id = ?").get(viewer, u.device_id);
+  if (existing) {
+    db.prepare("DELETE FROM follows WHERE follower_device_id = ? AND followee_device_id = ?").run(viewer, u.device_id);
+    res.json({ following: false });
+  } else {
+    db.prepare("INSERT INTO follows (follower_device_id, followee_device_id, created_at) VALUES (?, ?, ?)").run(viewer, u.device_id, Date.now());
+    res.json({ following: true });
+  }
+});
+
+// GET /api/users/:handle/followers
+app.get("/api/users/:handle/followers", (req, res) => {
+  const u = db.prepare("SELECT * FROM users WHERE handle = ?").get(req.params.handle);
+  if (!u) return res.status(404).json({ error: "Not found" });
+  const rows = db.prepare(`
+    SELECT users.* FROM follows
+    JOIN users ON users.device_id = follows.follower_device_id
+    WHERE follows.followee_device_id = ?
+    ORDER BY follows.created_at DESC
+    LIMIT 200
+  `).all(u.device_id);
+  res.json({ users: rows.map((r) => userToPublic(r, req.headers["x-device-id"])) });
+});
+
+// GET /api/users/:handle/following
+app.get("/api/users/:handle/following", (req, res) => {
+  const u = db.prepare("SELECT * FROM users WHERE handle = ?").get(req.params.handle);
+  if (!u) return res.status(404).json({ error: "Not found" });
+  const rows = db.prepare(`
+    SELECT users.* FROM follows
+    JOIN users ON users.device_id = follows.followee_device_id
+    WHERE follows.follower_device_id = ?
+    ORDER BY follows.created_at DESC
+    LIMIT 200
+  `).all(u.device_id);
+  res.json({ users: rows.map((r) => userToPublic(r, req.headers["x-device-id"])) });
+});
+
+// GET /api/users/:handle/recordings — recordings by a user
+app.get("/api/users/:handle/recordings", (req, res) => {
+  const deviceId = req.headers["x-device-id"] || "";
+  const u = db.prepare("SELECT * FROM users WHERE handle = ?").get(req.params.handle);
+  if (!u) return res.status(404).json({ error: "Not found" });
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const rows = db.prepare(`
+    SELECT r.id, r.name, r.emoji, r.kid_name, r.duration_sec, r.upvotes, r.created_at, r.filename, r.device_id,
+           (SELECT COUNT(*) FROM votes WHERE recording_id = r.id AND device_id = ?) as user_voted
+    FROM recordings r
+    WHERE r.device_id = ?
+    ORDER BY r.created_at DESC
+    LIMIT ?
+  `).all(deviceId, u.device_id, limit);
+  res.json({
+    recordings: rows.map((r) => ({
+      id: r.id, name: r.name, emoji: r.emoji, kidName: r.kid_name,
+      durationSec: r.duration_sec, upvotes: r.upvotes, userVoted: r.user_voted > 0,
+      createdAt: r.created_at, audioUrl: `/uploads/${r.filename}`,
+      author: userToPublic(u, deviceId),
+    })),
+  });
+});
+
+// GET /api/feed — recordings from people you follow + your own
+app.get("/api/feed", (req, res) => {
+  const deviceId = req.headers["x-device-id"] || "";
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  // Make sure the user exists
+  if (deviceId) getOrCreateUser(deviceId);
+  const rows = db.prepare(`
+    SELECT r.id, r.name, r.emoji, r.kid_name, r.duration_sec, r.upvotes, r.created_at, r.filename, r.device_id,
+           (SELECT COUNT(*) FROM votes WHERE recording_id = r.id AND device_id = ?) as user_voted
+    FROM recordings r
+    WHERE r.device_id = ?
+       OR r.device_id IN (SELECT followee_device_id FROM follows WHERE follower_device_id = ?)
+    ORDER BY r.created_at DESC
+    LIMIT ?
+  `).all(deviceId, deviceId, deviceId, limit);
+  // Group by author for Instagram-style feed (one post per author with their most recent)
+  const authorMap = new Map();
+  for (const r of rows) {
+    if (!authorMap.has(r.device_id)) {
+      const u = db.prepare("SELECT * FROM users WHERE device_id = ?").get(r.device_id);
+      authorMap.set(r.device_id, { author: userToPublic(u, deviceId), recordings: [] });
+    }
+    authorMap.get(r.device_id).recordings.push({
+      id: r.id, name: r.name, emoji: r.emoji, kidName: r.kid_name,
+      durationSec: r.duration_sec, upvotes: r.upvotes, userVoted: r.user_voted > 0,
+      createdAt: r.created_at, audioUrl: `/uploads/${r.filename}`,
+    });
+  }
+  res.json({ groups: Array.from(authorMap.values()) });
+});
+
+// GET /api/recordings/:id/comments
+app.get("/api/recordings/:id/comments", (req, res) => {
+  const id = parseInt(req.params.id);
+  const rows = db.prepare(`
+    SELECT c.id, c.body, c.created_at, c.device_id, u.handle, u.display_name, u.avatar
+    FROM comments c
+    LEFT JOIN users u ON u.device_id = c.device_id
+    WHERE c.recording_id = ?
+    ORDER BY c.created_at ASC
+    LIMIT 200
+  `).all(id);
+  res.json({ comments: rows.map((r) => ({
+    id: r.id, body: r.body, createdAt: r.created_at,
+    author: { handle: r.handle, displayName: r.display_name, avatar: r.avatar },
+  })) });
+});
+
+// POST /api/recordings/:id/comments
+app.post("/api/recordings/:id/comments", (req, res) => {
+  const deviceId = req.headers["x-device-id"];
+  if (!deviceId) return res.status(400).json({ error: "Missing x-device-id" });
+  const id = parseInt(req.params.id);
+  const body = (req.body && req.body.body || "").toString().trim();
+  if (!body) return res.status(400).json({ error: "Empty comment" });
+  if (body.length > 280) return res.status(400).json({ error: "Comment too long (max 280)" });
+  // Same banned words as recording names
+  const banned = ["fuck", "shit", "bitch", "cunt", "nigger", "fag", "kike"];
+  if (banned.some((w) => body.toLowerCase().includes(w))) {
+    return res.status(400).json({ error: "Comment contains blocked words" });
+  }
+  getOrCreateUser(deviceId);
+  const r = db.prepare(`INSERT INTO comments (recording_id, device_id, body, created_at) VALUES (?, ?, ?, ?)`)
+    .run(id, deviceId, body, Date.now());
+  res.json({ id: r.lastInsertRowid, body, createdAt: Date.now() });
+});
+
+// DELETE /api/comments/:id
+app.delete("/api/comments/:id", (req, res) => {
+  const deviceId = req.headers["x-device-id"];
+  if (!deviceId) return res.status(400).json({ error: "Missing x-device-id" });
+  const id = parseInt(req.params.id);
+  const c = db.prepare("SELECT device_id FROM comments WHERE id = ?").get(id);
+  if (!c) return res.status(404).json({ error: "Not found" });
+  if (c.device_id !== deviceId) return res.status(403).json({ error: "Not your comment" });
+  db.prepare("DELETE FROM comments WHERE id = ?").run(id);
+  res.json({ ok: true });
+});
+
+// GET /api/users — list all users (for discover)
+app.get("/api/users", (req, res) => {
+  const viewer = req.headers["x-device-id"] || "";
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const rows = db.prepare("SELECT * FROM users ORDER BY created_at DESC LIMIT ?").all(limit);
+  res.json({ users: rows.map((u) => userToPublic(u, viewer)) });
 });
 
 app.listen(PORT, "0.0.0.0", () => {

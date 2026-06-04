@@ -354,11 +354,27 @@ async function unlockAudio() {
   }
 }
 
-// Bathroom reverb impulse response (synthesized at runtime)
-let reverbImpulse: AudioBuffer | null = null;
-function getReverbImpulse(ctx: AudioContext): AudioBuffer {
-  if (reverbImpulse) return reverbImpulse;
-  // Tile bathroom: 1.5s decay, ~5m^3 space
+// Reverb impulse responses, synthesized at runtime. We cache two:
+// "bathroom" (1.5s decay, 5m^3) and "cave" (3.5s long, big space).
+let bathroomImpulse: AudioBuffer | null = null;
+let caveImpulse: AudioBuffer | null = null;
+function getReverbImpulse(ctx: AudioContext, amount: number): AudioBuffer {
+  // amount=1 -> bathroom, amount=2 -> cave
+  if (amount >= 2) {
+    if (caveImpulse) return caveImpulse;
+    const length = ctx.sampleRate * 3.5;
+    const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const data = impulse.getChannelData(c);
+      for (let i = 0; i < length; i++) {
+        // Long reverb tail with slow attack for the cave effect
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 1.5);
+      }
+    }
+    caveImpulse = impulse;
+    return impulse;
+  }
+  if (bathroomImpulse) return bathroomImpulse;
   const length = ctx.sampleRate * 1.5;
   const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
   for (let c = 0; c < 2; c++) {
@@ -367,7 +383,7 @@ function getReverbImpulse(ctx: AudioContext): AudioBuffer {
       data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 3);
     }
   }
-  reverbImpulse = impulse;
+  bathroomImpulse = impulse;
   return impulse;
 }
 
@@ -385,28 +401,51 @@ const activeAudios = new Set<HTMLAudioElement>();
 
 export function setReverbMode(enabled: boolean) {
   (window as any).__reverbEnabled = enabled;
+  (window as any).__reverbAmount = enabled ? 1 : 0;
 }
+
+// Audio effect modes. All multiplicative on the preset's playbackRate.
+// pitch: number of semitones shift (1.0 = +1 semitone, 0.5 = -1 semitone, 2.0 = +1 octave)
+// speed: playback rate (0.5 = slow-mo, 1.0 = normal, 2.0 = chipmunk)
+// reverbAmount: 0 = none, 1 = bathroom, 2 = cave
+let pitchSemitones = 0;
+let speedFactor = 1.0;
+let reverbAmount = 0;
+
+export function setPitchSemitones(s: number) { pitchSemitones = s; }
+export function getPitchSemitones() { return pitchSemitones; }
+export function setSpeedFactor(s: number) { speedFactor = s; }
+export function getSpeedFactor() { return speedFactor; }
+export function setReverbAmount(r: number) {
+  reverbAmount = r;
+  // Backwards compat: keep the old __reverbEnabled flag for the simple toggle
+  (window as any).__reverbEnabled = r > 0;
+  (window as any).__reverbAmount = r;
+}
+export function getReverbAmount() { return reverbAmount; }
 
 function isReverbEnabled(): boolean {
   return !!(window as any).__reverbEnabled;
 }
+void isReverbEnabled; // keep exported for external use
 
 // Play an AudioBuffer through a Web Audio chain with optional reverb.
-// Used for reverb mode + custom recording playback.
-export function playAudioBufferWithFx(buffer: AudioBuffer, withReverb: boolean): void {
+// reverbAmount: 0 = none, 1 = bathroom, 2 = cave
+export function playAudioBufferWithFx(buffer: AudioBuffer, reverbAmount: number): void {
   const ctx = getAudioCtx();
   const src = ctx.createBufferSource();
   src.buffer = buffer;
   src.loop = false;
   const gain = ctx.createGain();
   gain.gain.value = 0.9;
-  if (withReverb) {
+  if (reverbAmount > 0) {
     const convolver = ctx.createConvolver();
-    convolver.buffer = getReverbImpulse(ctx);
+    convolver.buffer = getReverbImpulse(ctx, reverbAmount);
     const dryGain = ctx.createGain();
-    dryGain.gain.value = 0.6;
+    // Cave mode is wetter, bathroom is more balanced
+    dryGain.gain.value = reverbAmount >= 2 ? 0.3 : 0.55;
     const wetGain = ctx.createGain();
-    wetGain.gain.value = 0.6;
+    wetGain.gain.value = reverbAmount >= 2 ? 0.9 : 0.65;
     src.connect(dryGain).connect(gain);
     src.connect(convolver).connect(wetGain).connect(gain);
   } else {
@@ -418,12 +457,12 @@ export function playAudioBufferWithFx(buffer: AudioBuffer, withReverb: boolean):
 }
 
 // Decode an audio Blob and play it through the FX chain.
-// Used for custom recordings (saved as Blob URLs).
-export async function playBlobWithFx(blob: Blob, withReverb: boolean): Promise<void> {
+// reverbAmount: 0 = none, 1 = bathroom, 2 = cave
+export async function playBlobWithFx(blob: Blob, reverbAmount: number): Promise<void> {
   const ctx = getAudioCtx();
   const arrayBuffer = await blob.arrayBuffer();
   const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-  playAudioBufferWithFx(audioBuffer, withReverb);
+  playAudioBufferWithFx(audioBuffer, reverbAmount);
 }
 
 export function playFart(preset: FartPreset, options: { loop?: boolean } = {}) {
@@ -433,16 +472,17 @@ export function playFart(preset: FartPreset, options: { loop?: boolean } = {}) {
   }
   const pool = getPool(preset);
   const audio = pickNext(pool);
-  const semitoneRate = Math.pow(2, preset.pitchShift / 12);
-  audio.playbackRate = preset.rate * semitoneRate;
+  const presetRate = Math.pow(2, preset.pitchShift / 12) * preset.rate;
+  const fxRate = Math.pow(2, pitchSemitones / 12) * speedFactor;
+  audio.playbackRate = presetRate * fxRate;
   audio.volume = 0.9;
   audio.loop = options.loop ?? false;
 
   try { audio.currentTime = 0; } catch {}
 
-  // If reverb is on, route through Web Audio convolver instead of direct
-  if (isReverbEnabled()) {
-    void playSampleWithReverb(audio.src);
+  // If reverb is on (any amount > 0), route through Web Audio convolver with chosen amount
+  if (reverbAmount > 0) {
+    void playSampleWithReverb(audio.src, reverbAmount);
     return;
   }
 
@@ -459,13 +499,13 @@ export function playFart(preset: FartPreset, options: { loop?: boolean } = {}) {
 
 // Fetch a sample URL, decode, and play through the reverb chain.
 // Used when Bathroom mode is on.
-async function playSampleWithReverb(url: string): Promise<void> {
+async function playSampleWithReverb(url: string, amount: number): Promise<void> {
   try {
     const ctx = getAudioCtx();
     const resp = await fetch(url);
     const arrayBuffer = await resp.arrayBuffer();
     const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-    playAudioBufferWithFx(audioBuffer, true);
+    playAudioBufferWithFx(audioBuffer, amount);
   } catch (err) {
     console.warn("[fart] reverb playback failed:", err);
   }
