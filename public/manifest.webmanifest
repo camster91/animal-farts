@@ -1,18 +1,104 @@
 {
-  "name": "Animal Farts",
+  "name": "Animal Farts 💨",
   "short_name": "Farts",
-  "description": "Tap animals. Make fart noises. Maximum fun.",
-  "start_url": "/",
+  "description": "Tap animals. Make fart noises. 34 animals, recordings, stickers & more.",
+  "start_url": "/?utm_source=pwa",
+  "scope": "/",
+  "id": "/?utm_source=pwa",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "browser"],
   "orientation": "portrait",
   "background_color": "#fbbf24",
   "theme_color": "#fbbf24",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["entertainment", "kids", "games"],
+  "prefer_related_applications": false,
   "icons": [
     {
-      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='96' fill='%23fbbf24'/><text x='50%25' y='55%25' font-size='320' text-anchor='middle' dominant-baseline='middle'>💨</text></svg>",
-      "sizes": "512x512",
+      "src": "/favicon.svg",
+      "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
-  ]
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshot-wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Animal Farts — grid of 34 animal buttons"
+    },
+    {
+      "src": "/screenshot-narrow.png",
+      "sizes": "750x1334",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Animal Farts on iPhone"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Surprise Me",
+      "short_name": "Surprise",
+      "description": "Play a random animal fart",
+      "url": "/?action=surprise&utm_source=shortcut",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Record a Fart",
+      "short_name": "Record",
+      "description": "Record and save a new sound",
+      "url": "/?action=record&utm_source=shortcut",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Daily Challenge",
+      "short_name": "Challenge",
+      "description": "Today's fart challenge",
+      "url": "/?action=challenge&utm_source=shortcut",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "share_target": {
+    "action": "/?action=share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        { "name": "media", "accept": ["image/*", "audio/*", "video/*"] }
+      ]
+    }
+  },
+  "edge_side_panel": { "preferred_width": 480 },
+  "launch_handler": { "client_mode": "auto" },
+  "handle_links": "preferred"
 }

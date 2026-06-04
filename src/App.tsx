@@ -1,5 +1,15 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import {
+  isInstallAvailable,
+  isIosSafari,
+  isInstalledPwa,
+  parseLaunchAction,
+  promptInstall,
+  share,
+  watchOnlineStatus,
+  type LaunchAction,
+} from "./pwa";
+import {
   PRESETS,
   OHNO_PRESETS,
   playFart,
@@ -75,6 +85,80 @@ export default function App() {
   const [activeKid, setActiveKidState] = useState<Kid | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showKidMenu, setShowKidMenu] = useState(false);
+  // PWA state
+  const [installable, setInstallable] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [showIosInstall, setShowIosInstall] = useState(false);
+  const [showShareToast, setShowShareToast] = useState<"shared" | "copied" | "unsupported" | null>(null);
+  const [launchAction, setLaunchAction] = useState<LaunchAction>(null);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+
+  // PWA setup: install prompt, online status, launch action, SW updates
+  useEffect(() => {
+    const onInstallable = () => setInstallable(true);
+    const onInstalled = () => { setInstallable(false); setShowIosInstall(false); };
+    window.addEventListener("pwa-installable", onInstallable);
+    window.addEventListener("pwa-installed", onInstalled);
+    setInstallable(isInstallAvailable());
+    // iOS Safari: always show install instructions unless already installed
+    if (isIosSafari() && !isInstalledPwa()) {
+      setShowIosInstall(true);
+    }
+    // Online status
+    const stopWatching = watchOnlineStatus(setIsOnline);
+    // Launch action from PWA shortcut
+    const action = parseLaunchAction();
+    if (action) {
+      setLaunchAction(action);
+      // Clean the URL so a refresh doesn't re-trigger
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    // SW update detection
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.ready.then((reg) => {
+        reg.addEventListener("updatefound", () => {
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+          newWorker.addEventListener("statechange", () => {
+            if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+              setUpdateAvailable(true);
+            }
+          });
+        });
+      });
+    }
+    return () => {
+      window.removeEventListener("pwa-installable", onInstallable);
+      window.removeEventListener("pwa-installed", onInstalled);
+      stopWatching();
+    };
+  }, []);
+
+  // Apply launch action when activeKid becomes available
+  useEffect(() => {
+    if (!launchAction) return;
+    if (launchAction.type === "surprise") {
+      onRandomRef.current?.();
+    } else if (launchAction.type === "challenge") {
+      setTab("mystuff"); // daily challenge lives inside My Stuff
+    } else if (launchAction.type === "record") {
+      setShowRecordModal(true);
+    }
+    setLaunchAction(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [launchAction, activeKid]);
+
+  // Refresh app when user taps "Update"
+  const applyUpdate = useCallback(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.getRegistration().then((reg) => {
+        if (reg?.waiting) {
+          reg.waiting.postMessage({ type: "SKIP_WAITING" });
+          window.location.reload();
+        }
+      });
+    }
+  }, []);
   const [poofs, setPoofs] = useState<Poof[]>([]);
   const [shake, setShake] = useState(false);
   const [hype, setHype] = useState(0);
@@ -272,6 +356,8 @@ export default function App() {
     lastActionRef.current.random = now;
     trigger(PRESETS[Math.floor(Math.random() * PRESETS.length)]);
   }, [trigger, parentalBlocked]);
+  const onRandomRef = useRef(onRandom);
+  useEffect(() => { onRandomRef.current = onRandom; }, [onRandom]);
 
   const onCombo = useCallback(() => {
     if (parentalBlocked) return;
@@ -394,6 +480,48 @@ export default function App() {
 
   return (
     <div className={`min-h-screen w-full flex flex-col ${shake ? "animate-shake" : ""}`} style={reverbMode ? { background: "linear-gradient(135deg, #dbeafe 0%, #93c5fd 100%)" } : { background: "linear-gradient(135deg, #fef3c7 0%, #fde68a 50%, #fbbf24 100%)" }}>
+
+      {/* PWA Update banner */}
+      {updateAvailable && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500 text-white text-center py-2 px-3 text-sm font-bold shadow-lg flex items-center justify-center gap-2" style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top))" }}>
+          <span>New version ready!</span>
+          <button onClick={applyUpdate} className="bg-white text-amber-700 px-3 py-1 rounded-full font-bold active:scale-95">
+            Update
+          </button>
+        </div>
+      )}
+
+      {/* Offline indicator */}
+      {!isOnline && (
+        <div className="bg-red-500 text-white text-center text-xs font-bold py-1.5">
+          📡 Offline — using cached sounds
+        </div>
+      )}
+
+      {/* iOS Install hint */}
+      {showIosInstall && !isInstalledPwa() && (
+        <div className="bg-amber-100 border-b-2 border-amber-400 px-4 py-2 text-amber-900 text-xs flex items-center justify-between gap-2">
+          <span>📲 Install: tap <strong>Share</strong> → <strong>Add to Home Screen</strong></span>
+          <button onClick={() => setShowIosInstall(false)} className="text-amber-900/70 font-bold px-2">✕</button>
+        </div>
+      )}
+
+      {/* Android install button */}
+      {installable && !isInstalledPwa() && !showIosInstall && (
+        <div className="bg-emerald-100 border-b-2 border-emerald-400 px-4 py-2 text-emerald-900 text-xs flex items-center justify-between gap-2">
+          <span>📲 Install Animal Farts on your phone</span>
+          <button
+            onClick={async () => {
+              const ok = await promptInstall();
+              if (ok) setInstallable(false);
+            }}
+            className="bg-emerald-500 text-white px-3 py-1 rounded-full font-bold active:scale-95"
+          >
+            Install
+          </button>
+        </div>
+      )}
+
       <header className="px-4 pt-6 pb-3 text-center relative">
         <h1 className={`text-4xl sm:text-5xl font-bold drop-shadow-sm ${reverbMode ? "text-blue-900" : "text-amber-900"}`}>
           💨 ANIMAL FARTS 💨
@@ -598,7 +726,30 @@ export default function App() {
               💥 COMBO
             </button>
           </div>
+          <button
+            onClick={async () => {
+              const result = await share({
+                title: "💨 Animal Farts",
+                text: "Check out Animal Farts — 34 animals, recordings, stickers & more!",
+                url: window.location.origin + "/?utm_source=share",
+              });
+              setShowShareToast(result);
+              setTimeout(() => setShowShareToast(null), 2500);
+            }}
+            className="mt-2 w-full max-w-3xl mx-auto block font-bold text-sm py-2 rounded-xl border-2 bg-white/70 border-blue-300 text-blue-900 active:scale-95"
+          >
+            🔗 Share Animal Farts
+          </button>
         </footer>
+      )}
+
+      {/* Share toast */}
+      {showShareToast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white text-sm font-bold px-4 py-2 rounded-full shadow-lg">
+          {showShareToast === "shared" && "✅ Shared!"}
+          {showShareToast === "copied" && "📋 Link copied!"}
+          {showShareToast === "unsupported" && "Couldn't share"}
+        </div>
       )}
 
       {/* Poof particles */}
@@ -1246,6 +1397,19 @@ function DailyTab({ kidId }: { kidId: string }) {
 
 function ParentalTab({ parental, setParental, reverbMode, toggleReverb, showHypeMeter, setShowHypeMeter }: { parental: ParentalSettings; setParental: (s: ParentalSettings) => void; reverbMode: boolean; toggleReverb: () => void; showHypeMeter: boolean; setShowHypeMeter: (v: boolean) => void }) {
   const [local, setLocal] = useState(parental);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>(
+    typeof Notification !== "undefined" ? Notification.permission : "denied"
+  );
+
+  const requestNotif = async () => {
+    if (typeof Notification === "undefined") return;
+    const result = await Notification.requestPermission();
+    setNotifPermission(result);
+    if (result === "granted") {
+      const { subscribeToPush } = await import("./pwa");
+      await subscribeToPush();
+    }
+  };
 
   const update = <K extends keyof ParentalSettings>(key: K, value: ParentalSettings[K]) => {
     const next = { ...local, [key]: value };
@@ -1257,6 +1421,25 @@ function ParentalTab({ parental, setParental, reverbMode, toggleReverb, showHype
     <main className="flex-1 px-3 pb-4 max-w-3xl mx-auto w-full">
       <h2 className="text-2xl font-bold text-slate-800 mb-1 text-center">👪 Grown-Up Settings</h2>
       <p className="text-sm text-slate-700/70 text-center mb-4">Quiet hours, daily limits, and more.</p>
+
+      {/* Notification permission card */}
+      <div className="bg-white/80 rounded-2xl p-4 shadow-lg mb-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-bold text-slate-800">🔔 Daily Challenge Reminder</div>
+            <div className="text-xs text-slate-600">
+              {notifPermission === "granted" ? "✅ Reminders enabled" :
+               notifPermission === "denied" ? "❌ Blocked — change in browser settings" :
+               "Tap to enable daily push reminders"}
+            </div>
+          </div>
+          {notifPermission !== "granted" && notifPermission !== "denied" && (
+            <button onClick={requestNotif} className="bg-blue-500 text-white px-3 py-1.5 rounded-full text-sm font-bold active:scale-95">
+              Enable
+            </button>
+          )}
+        </div>
+      </div>
 
       <div className="bg-white/80 rounded-2xl p-4 shadow-lg mb-3">
         <label className="flex items-center justify-between cursor-pointer">

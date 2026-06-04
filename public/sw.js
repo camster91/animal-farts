@@ -3,7 +3,7 @@
 // the app works fully offline on first load. Asset paths are injected at
 // build time by scripts/inject-sw-assets.mjs.
 
-const CACHE = "animal-farts-v13";
+const CACHE = "animal-farts-v14";
 
 const SHELL_ASSETS = [
   "/",
@@ -168,5 +168,47 @@ self.addEventListener("fetch", (e) => {
         throw err;
       }
     })()
+  );
+});
+
+// Allow the page to trigger a "skip waiting" so the new SW takes over immediately
+self.addEventListener("message", (e) => {
+  if (e.data && e.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
+
+// Push notification handler — shows a daily challenge reminder
+self.addEventListener("push", (e) => {
+  let data = { title: "💨 Animal Farts", body: "Today's challenge is live! Tap to play.", url: "/?action=challenge" };
+  try { if (e.data) data = { ...data, ...e.data.json() }; } catch {}
+  e.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      data: { url: data.url },
+      tag: "animal-farts-daily",
+      renotify: true,
+      vibrate: [200, 100, 200],
+    })
+  );
+});
+
+// Notification click → focus the app and navigate
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const targetUrl = (e.notification.data && e.notification.data.url) || "/";
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ("focus" in client) {
+          client.focus();
+          client.postMessage({ type: "navigate", url: targetUrl });
+          return;
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
+    })
   );
 });

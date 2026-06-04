@@ -17,4 +17,23 @@ body {
   font-family: "Fredoka", system-ui, sans-serif;
   background: linear-gradient(135deg, #fef3c7 0%, #fde68a 50%, #fbbf24 100%);
   touch-action: manipulation;
+  /* iOS PWA: respect safe areas so content doesn't sit under the notch/home bar */
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* PWA standalone: hide rubber-band overscroll, suppress text-selection on long-press */
+@media (display-mode: standalone) {
+  body { overscroll-behavior: none; }
+}
+
+/* High-contrast: respect user's system contrast preference */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
