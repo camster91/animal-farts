@@ -305,6 +305,7 @@ export default function App() {
 
   const [comboPopup, setComboPopup] = useState<string | null>(null);
   const [emojiRainActive, setEmojiRainActive] = useState(false);
+  const [updateNotice, setUpdateNotice] = useState(false);
 
   const lastActionRef = useRef<{ random: number; combo: number }>({ random: 0, combo: 0 });
   const recordTimerRef = useRef<number | null>(null);
@@ -354,6 +355,14 @@ export default function App() {
     const onMyFartsChanged = () => setRecordings(loadRecordings());
     window.addEventListener("animal-farts:my-farts-changed", onMyFartsChanged);
     return () => window.removeEventListener("animal-farts:my-farts-changed", onMyFartsChanged);
+  }, []);
+
+  // v25f: show a small "Updating..." toast when the SW signals a new version
+  // is ready. main.tsx handles the actual reload on controllerchange.
+  useEffect(() => {
+    const onSwNew = () => setUpdateNotice(true);
+    window.addEventListener("sw-new-version", onSwNew);
+    return () => window.removeEventListener("sw-new-version", onSwNew);
   }, []);
 
   // (v25: installable + iOS install nudge removed. The browser's own
@@ -757,6 +766,16 @@ export default function App() {
       {comboPopup && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40 bg-gradient-to-r from-pink-500 to-purple-500 text-white px-6 py-3 rounded-2xl shadow-2xl font-bold text-lg pointer-events-none combo-pop">
           🎉 {comboPopup}!
+        </div>
+      )}
+
+      {/* v25f: small "Updating..." notice when a new SW is ready. The actual
+          reload happens on `controllerchange` in main.tsx. This just gives
+          the parent a visual cue so the reload doesn't feel abrupt. */}
+      {updateNotice && (
+        <div className="fixed top-2 left-1/2 -translate-x-1/2 z-40 bg-emerald-500 text-white px-4 py-1.5 rounded-full shadow-lg text-sm font-bold pointer-events-none flex items-center gap-1.5">
+          <span className="inline-block w-2 h-2 bg-white rounded-full animate-pulse" />
+          Updating…
         </div>
       )}
 
