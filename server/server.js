@@ -90,9 +90,6 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_comments_recording ON comments(recording_id, created_at);
 
-  // Emoji reactions: 👍 😂 💀 etc. One row per (recording, device, emoji).
-  // Adult-only on the client; the endpoint just trusts device_id like the
-  // other social endpoints do.
   CREATE TABLE IF NOT EXISTS reactions (
     recording_id INTEGER NOT NULL,
     device_id    TEXT NOT NULL,

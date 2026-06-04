@@ -602,7 +602,9 @@ export default function App() {
     try {
       const resp = await fetch(rec.url);
       const blob = await resp.blob();
-      const reverbAmount = (window as any).__reverbAmount ?? ((window as any).__reverbEnabled ? 1 : 0);
+      // reverbAmount is the single source of truth (0..2). Fall back to 0
+      // (dry) if it hasn't been set yet, rather than the old boolean flag.
+      const reverbAmount = (window as any).__reverbAmount ?? 0;
       await playBlobWithFx(blob, reverbAmount);
     } catch (err) {
       const audio = new Audio(rec.url);
