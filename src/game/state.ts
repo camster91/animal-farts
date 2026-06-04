@@ -25,7 +25,6 @@ export type KidStats = {
   recordings: number;
   combosPlayed: number;
   bathroomFarts: number;
-  ohNoPlayed: number;
   longestRecordingSec: number;
   consecutiveDays: number;
   lastPlayedDate: string; // YYYY-MM-DD
@@ -136,7 +135,6 @@ export function getStats(kidId: string): KidStats {
     recordings: 0,
     combosPlayed: 0,
     bathroomFarts: 0,
-    ohNoPlayed: 0,
     longestRecordingSec: 0,
     consecutiveDays: 0,
     lastPlayedDate: "",
@@ -201,7 +199,6 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: "combos-10", name: "Combo King", description: "Play 10 combos", emoji: "👊", predicate: (s) => s.combosPlayed >= 10 },
   { id: "bathroom-once", name: "Plumber", description: "Try Bathroom mode", emoji: "🚿", predicate: (s) => s.bathroomFarts >= 1 },
   { id: "bathroom-25", name: "Echo Chamber", description: "Use Bathroom mode 25 times", emoji: "🛁", predicate: (s) => s.bathroomFarts >= 25 },
-  { id: "ohnos-5", name: "Drama Queen", description: "Play 5 Oh No sounds", emoji: "🙀", predicate: (s) => s.ohNoPlayed >= 5 },
   { id: "long-rec", name: "Long Toot", description: "Record a 5+ second sound", emoji: "📏", predicate: (s) => s.longestRecordingSec >= 5 },
   { id: "streak-3", name: "Three-peat", description: "Play 3 days in a row", emoji: "🔥", predicate: (s) => s.consecutiveDays >= 3 },
   { id: "streak-7", name: "Weekly Winner", description: "Play 7 days in a row", emoji: "🏆", predicate: (s) => s.consecutiveDays >= 7 },

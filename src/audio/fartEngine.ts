@@ -264,28 +264,6 @@ export const PRESETS: FartPreset[] = [
   },
 ];
 
-// "Oh No" voice samples — played as standalone buttons in the Oh No tab
-export const OHNO_PRESETS: FartPreset[] = [
-  {
-    id: "ohno1", name: "Oh No!", emoji: "😱", color: "from-yellow-200 to-red-300",
-    src: "/sounds/ohno1.mp3", pitchShift: 0, rate: 1.0, caption: "OOPS!",
-    loopable: true, baseFreq: 200, detune: 0, attack: 0.01, hold: 0.5, release: 0.3,
-    cutoff: 2000, noise: 0, pitchSweep: 0, wobble: 0, wobbleRate: 0, squelch: 0, thump: false,
-  },
-  {
-    id: "ohno2", name: "Noooo", emoji: "🙀", color: "from-pink-300 to-purple-400",
-    src: "/sounds/ohno2.mp3", pitchShift: 0, rate: 1.0, caption: "NOOOO!",
-    loopable: true, baseFreq: 200, detune: 0, attack: 0.01, hold: 0.5, release: 0.3,
-    cutoff: 2000, noise: 0, pitchSweep: 0, wobble: 0, wobbleRate: 0, squelch: 0, thump: false,
-  },
-  {
-    id: "ohno3", name: "Oopsie", emoji: "😅", color: "from-rose-200 to-pink-300",
-    src: "/sounds/ohno3.mp3", pitchShift: 0, rate: 1.0, caption: "OOPSIE",
-    loopable: true, baseFreq: 200, detune: 0, attack: 0.01, hold: 0.5, release: 0.3,
-    cutoff: 2000, noise: 0, pitchSweep: 0, wobble: 0, wobbleRate: 0, squelch: 0, thump: false,
-  },
-];
-
 // Pool of audio elements per preset
 const POOL_SIZE = 4;
 const pools = new Map<string, HTMLAudioElement[]>();
@@ -529,7 +507,6 @@ export function randomPreset(): FartPreset {
 
 export async function primeAudio() {
   PRESETS.forEach((p) => getPool(p));
-  OHNO_PRESETS.forEach((p) => getPool(p));
   await unlockAudio();
 }
 

@@ -3,7 +3,7 @@
 // the app works fully offline on first load. Asset paths are injected at
 // build time by scripts/inject-sw-assets.mjs.
 
-const CACHE = "animal-farts-v15";
+const CACHE = "animal-farts-v16";
 
 const SHELL_ASSETS = [
   "/",
@@ -32,9 +32,6 @@ const SOUND_ASSETS = [
   "/sounds/rooster.mp3",
   "/sounds/turtle.mp3",
   "/sounds/whale.mp3",
-  "/sounds/ohno1.mp3",
-  "/sounds/ohno2.mp3",
-  "/sounds/ohno3.mp3",
   // v11: 2nd variants + 6 new animals
   "/sounds/extra/cow2.mp3",
   "/sounds/extra/dog_v2.mp3",

@@ -11,7 +11,6 @@ import {
 } from "./pwa";
 import {
   PRESETS,
-  OHNO_PRESETS,
   playFart,
   primeAudio,
   startRecording,
@@ -342,9 +341,6 @@ export default function App() {
     // Track stats
     if (activeKid) {
       trackAnimalTried(activeKid.id, preset.id);
-      if (preset.id.startsWith("ohno")) {
-        updateStats(activeKid.id, (s) => ({ ...s, ohNoPlayed: s.ohNoPlayed + 1 }));
-      }
       if (reverbMode) {
         updateStats(activeKid.id, (s) => ({ ...s, bathroomFarts: s.bathroomFarts + 1 }));
       }
@@ -364,8 +360,6 @@ export default function App() {
     // Pet reaction
     if (reverbMode) {
       setPetState("dancing");
-    } else if (preset.id.startsWith("ohno")) {
-      setPetState("shocked");
     } else {
       setPetState("covering");
     }
@@ -697,7 +691,6 @@ export default function App() {
           {/* Cards — the fun part */}
           <PlayTab
             presets={visiblePresets}
-            ohnoPresets={OHNO_PRESETS}
             recordings={recordings}
             activeKid={activeKid}
             trigger={trigger}
@@ -932,7 +925,6 @@ function StatCard({ label, value }: { label: string; value: number | string }) {
 
 function PlayTab(props: {
   presets: FartPreset[];
-  ohnoPresets: FartPreset[];
   recordings: CustomRecording[];
   activeKid: Kid | null;
   trigger: (p: FartPreset, e?: React.MouseEvent | React.TouchEvent) => void;
@@ -957,7 +949,7 @@ function PlayTab(props: {
   parentalBlocked: boolean;
   primaryTab: string;
 }) {
-  const [sub, setSub] = useState<"animals" | "ohnos" | "voice" | "myfarts">("animals");
+  const [sub, setSub] = useState<"animals" | "voice" | "myfarts">("animals");
   const EMOJI_CHOICES = ["💨", "🎤", "🤪", "😈", "👻", "👽", "💀", "🤡", "🦄", "🐸", "🐵", "🐷", "🐮", "🐔", "🐧", "🐢", "🐬", "🦖"];
 
   return (
@@ -967,7 +959,6 @@ function PlayTab(props: {
         <div className="bg-white/50 backdrop-blur rounded-full p-1 flex gap-0.5 border border-amber-200/50">
           {[
             { id: "animals" as const, label: "🐾 Animals" },
-            { id: "ohnos" as const, label: "😱 Oh No!" },
             { id: "voice" as const, label: "🎭 Voice" },
             { id: "myfarts" as const, label: "🎤 My Farts" },
           ].map((t) => (
@@ -1027,7 +1018,7 @@ function PlayTab(props: {
           </div>
         ) : (
           <div className="grid grid-cols-3 gap-3 max-w-3xl mx-auto">
-            {(sub === "ohnos" ? props.ohnoPresets : props.presets).map((p) => (
+            {props.presets.map((p) => (
               <button
                 key={p.id}
                 onPointerDown={(e) => props.trigger(p, e)}
@@ -1439,7 +1430,7 @@ function DailyTab({ kidId }: { kidId: string }) {
       case "longestRecording": return `${value.toFixed(1)}s`;
       case "mostTaps": return `${value} toots`;
       case "mostCombos": return `${value} combos`;
-      case "mostUniqueAnimals": return `${value}/${PRESETS.length + OHNO_PRESETS.length} animals`;
+      case "mostUniqueAnimals": return `${value}/${PRESETS.length} animals`;
     }
   };
 
@@ -1671,10 +1662,9 @@ function ParentalTab({ parental, setParental, reverbMode, toggleReverb, showHype
 // === Explore Tab — moved to SocialTab ===
 void 0; // (ExploreTab removed in v15; replaced by Instagram-style SocialTab)
 
-// === Voice Tab — pitch-shift, slow down, layer, and remix sounds ===
+// === Voice Tab — pick an animal, apply pitch/speed/reverb, layer, loop ===
 function VoiceTabInline() {
-  const [source, setSource] = useState<"ohnos" | "animals">("ohnos");
-  const [selectedId, setSelectedId] = useState("ohno1");
+  const [selectedId, setSelectedId] = useState("cow");
   const [pitch, setPitch] = useState(0); // semitones (-12 to +12)
   const [speed, setSpeed] = useState(1.0); // 0.4 to 2.0
   const [reverb, setReverb] = useState(0); // 0/1/2
@@ -1692,11 +1682,10 @@ function VoiceTabInline() {
     const id = setInterval(() => playSelected(), 1800);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [looper, selectedId, source, pitch, speed, reverb]);
+  }, [looper, selectedId, pitch, speed, reverb]);
 
   const playSelected = () => {
-    const presets = source === "ohnos" ? OHNO_PRESETS : PRESETS;
-    const preset = presets.find((p) => p.id === selectedId);
+    const preset = PRESETS.find((p) => p.id === selectedId);
     if (!preset) return;
     const count = layerCount;
     for (let i = 0; i < count; i++) {
@@ -1704,33 +1693,14 @@ function VoiceTabInline() {
     }
   };
 
-  const presets = source === "ohnos" ? OHNO_PRESETS : PRESETS;
-  const sourceEmojis = source === "ohnos" ? "😱" : "🐾";
-
   return (
     <main className="flex-1 px-3 pb-4 max-w-3xl mx-auto w-full">
       <h2 className="text-2xl font-bold text-amber-900 text-center mb-1">🎭 Funny Voice</h2>
-      <p className="text-sm text-amber-800/80 text-center mb-3">Make it high, low, slow, fast — or stack 3 at once!</p>
-
-      {/* Source toggle */}
-      <div className="flex gap-2 mb-3">
-        <button
-          onClick={() => { setSource("ohnos"); setSelectedId("ohno1"); }}
-          className={`flex-1 py-2 rounded-xl font-bold text-sm border-2 ${source === "ohnos" ? "bg-amber-100 text-amber-900 border-amber-400" : "bg-white/60 text-amber-700/60 border-amber-200"}`}
-        >
-          😱 Oh No voices
-        </button>
-        <button
-          onClick={() => { setSource("animals"); setSelectedId("cow"); }}
-          className={`flex-1 py-2 rounded-xl font-bold text-sm border-2 ${source === "animals" ? "bg-amber-100 text-amber-900 border-amber-400" : "bg-white/60 text-amber-700/60 border-amber-200"}`}
-        >
-          🐾 Animals
-        </button>
-      </div>
+      <p className="text-sm text-amber-800/80 text-center mb-3">Pick an animal, then make it high, low, slow, fast — or stack 3 at once!</p>
 
       {/* Source picker */}
       <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3">
-        {presets.map((p) => (
+        {PRESETS.map((p) => (
           <button
             key={p.id}
             onClick={() => { setSelectedId(p.id); playSelected(); }}
@@ -1750,7 +1720,7 @@ function VoiceTabInline() {
           onClick={playSelected}
           className="flex-1 py-3 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-white font-extrabold text-lg shadow-xl border-4 border-white active:scale-95"
         >
-          ▶️ PLAY ({sourceEmojis} {presets.find(p=>p.id===selectedId)?.name || "—"})
+          ▶️ PLAY ({PRESETS.find(p=>p.id===selectedId)?.name || "—"})
         </button>
         <button
           onClick={() => setLooper((v) => !v)}
