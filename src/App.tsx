@@ -694,12 +694,25 @@ export default function App() {
         )}
       </header>
 
-      {/* Top tabs — kid-facing nav: 4 tabs, room to breathe */}
+      {/* Top tabs — kid-facing nav: 4 tabs, room to breathe. Adult mode
+          gets 5 sections (Home / Sounds / Studio / Friends / Settings). */}
       <div className="px-3 pb-3 flex gap-2 max-w-3xl mx-auto w-full">
-        <NavTab active={tab === "play"} onClick={() => setTab("play")} color="amber" emoji="🎵" label="Play" />
-        <NavTab active={tab === "explore"} onClick={() => setTab("explore")} color="emerald" emoji="🌍" label="Explore" />
-        <NavTab active={tab === "mystuff"} onClick={() => setTab("mystuff")} color="purple" emoji="📦" label="My Stuff" />
-        <NavTab active={tab === "parental"} onClick={() => setTab("parental")} color="slate" emoji="⚙️" label="Parents" />
+        {adultMode ? (
+          <>
+            <NavTab active={tab === "play"} onClick={() => setTab("play")} color="amber" emoji="🏠" label="Home" />
+            <NavTab active={tab === "play"} onClick={() => { setTab("play"); }} color="orange" emoji="🔊" label="Sounds" />
+            <NavTab active={tab === "mystuff"} onClick={() => setTab("mystuff")} color="purple" emoji="🎙️" label="Studio" />
+            <NavTab active={tab === "explore"} onClick={() => setTab("explore")} color="emerald" emoji="👥" label="Friends" />
+            <NavTab active={tab === "parental"} onClick={() => setTab("parental")} color="slate" emoji="⚙️" label="Settings" />
+          </>
+        ) : (
+          <>
+            <NavTab active={tab === "play"} onClick={() => setTab("play")} color="amber" emoji="🎵" label="Play" />
+            <NavTab active={tab === "explore"} onClick={() => setTab("explore")} color="emerald" emoji="🌍" label="Explore" />
+            <NavTab active={tab === "mystuff"} onClick={() => setTab("mystuff")} color="purple" emoji="📦" label="My Stuff" />
+            <NavTab active={tab === "parental"} onClick={() => setTab("parental")} color="slate" emoji="⚙️" label="Parents" />
+          </>
+        )}
       </div>
 
       {parentalBlocked && (
@@ -834,6 +847,7 @@ export default function App() {
             parental={parental}
             parentalBlocked={parentalBlocked}
             primaryTab="animals"
+            adultMode={adultMode}
           />
         </>
       )}
@@ -1018,12 +1032,13 @@ export default function App() {
 
 // === Sub-components ===
 
-function NavTab({ active, onClick, color, emoji, label }: { active: boolean; onClick: () => void; color: "amber" | "emerald" | "purple" | "slate"; emoji: string; label: string }) {
+function NavTab({ active, onClick, color, emoji, label }: { active: boolean; onClick: () => void; color: "amber" | "emerald" | "purple" | "slate" | "orange"; emoji: string; label: string }) {
   const colors = {
     amber: { active: "bg-amber-500 text-white shadow-lg", idle: "bg-white/70 text-amber-900 border-2 border-amber-200" },
     emerald: { active: "bg-emerald-500 text-white shadow-lg", idle: "bg-white/70 text-emerald-900 border-2 border-emerald-200" },
     purple: { active: "bg-purple-500 text-white shadow-lg", idle: "bg-white/70 text-purple-900 border-2 border-purple-200" },
     slate: { active: "bg-slate-700 text-white shadow-lg", idle: "bg-white/70 text-slate-700 border-2 border-slate-200" },
+    orange: { active: "bg-orange-500 text-white shadow-lg", idle: "bg-white/70 text-orange-900 border-2 border-orange-200" },
   };
   const cls = active ? colors[color].active : colors[color].idle;
   return (
@@ -1073,13 +1088,17 @@ function PlayTab(props: {
   parental: ParentalSettings;
   parentalBlocked: boolean;
   primaryTab: string;
+  adultMode?: boolean;
 }) {
   const [sub, setSub] = useState<"animals" | "voice" | "myfarts">("animals");
   const EMOJI_CHOICES = ["💨", "🎤", "🤪", "😈", "👻", "👽", "💀", "🤡", "🦄", "🐸", "🐵", "🐷", "🐮", "🐔", "🐧", "🐢", "🐬", "🦖"];
 
   return (
     <>
-      {/* Sub-tab bar — segmented control style, clearly secondary to main nav */}
+      {/* Sub-tab bar — segmented control style, clearly secondary to main nav.
+          In adult mode, the Studio/Friends tabs already cover Voice + My Farts,
+          so we only show the animal shortcut here. */}
+      {props.adultMode ? null : (
       <div className="px-3 pb-3 max-w-3xl mx-auto w-full">
         <div className="bg-white/50 backdrop-blur rounded-full p-1 flex gap-0.5 border border-amber-200/50">
           {[
@@ -1097,6 +1116,7 @@ function PlayTab(props: {
           ))}
         </div>
       </div>
+      )}
 
       <main className="flex-1 px-3 pb-44">
         {sub === "voice" ? (
