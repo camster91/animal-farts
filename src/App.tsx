@@ -730,25 +730,29 @@ export default function App() {
         />
       )}
 
-      {/* Combo popup */}
+      {/* Combo popup — drops in from the top, no bounce (which looks broken
+          on text because it makes letters shake instead of moving). */}
       {comboPopup && (
-        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-40 bg-gradient-to-r from-pink-500 to-purple-500 text-white px-6 py-3 rounded-2xl shadow-2xl font-bold text-lg pointer-events-none animate-bounce">
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40 bg-gradient-to-r from-pink-500 to-purple-500 text-white px-6 py-3 rounded-2xl shadow-2xl font-bold text-lg pointer-events-none combo-pop">
           🎉 {comboPopup}!
         </div>
       )}
 
-      {/* Emoji rain when hype peaks */}
+      {/* Emoji rain — proper keyframe: each emoji starts above the viewport,
+          falls down with a small horizontal drift, and fades out before
+          unmounting. `animate-bounce` was wrong: it just shook the
+          emojis in place at their starting X. */}
       {emojiRainActive && (
         <div className="pointer-events-none fixed inset-0 z-30 overflow-hidden">
           {Array.from({ length: 30 }).map((_, i) => (
             <div
               key={i}
-              className="absolute text-3xl animate-bounce"
+              className="absolute text-3xl emoji-fall"
               style={{
                 left: `${(i * 13) % 100}%`,
-                top: `-${(i * 7) % 20}px`,
-                animationDelay: `${(i * 0.1) % 2}s`,
-                animationDuration: `${2 + (i % 3)}s`,
+                top: `-40px`,
+                animationDelay: `${(i * 0.08) % 1.6}s`,
+                animationDuration: `${2.4 + (i % 3) * 0.4}s`,
               }}
             >
               {EMOJI_RAIN[i % EMOJI_RAIN.length]}

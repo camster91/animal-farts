@@ -37,3 +37,40 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* === Confetti + combo popup (v25d) === */
+
+/* Combo popup: drops in from above and settles. `animate-bounce`
+   would shake the text in place — looks broken. */
+.combo-pop {
+  animation: combo-drop 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.28) both;
+}
+@keyframes combo-drop {
+  0%   { transform: translate(-50%, -120%) scale(0.7); opacity: 0; }
+  60%  { transform: translate(-50%, 8%)    scale(1.1); opacity: 1; }
+  100% { transform: translate(-50%, 0%)    scale(1.0); opacity: 1; }
+}
+
+/* Emoji rain: each emoji falls from above the viewport, drifts a bit
+   horizontally, rotates, and fades out before unmounting. */
+.emoji-fall {
+  animation-name: emoji-fall;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+@keyframes emoji-fall {
+  0% {
+    transform: translate3d(0, -10vh, 0) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(40px, 110vh, 0) rotate(360deg);
+    opacity: 0;
+  }
+}
