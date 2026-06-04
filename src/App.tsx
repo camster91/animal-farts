@@ -82,6 +82,7 @@ import {
   type ParentalSettings,
   type Achievement,
 } from "./game/state";
+import { isAdultMode, setAdultMode as setAdultModePersist } from "./game/adultMode";
 
 type Poof = { id: number; x: number; y: number; emoji: string };
 type Tab = "play" | "explore" | "mystuff" | "parental";
@@ -280,6 +281,7 @@ export default function App() {
   const [newRecEmoji, setNewRecEmoji] = useState("💨");
   const [recordError, setRecordError] = useState<string | null>(null);
   const [parental, setParental] = useState<ParentalSettings>(loadParentalSettings());
+  const [adultMode, setAdultModeState] = useState<boolean>(() => isAdultMode());
   const [emojiRainActive, setEmojiRainActive] = useState(false);
   const [petState, setPetState] = useState<"happy" | "covering" | "dancing" | "shocked">("happy");
   const [recentTaps, setRecentTaps] = useState<{ id: string; time: number }[]>([]);
@@ -853,6 +855,7 @@ export default function App() {
           socialView={socialView} setSocialView={setSocialView}
           viewedUser={viewedUser} setViewedUser={setViewedUser}
           editingProfile={editingProfile} setEditingProfile={setEditingProfile}
+          adultMode={adultMode}
         />
       )}
 
@@ -864,6 +867,8 @@ export default function App() {
           toggleReverb={toggleReverb}
           showHypeMeter={showHypeMeter}
           setShowHypeMeter={setShowHypeMeter}
+          adultMode={adultMode}
+          setAdultMode={(v) => { setAdultModePersist(v); setAdultModeState(v); }}
         />
       )}
 
@@ -1591,7 +1596,25 @@ function DailyTab({ kidId }: { kidId: string }) {
   );
 }
 
-function ParentalTab({ parental, setParental, reverbMode, toggleReverb, showHypeMeter, setShowHypeMeter }: { parental: ParentalSettings; setParental: (s: ParentalSettings) => void; reverbMode: boolean; toggleReverb: () => void; showHypeMeter: boolean; setShowHypeMeter: (v: boolean) => void }) {
+function ParentalTab({
+  parental,
+  setParental,
+  reverbMode,
+  toggleReverb,
+  showHypeMeter,
+  setShowHypeMeter,
+  adultMode,
+  setAdultMode,
+}: {
+  parental: ParentalSettings;
+  setParental: (s: ParentalSettings) => void;
+  reverbMode: boolean;
+  toggleReverb: () => void;
+  showHypeMeter: boolean;
+  setShowHypeMeter: (v: boolean) => void;
+  adultMode: boolean;
+  setAdultMode: (v: boolean) => void;
+}) {
   const [local, setLocal] = useState(parental);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>(
     typeof Notification !== "undefined" ? Notification.permission : "denied"
@@ -1753,6 +1776,23 @@ function ParentalTab({ parental, setParental, reverbMode, toggleReverb, showHype
         <p className="text-xs text-slate-600 mt-2 text-center">Kills any audio currently playing</p>
       </div>
 
+      <div className="bg-white/80 rounded-2xl p-4 shadow-lg mb-3">
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={adultMode}
+            onChange={(e) => setAdultMode(e.target.checked)}
+            className="w-6 h-6 mt-0.5"
+          />
+          <div className="flex-1">
+            <div className="font-bold text-slate-800">👤 Adult mode</div>
+            <div className="text-xs text-slate-600 mt-1">
+              Shows emoji reactions (👍 😂 💀) and "Find Friends" in the feed. Off is the default for kids.
+            </div>
+          </div>
+        </label>
+      </div>
+
       <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 text-sm text-red-900">
         <h3 className="font-bold mb-2">📍 All data is stored on this device only</h3>
         <p>Recordings, stickers, and stats live in your browser's local storage. No data is sent to any server. Clearing your browser data will erase all recordings.</p>
@@ -1891,14 +1931,15 @@ function VoiceTabInline() {
 function SocialTab(props: {
   me: SocialUser | null;
   setMe: (u: SocialUser | null) => void;
-  activeKid: Kid | null;
-  recordings: CustomRecording[];
+  viewedUser: SocialUser | null;
+  setViewedUser: (u: SocialUser) => void;
   socialView: "feed" | "discover" | "profile" | "viewProfile";
   setSocialView: (v: "feed" | "discover" | "profile" | "viewProfile") => void;
-  viewedUser: SocialUser | null;
-  setViewedUser: (u: SocialUser | null) => void;
   editingProfile: boolean;
   setEditingProfile: (v: boolean) => void;
+  activeKid: Kid | null;
+  recordings: CustomRecording[];
+  adultMode?: boolean;
 }) {
   const [groups, setGroups] = useState<FeedGroup[]>([]);
   const [discoverUsers, setDiscoverUsers] = useState<SocialUser[]>([]);
@@ -1968,7 +2009,7 @@ function SocialTab(props: {
   if (props.socialView === "discover") {
     return <DiscoverView users={discoverUsers} setViewedUser={props.setViewedUser} setSocialView={props.setSocialView} me={props.me} refresh={refresh} />;
   }
-  return <FeedView groups={groups} serverOnline={serverOnline} setSocialView={props.setSocialView} setViewedUser={props.setViewedUser} me={props.me} refresh={refresh} />;
+  return <FeedView groups={groups} serverOnline={serverOnline} setSocialView={props.setSocialView} setViewedUser={props.setViewedUser} me={props.me} refresh={refresh} adultMode={props.adultMode} />;
 }
 
 function FeedView(props: {
@@ -1978,6 +2019,7 @@ function FeedView(props: {
   setViewedUser: (u: SocialUser) => void;
   me: SocialUser | null;
   refresh: () => void;
+  adultMode?: boolean;
 }) {
   const [commentingOn, setCommentingOn] = useState<number | null>(null);
 
@@ -1987,12 +2029,14 @@ function FeedView(props: {
       <div className="sticky top-0 z-30 bg-gradient-to-b from-emerald-50 via-emerald-50 to-emerald-50/95 backdrop-blur border-b-2 border-emerald-200 px-3 py-2 flex items-center justify-between">
         <h2 className="text-xl font-bold text-emerald-900">🌍 Soundboard</h2>
         <div className="flex gap-1">
-          <button
-            onClick={() => props.setSocialView("discover")}
-            className="px-3 py-1.5 rounded-full bg-emerald-500 text-white font-bold text-xs active:scale-95"
-          >
-            🔍 Find Friends
-          </button>
+          {props.adultMode && (
+            <button
+              onClick={() => props.setSocialView("discover")}
+              className="px-3 py-1.5 rounded-full bg-emerald-500 text-white font-bold text-xs active:scale-95"
+            >
+              🔍 Find Friends
+            </button>
+          )}
           <button
             onClick={() => props.setSocialView("profile")}
             className="px-3 py-1.5 rounded-full bg-white text-emerald-900 font-bold text-xs border-2 border-emerald-300 active:scale-95"
@@ -2024,6 +2068,7 @@ function FeedView(props: {
               onViewProfile={() => { props.setViewedUser(group.author); props.setSocialView("viewProfile"); }}
               onComment={(id) => setCommentingOn(id)}
               onUpdate={props.refresh}
+              adultMode={props.adultMode}
             />
           ))
         )}
@@ -2042,6 +2087,7 @@ function FeedGroupCard(props: {
   onViewProfile: () => void;
   onComment: (id: number) => void;
   onUpdate: () => void;
+  adultMode?: boolean;
 }) {
   const g = props.group;
   return (
@@ -2060,19 +2106,33 @@ function FeedGroupCard(props: {
       {/* Recordings stack */}
       <div className="space-y-2 p-2">
         {g.recordings.map((r) => (
-          <FeedRecordingCard key={r.id} rec={r} me={props.me} onComment={() => props.onComment(r.id)} onUpdate={props.onUpdate} />
+          <FeedRecordingCard key={r.id} rec={r} me={props.me} onComment={() => props.onComment(r.id)} onUpdate={props.onUpdate} adultMode={props.adultMode} />
         ))}
       </div>
     </article>
   );
 }
 
-function FeedRecordingCard(props: { rec: FeedRecording; me: SocialUser | null; onComment: () => void; onUpdate: () => void }) {
+function FeedRecordingCard(props: { rec: FeedRecording; me: SocialUser | null; onComment: () => void; onUpdate: () => void; adultMode?: boolean }) {
   const r = props.rec;
   const [voted, setVoted] = useState(r.userVoted);
   const [count, setCount] = useState(r.upvotes);
   const [showComment, setShowComment] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Adult-only emoji reactions (👍 😂 💀). Loaded lazily on mount.
+  const [reactions, setReactions] = useState<{ counts: Record<string, number>; mine: string[] }>({ counts: {}, mine: [] });
+
+  useEffect(() => {
+    if (!props.adultMode) return;
+    let cancelled = false;
+    (async () => {
+      const { getReactions } = await import("./audio/serverApi");
+      if (cancelled) return;
+      const data = await getReactions(r.id);
+      if (!cancelled) setReactions(data);
+    })();
+    return () => { cancelled = true; };
+  }, [r.id, props.adultMode]);
 
   const onVote = async () => {
     if (busy) return;
@@ -2084,6 +2144,20 @@ function FeedRecordingCard(props: { rec: FeedRecording; me: SocialUser | null; o
       setCount(res.upvotes);
     } catch (err) {
       console.warn("[feed] vote failed:", err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onReact = async (emoji: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { toggleReaction } = await import("./audio/serverApi");
+      const data = await toggleReaction(r.id, emoji);
+      setReactions(data);
+    } catch (err) {
+      console.warn("[feed] reaction failed:", err);
     } finally {
       setBusy(false);
     }
@@ -2107,12 +2181,14 @@ function FeedRecordingCard(props: { rec: FeedRecording; me: SocialUser | null; o
       </div>
       <audio src={r.audioUrl} controls preload="none" className="w-full h-8" />
       <div className="flex items-center gap-2 mt-1 flex-wrap">
-        <button
-          onClick={() => { setShowComment(true); props.onComment(); }}
-          className="text-[10px] text-emerald-700 font-bold px-2 py-0.5 rounded-full bg-white/60 hover:bg-emerald-100"
-        >
-          💬 Comment
-        </button>
+        {props.adultMode && (
+          <button
+            onClick={() => { setShowComment(true); props.onComment(); }}
+            className="text-[10px] text-emerald-700 font-bold px-2 py-0.5 rounded-full bg-white/60 hover:bg-emerald-100"
+          >
+            💬 Comment
+          </button>
+        )}
         <button
           onClick={async () => {
             const { share } = await import("./pwa");
@@ -2142,6 +2218,27 @@ function FeedRecordingCard(props: { rec: FeedRecording; me: SocialUser | null; o
           💾 Save to my farts
         </button>
       </div>
+      {props.adultMode && (
+        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+          {["👍", "😂", "💀"].map((emoji) => {
+            const n = reactions.counts[emoji] || 0;
+            const mine = reactions.mine.includes(emoji);
+            return (
+              <button
+                key={emoji}
+                onClick={() => onReact(emoji)}
+                disabled={busy}
+                aria-pressed={mine}
+                className={`px-2 py-1 rounded-full text-base active:scale-90 transition select-none border ${mine ? "bg-emerald-200 border-emerald-500" : "bg-white/70 border-emerald-200 hover:bg-emerald-50"} disabled:opacity-50`}
+                title={mine ? "Tap to remove" : "Tap to react"}
+              >
+                <span className="mr-1">{emoji}</span>
+                {n > 0 && <span className="text-[10px] font-bold text-emerald-900">{n}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {showComment && (
         <CommentsModal recordingId={r.id} onClose={() => { setShowComment(false); props.onUpdate(); }} me={props.me} />
       )}

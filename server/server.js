@@ -16,6 +16,8 @@
 //   GET  /api/recordings/:id/comments — list comments
 //   POST /api/recordings/:id/comments — add a comment
 //   DELETE /api/comments/:id     — delete own comment
+//   GET  /api/recordings/:id/reactions — aggregated reaction counts + mine
+//   POST /api/recordings/:id/reactions — toggle {emoji} reaction (adult-only)
 //
 // Storage: SQLite for metadata, /server/uploads/ for audio files (webm/mp4).
 // No real auth — device-id header is used to identify users, auto-creates
@@ -87,6 +89,18 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_comments_recording ON comments(recording_id, created_at);
+
+  // Emoji reactions: 👍 😂 💀 etc. One row per (recording, device, emoji).
+  // Adult-only on the client; the endpoint just trusts device_id like the
+  // other social endpoints do.
+  CREATE TABLE IF NOT EXISTS reactions (
+    recording_id INTEGER NOT NULL,
+    device_id    TEXT NOT NULL,
+    emoji        TEXT NOT NULL,
+    created_at   INTEGER NOT NULL,
+    PRIMARY KEY (recording_id, device_id, emoji)
+  );
+  CREATE INDEX IF NOT EXISTS idx_reactions_recording ON reactions(recording_id);
 `);
 
 const app = express();
@@ -473,6 +487,64 @@ app.delete("/api/comments/:id", (req, res) => {
   if (c.device_id !== deviceId) return res.status(403).json({ error: "Not your comment" });
   db.prepare("DELETE FROM comments WHERE id = ?").run(id);
   res.json({ ok: true });
+});
+
+// Allowed reaction emoji set. Keep small and kid-safe by default; the
+// client uses only these three.
+const REACTION_EMOJIS = new Set(["👍", "😂", "💀"]);
+
+function sanitizeEmoji(s) {
+  // Strip whitespace + ZWJ joiners we don't support; require an exact
+  // match against the allowed set to avoid weird codepoints.
+  if (typeof s !== "string") return null;
+  const trimmed = s.trim();
+  return REACTION_EMOJIS.has(trimmed) ? trimmed : null;
+}
+
+// GET /api/recordings/:id/reactions — { counts: {emoji:n}, mine: [emoji] }
+app.get("/api/recordings/:id/reactions", (req, res) => {
+  const id = parseInt(req.params.id);
+  const deviceId = req.headers["x-device-id"];
+  const rows = db.prepare(
+    "SELECT emoji, COUNT(*) AS n FROM reactions WHERE recording_id = ? GROUP BY emoji"
+  ).all(id);
+  const counts = {};
+  for (const r of rows) counts[r.emoji] = r.n;
+  const mineRows = deviceId
+    ? db.prepare("SELECT emoji FROM reactions WHERE recording_id = ? AND device_id = ?").all(id, deviceId)
+    : [];
+  res.json({ counts, mine: mineRows.map((r) => r.emoji) });
+});
+
+// POST /api/recordings/:id/reactions — toggle { emoji }
+app.post("/api/recordings/:id/reactions", (req, res) => {
+  const deviceId = req.headers["x-device-id"];
+  if (!deviceId) return res.status(400).json({ error: "Missing x-device-id" });
+  const id = parseInt(req.params.id);
+  const emoji = sanitizeEmoji(req.body && req.body.emoji);
+  if (!emoji) return res.status(400).json({ error: "Invalid emoji" });
+  const exists = db.prepare(
+    "SELECT 1 FROM reactions WHERE recording_id = ? AND device_id = ? AND emoji = ?"
+  ).get(id, deviceId, emoji);
+  if (exists) {
+    db.prepare(
+      "DELETE FROM reactions WHERE recording_id = ? AND device_id = ? AND emoji = ?"
+    ).run(id, deviceId, emoji);
+  } else {
+    db.prepare(
+      "INSERT INTO reactions (recording_id, device_id, emoji, created_at) VALUES (?, ?, ?, ?)"
+    ).run(id, deviceId, emoji, Date.now());
+  }
+  // Re-aggregate and return the same shape as GET
+  const rows = db.prepare(
+    "SELECT emoji, COUNT(*) AS n FROM reactions WHERE recording_id = ? GROUP BY emoji"
+  ).all(id);
+  const counts = {};
+  for (const r of rows) counts[r.emoji] = r.n;
+  const mineRows = db.prepare(
+    "SELECT emoji FROM reactions WHERE recording_id = ? AND device_id = ?"
+  ).all(id, deviceId);
+  res.json({ counts, mine: mineRows.map((r) => r.emoji), added: !exists });
 });
 
 // GET /api/users — list all users (for discover)

@@ -184,3 +184,22 @@ export async function addComment(recordingId: number, body: string): Promise<{ i
 export async function deleteComment(id: number): Promise<void> {
   await jsonFetch(`/api/comments/${id}`, { method: "DELETE" });
 }
+
+// === Reactions (emoji-only) ===
+export type Reactions = { counts: Record<string, number>; mine: string[] };
+
+export async function getReactions(recordingId: number): Promise<Reactions> {
+  try {
+    return await jsonFetch<Reactions>(`/api/recordings/${recordingId}/reactions`);
+  } catch (err) {
+    console.warn("[api] getReactions failed:", err);
+    return { counts: {}, mine: [] };
+  }
+}
+
+export async function toggleReaction(recordingId: number, emoji: string): Promise<Reactions> {
+  return jsonFetch<Reactions>(`/api/recordings/${recordingId}/reactions`, {
+    method: "POST",
+    body: JSON.stringify({ emoji }),
+  });
+}
