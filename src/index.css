@@ -38,54 +38,24 @@ body {
   }
 }
 
-/* === Tap wiggle (v25f) === */
-/* The emoji rotates on tap for tactile feedback. Single cycle, no infinite loop,
-   so the kid's grid doesn't get a constant shimmy. ~350ms feels right. */
-.animate-wiggle {
-  animation: tap-wiggle 0.35s ease-out 1;
-  transform-origin: 50% 60%;
+/* === Poof (v25k) ===
+ * A 💨 emoji spawns at the tap point, floats up 50px and fades out.
+ * 700ms total. The "puff of dust" feel that v1 had. */
+.poof-rise {
+  animation: poof-rise 0.7s ease-out forwards;
+  pointer-events: none;
 }
-@keyframes tap-wiggle {
-  0%   { transform: rotate(0deg)   scale(1); }
-  20%  { transform: rotate(-15deg) scale(1.1); }
-  50%  { transform: rotate(12deg)  scale(1.05); }
-  80%  { transform: rotate(-6deg)  scale(1.02); }
-  100% { transform: rotate(0deg)   scale(1); }
-}
-
-/* === Confetti + combo popup (v25d) === */
-
-/* Combo popup: drops in from above and settles. `animate-bounce`
-   would shake the text in place — looks broken. */
-.combo-pop {
-  animation: combo-drop 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.28) both;
-}
-@keyframes combo-drop {
-  0%   { transform: translate(-50%, -120%) scale(0.7); opacity: 0; }
-  60%  { transform: translate(-50%, 8%)    scale(1.1); opacity: 1; }
-  100% { transform: translate(-50%, 0%)    scale(1.0); opacity: 1; }
-}
-
-/* Emoji rain: each emoji falls from above the viewport, drifts a bit
-   horizontally, rotates, and fades out before unmounting. */
-.emoji-fall {
-  animation-name: emoji-fall;
-  animation-timing-function: linear;
-  animation-fill-mode: forwards;
-}
-@keyframes emoji-fall {
+@keyframes poof-rise {
   0% {
-    transform: translate3d(0, -10vh, 0) rotate(0deg);
+    transform: translate(0, 0) scale(0.6) rotate(-10deg);
     opacity: 0;
   }
-  10% {
-    opacity: 1;
-  }
-  90% {
+  20% {
+    transform: translate(0, -10px) scale(1.1) rotate(0deg);
     opacity: 1;
   }
   100% {
-    transform: translate3d(40px, 110vh, 0) rotate(360deg);
+    transform: translate(0, -50px) scale(1.3) rotate(10deg);
     opacity: 0;
   }
 }

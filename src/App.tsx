@@ -18,6 +18,10 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
+  // A small 💨 poof that floats up and fades out from the tap point. The
+  // v1 kid-feedback that made the screen feel alive. Max 6 visible at once.
+  const [poofs, setPoofs] = useState<{ id: number; x: number; y: number }[]>([]);
+  const nextPoofId = useRef(0);
 
   // Clear the "active" highlight 250ms after a tap — gives the emoji a
   // brief pop on press. Visual feedback only; doesn't block any other tap.
@@ -30,6 +34,15 @@ export default function App() {
     }, 250);
   }, []);
 
+  // Spawn a 💨 poof at the tap point and remove it after 700ms.
+  const spawnPoof = useCallback((x: number, y: number) => {
+    const id = nextPoofId.current++;
+    setPoofs((p) => [...p.slice(-5), { id, x, y }]);
+    window.setTimeout(() => {
+      setPoofs((p) => p.filter((pf) => pf.id !== id));
+    }, 700);
+  }, []);
+
   // Recording timer (counts up while recording).
   useEffect(() => {
     if (!recording) return;
@@ -37,22 +50,35 @@ export default function App() {
     return () => window.clearInterval(id);
   }, [recording]);
 
-  // Tap an animal — play its sound.
+  // Tap an animal — play its sound + show a 💨 poof at the tap point.
   const onTapAnimal = useCallback(
-    (preset: FartPreset) => {
+    (preset: FartPreset, e: React.MouseEvent | React.TouchEvent) => {
       void playFart(preset);
       flashActive(preset.id);
+      // Get the tap location. touches for touch events, clientX/Y for mouse.
+      const point = "touches" in e
+        ? (e as any).changedTouches?.[0] ?? (e as any).touches?.[0]
+        : (e as any);
+      const x = point?.clientX ?? window.innerWidth / 2;
+      const y = point?.clientY ?? window.innerHeight / 2;
+      spawnPoof(x, y);
     },
-    [flashActive]
+    [flashActive, spawnPoof]
   );
 
-  // Tap a recording tile — play the Blob URL.
+  // Tap a recording tile — play the Blob URL + show a poof.
   const onTapRecording = useCallback(
-    (rec: CustomRecording) => {
+    (rec: CustomRecording, e: React.MouseEvent | React.TouchEvent) => {
       void playUrl(rec.url);
       flashActive(rec.id);
+      const point = "touches" in e
+        ? (e as any).changedTouches?.[0] ?? (e as any).touches?.[0]
+        : (e as any);
+      const x = point?.clientX ?? window.innerWidth / 2;
+      const y = point?.clientY ?? window.innerHeight / 2;
+      spawnPoof(x, y);
     },
-    [flashActive]
+    [flashActive, spawnPoof]
   );
 
   // Start/stop recording.
@@ -148,6 +174,18 @@ export default function App() {
           )}
         </div>
       </footer>
+
+      {/* 💨 Poofs at tap points. pointer-events-none so they don't
+          intercept clicks; fixed inset-0 to cover the whole screen. */}
+      {poofs.map((p) => (
+        <div
+          key={p.id}
+          className="pointer-events-none fixed text-3xl poof-rise"
+          style={{ left: p.x - 12, top: p.y - 12, zIndex: 50 }}
+        >
+          💨
+        </div>
+      ))}
     </div>
   );
 }
@@ -159,11 +197,11 @@ function AnimalTile({
 }: {
   preset: FartPreset;
   active: boolean;
-  onPlay: (p: FartPreset) => void;
+  onPlay: (p: FartPreset, e: React.MouseEvent | React.TouchEvent) => void;
 }) {
   return (
     <button
-      onClick={() => onPlay(preset)}
+      onClick={(e) => onPlay(preset, e)}
       style={{ touchAction: "manipulation" }}
       className={`relative aspect-square rounded-3xl bg-gradient-to-br ${preset.color} shadow-xl border-4 border-white/70 active:scale-95 select-none`}
     >
@@ -187,7 +225,7 @@ function RecordingTile({
 }: {
   rec: CustomRecording;
   active: boolean;
-  onPlay: (rec: CustomRecording) => void;
+  onPlay: (rec: CustomRecording, e: React.MouseEvent | React.TouchEvent) => void;
   onDelete: (id: string) => void;
 }) {
   return (
@@ -195,7 +233,7 @@ function RecordingTile({
       className={`relative aspect-square rounded-3xl bg-gradient-to-br from-fuchsia-200 to-fuchsia-400 shadow-xl border-4 border-white active:scale-95 select-none transition-transform`}
     >
       <button
-        onClick={() => onPlay(rec)}
+        onClick={(e) => onPlay(rec, e)}
         style={{ touchAction: "manipulation" }}
         className="absolute inset-0 w-full h-full flex flex-col items-center justify-center p-2"
       >
