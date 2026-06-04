@@ -91,10 +91,7 @@ const SOUND_ASSETS = [
 ];
 
 // __PRECACHE_ASSETS__
-const PRECACHE_ASSETS = [
-  "/assets/index-HfGtDziB.js",
-  "/assets/index-BSNq1RqT.css"
-];
+const PRECACHE_ASSETS = self.__INJECTED_PRECACHE__ || [];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(
@@ -106,7 +103,7 @@ self.addEventListener("install", (e) => {
 
       // Sound + JS/CSS: best-effort. If one fails (slow network, 404),
       // log and continue so the SW still installs.
-      const optional = [...SOUND_ASSETS, ...(typeof PRECACHE_ASSETS !== "undefined" ? PRECACHE_ASSETS : [])];
+      const optional = [...SOUND_ASSETS, ...(self.__INJECTED_PRECACHE__ || PRECACHE_ASSETS)];
       const results = await Promise.allSettled(
         optional.map(async (url) => {
           const res = await fetch(url, { cache: "reload" });

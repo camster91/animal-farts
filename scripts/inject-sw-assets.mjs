@@ -31,7 +31,7 @@ if (!sw.includes(MARKER)) {
   process.exit(0);
 }
 
-const replacement = `${MARKER}\nconst PRECACHE_ASSETS = ${JSON.stringify(assets, null, 2)};`;
+const replacement = `${MARKER}\nself.__INJECTED_PRECACHE__ = ${JSON.stringify(assets)};`;
 const next = sw.replace(MARKER, replacement);
 writeFileSync(distSwPath, next);
 console.log(`Injected ${assets.length} precache assets into dist/sw.js:`, assets);
