@@ -5,7 +5,6 @@ import {
   isInstalledPwa,
   parseLaunchAction,
   promptInstall,
-  share,
   watchOnlineStatus,
   type LaunchAction,
 } from "./pwa";
@@ -172,7 +171,9 @@ export default function App() {
   const [installable, setInstallable] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [showIosInstall, setShowIosInstall] = useState(false);
-  const [showShareToast, setShowShareToast] = useState<"shared" | "copied" | "unsupported" | null>(null);
+  // (v23: showShareToast removed along with the share-the-app button.
+  // Sharing now happens via 4-character codes per recording.)
+  const [showEffectsSheet, setShowEffectsSheet] = useState(false);
   const [launchAction, setLaunchAction] = useState<LaunchAction>(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
 
@@ -843,7 +844,8 @@ export default function App() {
         />
       )}
 
-      {/* Action Bar (only on play tab) — fixed at bottom of viewport, with safe-area padding */}
+      {/* Action Bar — single compact row. Voice effects live behind
+          the "🎚️ Effects" sheet so the kid's main screen stays calm. */}
       {tab === "play" && (
         <footer
           className="fixed bottom-0 left-0 right-0 z-30 p-3 bg-gradient-to-t from-white via-white/95 to-transparent"
@@ -851,92 +853,97 @@ export default function App() {
         >
           <div className="flex gap-2 max-w-3xl mx-auto">
             <button
-              onPointerDown={onRandom}
               onClick={onRandom}
-              className="flex-1 bg-gradient-to-br from-purple-400 to-pink-500 active:scale-95 transition-transform text-white font-extrabold text-xl py-5 rounded-2xl shadow-xl border-4 border-white"
+              className="flex-1 bg-gradient-to-br from-purple-400 to-pink-500 active:scale-95 transition-transform text-white font-extrabold text-base py-3 rounded-2xl shadow-lg border-2 border-white"
             >
-              🎲 SURPRISE ME
+              🎲 Surprise
             </button>
             <button
-              onPointerDown={onCombo}
               onClick={onCombo}
-              className="flex-1 bg-gradient-to-br from-orange-500 to-red-500 active:scale-95 transition-transform text-white font-extrabold text-xl py-5 rounded-2xl shadow-xl border-4 border-white"
+              className="flex-1 bg-gradient-to-br from-orange-500 to-red-500 active:scale-95 transition-transform text-white font-extrabold text-base py-3 rounded-2xl shadow-lg border-2 border-white"
             >
-              💥 COMBO
+              💥 Combo
             </button>
-          </div>
-          <button
-            onClick={async () => {
-              const result = await share({
-                title: "💨 Animal Farts",
-                text: "Check out Animal Farts — 34 animals, recordings, stickers & more!",
-                url: window.location.origin + "/?utm_source=share",
-              });
-              setShowShareToast(result);
-              setTimeout(() => setShowShareToast(null), 2500);
-            }}
-            className="mt-2 w-full max-w-3xl mx-auto block font-bold text-sm py-2 rounded-xl border-2 bg-white/70 border-blue-300 text-blue-900 active:scale-95"
-          >
-            🔗 Share Animal Farts
-          </button>
-          {/* Audio modes row */}
-          <div className="mt-2 w-full max-w-3xl mx-auto flex gap-1.5">
-            {([
-              { id: "normal", label: "Normal", emoji: "🔊", bg: "bg-white/70 text-slate-700 border-slate-300" },
-              { id: "chipmunk", label: "Chipmunk", emoji: "🐿️", bg: "bg-yellow-100 text-yellow-900 border-yellow-400" },
-              { id: "slowmo", label: "Slow-Mo", emoji: "🐢", bg: "bg-blue-100 text-blue-900 border-blue-400" },
-            ] as const).map((m) => (
-              <button
-                key={m.id}
-                onClick={() => setAudioMode(m.id)}
-                className={`flex-1 font-bold text-xs py-1.5 rounded-xl border-2 active:scale-95 ${audioMode === m.id ? m.bg + " ring-2 ring-amber-400" : "bg-white/50 text-slate-500 border-slate-200"}`}
-              >
-                {m.emoji} {m.label}
-              </button>
-            ))}
-          </div>
-          {/* Reverb + pitch/speed sliders (only show when in normal mode) */}
-          {audioMode === "normal" && (
-            <div className="mt-2 w-full max-w-3xl mx-auto grid grid-cols-2 gap-2 text-xs">
-              <label className="flex items-center gap-2 bg-white/60 rounded-xl px-2 py-1.5">
-                <span>🎵</span>
-                <input type="range" min="0.5" max="1.5" step="0.1" value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))} className="flex-1" />
-                <span className="font-bold w-8 text-right">{speed.toFixed(1)}x</span>
-              </label>
-              <label className="flex items-center gap-2 bg-white/60 rounded-xl px-2 py-1.5">
-                <span>🎚️</span>
-                <input type="range" min="-12" max="12" step="1" value={pitchShift} onChange={(e) => setPitchShift(parseInt(e.target.value))} className="flex-1" />
-                <span className="font-bold w-8 text-right">{pitchShift > 0 ? "+" : ""}{pitchShift}</span>
-              </label>
-            </div>
-          )}
-          {/* Reverb toggle row */}
-          <div className="mt-2 w-full max-w-3xl mx-auto flex gap-1.5">
-            {([
-              { id: 0, label: "Dry", emoji: "🔈" },
-              { id: 1, label: "Bathroom", emoji: "🚿" },
-              { id: 2, label: "Cave", emoji: "🦇" },
-            ] as const).map((r) => (
-              <button
-                key={r.id}
-                onClick={() => setReverbAmountState(r.id)}
-                className={`flex-1 font-bold text-xs py-1.5 rounded-xl border-2 active:scale-95 ${reverbAmount === r.id ? (r.id === 0 ? "bg-white/70 text-slate-700 border-slate-400 ring-2 ring-amber-400" : r.id === 1 ? "bg-cyan-100 text-cyan-900 border-cyan-400 ring-2 ring-amber-400" : "bg-indigo-100 text-indigo-900 border-indigo-400 ring-2 ring-amber-400") : "bg-white/40 text-slate-400 border-slate-200"}`}
-              >
-                {r.emoji} {r.label}
-              </button>
-            ))}
+            <button
+              onClick={() => setShowEffectsSheet(true)}
+              aria-label="Effects"
+              className="w-12 h-12 rounded-2xl bg-white/80 text-slate-700 border-2 border-slate-200 text-xl active:scale-95 flex items-center justify-center shadow"
+              title="Effects (pitch, speed, reverb)"
+            >
+              🎚️
+            </button>
           </div>
         </footer>
       )}
 
-      {/* Share toast */}
-      {showShareToast && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white text-sm font-bold px-4 py-2 rounded-full shadow-lg">
-          {showShareToast === "shared" && "✅ Shared!"}
-          {showShareToast === "copied" && "📋 Link copied!"}
-          {showShareToast === "unsupported" && "Couldn't share"}
+      {/* Effects sheet — pitch / speed / reverb, hidden behind one tap */}
+      {showEffectsSheet && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4" onClick={() => setShowEffectsSheet(false)}>
+          <div className="bg-white rounded-3xl p-5 w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xl font-bold text-slate-800">🎚️ Effects</h2>
+              <button
+                onClick={() => setShowEffectsSheet(false)}
+                aria-label="Close"
+                className="w-9 h-9 rounded-full bg-gray-100 text-gray-600 text-lg font-bold active:scale-95"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-xs font-bold text-slate-500 mb-1.5 uppercase">Voice</p>
+            <div className="flex gap-1.5 mb-4">
+              {([
+                { id: "normal", label: "Normal", emoji: "🔊" },
+                { id: "chipmunk", label: "Chipmunk", emoji: "🐿️" },
+                { id: "slowmo", label: "Slow-Mo", emoji: "🐢" },
+              ] as const).map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => setAudioMode(m.id)}
+                  className={`flex-1 font-bold text-sm py-2.5 rounded-xl border-2 active:scale-95 ${audioMode === m.id ? "bg-amber-100 text-amber-900 border-amber-400" : "bg-white text-slate-600 border-slate-200"}`}
+                >
+                  {m.emoji} {m.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs font-bold text-slate-500 mb-1.5 uppercase">Tweak</p>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <label className="flex flex-col gap-1 bg-slate-50 rounded-xl p-2.5">
+                <div className="flex justify-between items-center text-xs font-bold text-slate-600">
+                  <span>🎵 Speed</span>
+                  <span>{speed.toFixed(1)}x</span>
+                </div>
+                <input type="range" min="0.5" max="1.5" step="0.1" value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))} />
+              </label>
+              <label className="flex flex-col gap-1 bg-slate-50 rounded-xl p-2.5">
+                <div className="flex justify-between items-center text-xs font-bold text-slate-600">
+                  <span>🎚️ Pitch</span>
+                  <span>{pitchShift > 0 ? "+" : ""}{pitchShift}</span>
+                </div>
+                <input type="range" min="-12" max="12" step="1" value={pitchShift} onChange={(e) => setPitchShift(parseInt(e.target.value))} />
+              </label>
+            </div>
+            <p className="text-xs font-bold text-slate-500 mb-1.5 uppercase">Room</p>
+            <div className="flex gap-1.5">
+              {([
+                { id: 0, label: "Dry", emoji: "🔈" },
+                { id: 1, label: "Bathroom", emoji: "🚿" },
+                { id: 2, label: "Cave", emoji: "🦇" },
+              ] as const).map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() => setReverbAmountState(r.id)}
+                  className={`flex-1 font-bold text-sm py-2.5 rounded-xl border-2 active:scale-95 ${reverbAmount === r.id ? (r.id === 0 ? "bg-white text-slate-700 border-slate-400" : r.id === 1 ? "bg-cyan-100 text-cyan-900 border-cyan-400" : "bg-indigo-100 text-indigo-900 border-indigo-400") : "bg-white text-slate-400 border-slate-200"}`}
+                >
+                  {r.emoji} {r.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
+
+      {/* (v23: share-the-app toast removed.) */}
 
       {/* Parents gate — opens from the gear icon. On success, jump to the
           parental tab. The gate is mounted at App level so it's reachable
