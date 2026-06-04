@@ -83,6 +83,7 @@ import {
   type Achievement,
 } from "./game/state";
 import { isAdultMode, setAdultMode as setAdultModePersist } from "./game/adultMode";
+import { PinGate } from "./game/PinGate";
 
 type Poof = { id: number; x: number; y: number; emoji: string };
 type Tab = "play" | "explore" | "mystuff" | "parental";
@@ -1619,6 +1620,7 @@ function ParentalTab({
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>(
     typeof Notification !== "undefined" ? Notification.permission : "denied"
   );
+  const [pinGateOpen, setPinGateOpen] = useState(false);
 
   const requestNotif = async () => {
     if (typeof Notification === "undefined") return;
@@ -1777,26 +1779,61 @@ function ParentalTab({
       </div>
 
       <div className="bg-white/80 rounded-2xl p-4 shadow-lg mb-3">
-        <label className="flex items-start gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={adultMode}
-            onChange={(e) => setAdultMode(e.target.checked)}
-            className="w-6 h-6 mt-0.5"
-          />
+        <div className="flex items-start gap-3">
+          <div className="text-2xl">🔒</div>
           <div className="flex-1">
-            <div className="font-bold text-slate-800">👤 Adult mode</div>
+            <div className="font-bold text-slate-800">Adult mode</div>
             <div className="text-xs text-slate-600 mt-1">
-              Shows emoji reactions (👍 😂 💀) and "Find Friends" in the feed. Off is the default for kids.
+              Tapping the lock turns on emoji reactions (👍 😂 💀) and "Find Friends" in the feed. Off is the default for kids.
             </div>
+            <button
+              onClick={() => setPinGateOpen(true)}
+              className="mt-2 px-3 py-1.5 rounded-full bg-slate-800 text-white text-xs font-bold active:scale-95"
+            >
+              {adultMode ? "Change adult settings" : "Unlock adult mode"}
+            </button>
+            {adultMode && (
+              <div className="mt-2 text-xs text-emerald-700 font-bold">✅ Adult mode is ON — react with 👍 😂 💀 on the feed</div>
+            )}
           </div>
-        </label>
+        </div>
       </div>
 
       <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 text-sm text-red-900">
         <h3 className="font-bold mb-2">📍 All data is stored on this device only</h3>
         <p>Recordings, stickers, and stats live in your browser's local storage. No data is sent to any server. Clearing your browser data will erase all recordings.</p>
       </div>
+
+      <PinGate
+        open={pinGateOpen}
+        onClose={() => setPinGateOpen(false)}
+        title="Parent PIN"
+      >
+        {(lockAndClose) => (
+          <div className="space-y-2">
+            <label className="flex items-start gap-3 cursor-pointer bg-slate-50 rounded-xl p-3 border border-slate-200">
+              <input
+                type="checkbox"
+                checked={adultMode}
+                onChange={(e) => setAdultMode(e.target.checked)}
+                className="w-6 h-6 mt-0.5"
+              />
+              <div className="flex-1">
+                <div className="font-bold text-slate-800">👤 Adult mode</div>
+                <div className="text-xs text-slate-600 mt-1">
+                  Turns on emoji reactions and "Find Friends" on the feed.
+                </div>
+              </div>
+            </label>
+            <button
+              onClick={lockAndClose}
+              className="w-full py-2 rounded-xl bg-slate-800 text-white text-sm font-bold active:scale-95"
+            >
+              Done
+            </button>
+          </div>
+        )}
+      </PinGate>
     </main>
   );
 }
