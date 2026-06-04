@@ -309,8 +309,7 @@ export const SOUND_PACKS: SoundPack[] = [
   { id: "farm", name: "Farm Friends", emoji: "🌾", description: "All the farm animals", animalIds: ["cow", "pig", "duck", "rooster", "horse", "bull"], unlockAchievementId: "fart-10" },
   { id: "jungle", name: "Wild Jungle", emoji: "🌴", description: "Predators and prey", animalIds: ["lion", "elephant", "monkey", "snake", "bear", "tiger" /* not in library but referenced */], unlockAchievementId: "all-animals" },
   { id: "bathroom", name: "Bathroom Echo", emoji: "🚿", description: "Sounds that echo", animalIds: ["frog", "turtle", "whale", "rabbit"], unlockAchievementId: "bathroom-once" },
-  { id: "drama", name: "Drama Pack", emoji: "🎭", description: "All the Oh No voices", animalIds: ["ohno1", "ohno2", "ohno3"], unlockAchievementId: "ohnos-5" },
-  { id: "creator", name: "Creator Pack", emoji: "🎤", description: "All about recording", animalIds: ["monkey", "rooster", "rabbit", "frog", "ohno1", "ohno2", "ohno3"], unlockAchievementId: "recordings-5" },
+  { id: "creator", name: "Creator Pack", emoji: "🎤", description: "All about recording", animalIds: ["monkey", "rooster", "rabbit", "frog"], unlockAchievementId: "recordings-5" },
   { id: "legendary", name: "Legendary Toots", emoji: "👑", description: "For true legends", animalIds: ["elephant", "whale", "lion", "bear"], unlockAchievementId: "fart-200" },
 ];
 
@@ -451,5 +450,4 @@ export const ANIMAL_NAMES: Record<string, string> = {
   pig: "Pig", duck: "Duck", elephant: "Elephant", monkey: "Monkey",
   snake: "Snake", lion: "Lion", frog: "Frog", bull: "Bull", rabbit: "Rabbit",
   bear: "Bear", rooster: "Rooster", turtle: "Turtle", whale: "Whale",
-  ohno1: "Oh No!", ohno2: "Noooo", ohno3: "Oopsie",
 };
