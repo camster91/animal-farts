@@ -304,8 +304,12 @@ function getPool(preset: FartPreset): HTMLAudioElement[] {
       for (let i = 0; i < POOL_SIZE; i++) {
         const audio = new Audio(src);
         audio.preload = "auto";
+        // Mark THIS specific audio as bad on error, not the whole preset.
+        // Otherwise a missing altSrc (e.g. /sounds/cow2.mp3 returns the SPA
+        // index.html via the catch-all fallback) poisons the primary src
+        // too — which is the bug that made sounds disappear on the live site.
         audio.addEventListener("error", () => {
-          sampleHealth.set(preset.id, "bad");
+          (audio as HTMLAudioElement & { __bad?: boolean }).__bad = true;
         });
         pool.push(audio);
       }
@@ -318,33 +322,46 @@ function getPool(preset: FartPreset): HTMLAudioElement[] {
 
 function isSampleHealthy(preset: FartPreset): boolean {
   if (!preset.src) return false;
-  const health = sampleHealth.get(preset.id) ?? "unknown";
-  if (health === "bad") return false;
+  // A preset is healthy if at least one of its primary-src pool audios
+  // exists and isn't bad. (We used to key off sampleHealth which was
+  // poisoned by altSrc errors; now we inspect the pool directly.)
   const pool = pools.get(preset.id);
-  if (pool && pool[0].readyState >= 2) {
-    if (health === "unknown") sampleHealth.set(preset.id, "ok");
-    return true;
-  }
-  return true;
+  if (!pool || pool.length === 0) return true; // pool will be created on first pick
+  const hasGoodPrimary = pool.some((a) => {
+    const bad = (a as HTMLAudioElement & { __bad?: boolean }).__bad;
+    return !bad && a.src === preset.src;
+  });
+  return hasGoodPrimary;
 }
 
 let lastIndex = 0;
 function pickNext(pool: HTMLAudioElement[]): HTMLAudioElement {
   if (pool.length === 0) throw new Error("empty audio pool");
-  // Prefer an audio element that has buffered enough to play.
+  // Prefer an audio element that is not bad AND has buffered enough to play.
   // iOS Safari silently rejects play() on readyState < 2 (HAVE_CURRENT_DATA)
   // on a freshly-created audio, which is what made the first tap silent.
   // Walk the pool starting from lastIndex, return the first element
-  // with readyState >= 2. If none are ready, return the first one
-  // (the caller will await canplay before playing).
+  // that's both ready and not bad. If none are ready, return the first
+  // non-bad one (the caller will await canplay before playing).
   for (let i = 0; i < pool.length; i++) {
     const a = pool[(lastIndex + i) % pool.length];
-    if (a.readyState >= 2) {
+    const bad = (a as HTMLAudioElement & { __bad?: boolean }).__bad;
+    if (!bad && a.readyState >= 2) {
       lastIndex = (lastIndex + i + 1) % pool.length;
       return a;
     }
   }
-  // Nothing ready — return the next one in the round-robin order.
+  // No ready non-bad audios — return the first non-bad one anyway.
+  for (let i = 0; i < pool.length; i++) {
+    const a = pool[(lastIndex + i) % pool.length];
+    const bad = (a as HTMLAudioElement & { __bad?: boolean }).__bad;
+    if (!bad) {
+      lastIndex = (lastIndex + i + 1) % pool.length;
+      return a;
+    }
+  }
+  // Everything is bad — fall through to the next in round-robin
+  // (better than throwing; the play() will reject and synth will play).
   const fallback = pool[lastIndex % pool.length];
   lastIndex = (lastIndex + 1) % pool.length;
   return fallback;
@@ -519,7 +536,9 @@ export async function playFart(preset: FartPreset, options: { loop?: boolean } =
   const p = audio.play();
   if (p && typeof p.catch === "function") {
     p.catch(() => {
-      sampleHealth.set(preset.id, "bad");
+      // Mark just THIS audio as bad (e.g. transient network or iOS autoplay
+      // rejection). Don't poison the whole preset.
+      (audio as HTMLAudioElement & { __bad?: boolean }).__bad = true;
       try { playFartSynth(preset); } catch {}
     });
   }

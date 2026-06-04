@@ -54,7 +54,7 @@ function AnimalCard({ preset, active, onPlay }: AnimalCardProps) {
     <button
       {...tap}
       style={{ touchAction: "manipulation" }}
-      className={`relative aspect-square rounded-3xl bg-gradient-to-br ${preset.color} shadow-xl border-4 border-white/70 active:scale-95 transition-transform select-none ${active ? "scale-95" : ""}`}
+      className={`relative aspect-square rounded-3xl bg-gradient-to-br ${preset.color} shadow-xl border-4 border-white/70 active:scale-95 select-none`}
     >
       <div className="absolute inset-0 flex flex-col items-center justify-center p-2 pointer-events-none">
         <div className={`text-6xl sm:text-7xl ${active ? "animate-wiggle" : ""}`}>{preset.emoji}</div>
@@ -406,7 +406,11 @@ export default function App() {
     primeAudio();
     playFart(preset);
     setActive(preset.id);
-    setTimeout(() => setActive((cur) => (cur === preset.id ? null : cur)), 250);
+    // 380ms lets the 350ms tap-wiggle keyframe complete naturally
+    // (the keyframe's 100% frame is rotate(0), so the emoji returns to
+    // neutral on its own). Any shorter and the class is removed mid-rotation,
+    // causing a snap-back to transform: none.
+    setTimeout(() => setActive((cur) => (cur === preset.id ? null : cur)), 380);
 
     // Combo detection: 3+ taps within 3 seconds = combo
     const now = Date.now();
@@ -450,7 +454,7 @@ export default function App() {
         const p = PRESETS[Math.floor(Math.random() * PRESETS.length)];
         playFart(p);
         setActive(p.id);
-        setTimeout(() => setActive((cur) => (cur === p.id ? null : cur)), 250);
+        setTimeout(() => setActive((cur) => (cur === p.id ? null : cur)), 380);
       }, i * 120);
     }
   }, []);
