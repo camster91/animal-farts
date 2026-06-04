@@ -117,7 +117,11 @@ app.use(express.json({ limit: "1mb" })); // for social endpoints (users, follows
 app.use("/uploads", express.static(UPLOAD_DIR, { maxAge: "7d" }));
 
 // Serve the built client (dist/) as static assets — single-port deployment
+// sw.js is explicitly NOT cached (maxAge: 0) so the browser sees new versions
+// on the next visit. Without this, the SW would serve stale code for an hour
+// after each deploy and the new-version toast would never fire.
 const DIST_DIR = path.join(__dirname, "..", "dist");
+app.use("/sw.js", express.static(path.join(DIST_DIR, "sw.js"), { maxAge: 0, etag: true }));
 app.use(express.static(DIST_DIR, { maxAge: "1h" }));
 
 // SPA fallback: any non-API GET that didn't match a static file → index.html
