@@ -362,7 +362,7 @@ async function unlockAudio() {
 let bathroomImpulse: AudioBuffer | null = null;
 let caveImpulse: AudioBuffer | null = null;
 function getReverbImpulse(ctx: AudioContext, amount: number): AudioBuffer {
-  // amount=1 -> bathroom, amount=2 -> cave
+  // amount=1 -> banheiro, amount=2 -> cave
   if (amount >= 2) {
     if (caveImpulse) return caveImpulse;
     const length = ctx.sampleRate * 3.5;
@@ -390,51 +390,9 @@ function getReverbImpulse(ctx: AudioContext, amount: number): AudioBuffer {
   return impulse;
 }
 
-let sharedAudioCtx: AudioContext | null = null;
-function getAudioCtx(): AudioContext {
-  if (!sharedAudioCtx) {
-    const C = window.AudioContext || (window as any).webkitAudioContext;
-    sharedAudioCtx = new C();
-  }
-  return sharedAudioCtx;
-}
-
-// Track currently playing audio for loop control
-const activeAudios = new Set<HTMLAudioElement>();
-
-export function setReverbMode(enabled: boolean) {
-  (window as any).__reverbEnabled = enabled;
-  (window as any).__reverbAmount = enabled ? 1 : 0;
-}
-
-// Audio effect modes. All multiplicative on the preset's playbackRate.
-// pitch: number of semitones shift (1.0 = +1 semitone, 0.5 = -1 semitone, 2.0 = +1 octave)
-// speed: playback rate (0.5 = slow-mo, 1.0 = normal, 2.0 = chipmunk)
-// reverbAmount: 0 = none, 1 = bathroom, 2 = cave
-let pitchSemitones = 0;
-let speedFactor = 1.0;
-let reverbAmount = 0;
-
-export function setPitchSemitones(s: number) { pitchSemitones = s; }
-export function getPitchSemitones() { return pitchSemitones; }
-export function setSpeedFactor(s: number) { speedFactor = s; }
-export function getSpeedFactor() { return speedFactor; }
-export function setReverbAmount(r: number) {
-  reverbAmount = r;
-  // Backwards compat: keep the old __reverbEnabled flag for the simple toggle
-  (window as any).__reverbEnabled = r > 0;
-  (window as any).__reverbAmount = r;
-}
-export function getReverbAmount() { return reverbAmount; }
-
-function isReverbEnabled(): boolean {
-  return !!(window as any).__reverbEnabled;
-}
-void isReverbEnabled; // keep exported for external use
-
-// Play an AudioBuffer through a Web Audio chain with optional reverb.
-// reverbAmount: 0 = none, 1 = bathroom, 2 = cave
-export function playAudioBufferWithFx(buffer: AudioBuffer, reverbAmount: number): void {
+// Play an AudioBuffer through the FX chain (reverb if amount > 0).
+// Internal helper for the two reverb-using callers below.
+function playAudioBufferWithFx(buffer: AudioBuffer, reverbAmount: number): void {
   const ctx = getAudioCtx();
   const src = ctx.createBufferSource();
   src.buffer = buffer;
@@ -458,6 +416,43 @@ export function playAudioBufferWithFx(buffer: AudioBuffer, reverbAmount: number)
   src.start();
   setTimeout(() => { try { src.stop(); } catch {} }, (buffer.duration + 0.5) * 1000);
 }
+
+let sharedAudioCtx: AudioContext | null = null;
+function getAudioCtx(): AudioContext {
+  if (!sharedAudioCtx) {
+    const C = window.AudioContext || (window as any).webkitAudioContext;
+    sharedAudioCtx = new C();
+  }
+  return sharedAudioCtx;
+}
+
+// Track currently playing audio for loop control
+const activeAudios = new Set<HTMLAudioElement>();
+
+// Audio effect modes. All multiplicative on the preset's playbackRate.
+// pitch: number of semitones shift (1.0 = +1 semitone, 0.5 = -1 semitone, 2.0 = +1 octave)
+// speed: playback rate (0.5 = slow-mo, 1.0 = normal, 2.0 = chipmunk)
+// reverbAmount: 0 = none, 1 = bathroom, 2 = cave
+let pitchSemitones = 0;
+let speedFactor = 1.0;
+let reverbAmount = 0;
+
+export function setPitchSemitones(s: number) { pitchSemitones = s; }
+export function setSpeedFactor(s: number) { speedFactor = s; }
+export function setReverbAmount(r: number) {
+  reverbAmount = r;
+  // Backwards compat: keep the old __reverbEnabled flag for the simple toggle
+  (window as any).__reverbEnabled = r > 0;
+  (window as any).__reverbAmount = r;
+}
+
+function isReverbEnabled(): boolean {
+  return !!(window as any).__reverbEnabled;
+}
+void isReverbEnabled; // keep exported for external use
+
+// Play an AudioBuffer through a Web Audio chain with optional reverb.
+// reverbAmount: 0 = none, 1 = bathroom, 2 = cave
 
 // Decode an audio Blob and play it through the FX chain.
 // reverbAmount: 0 = none, 1 = bathroom, 2 = cave
@@ -522,37 +517,15 @@ export function stopAllSounds() {
   activeAudios.clear();
 }
 
-export function playCombo(presets: FartPreset[]) {
-  presets.forEach((p, i) => setTimeout(() => playFart(p), i * 220));
-}
-
-export function randomPreset(): FartPreset {
-  return PRESETS[Math.floor(Math.random() * PRESETS.length)];
-}
-
 export async function primeAudio() {
   PRESETS.forEach((p) => getPool(p));
   await unlockAudio();
 }
 
 // Diagnostic
-export function getAudioState(presetId: string) {
-  const pool = pools.get(presetId);
-  if (!pool || pool.length === 0) return null;
-  const a = pool[0];
-  return {
-    src: a.src.split("/").pop(),
-    paused: a.paused,
-    currentTime: a.currentTime,
-    duration: a.duration,
-    readyState: a.readyState,
-    error: a.error?.message || null,
-    health: sampleHealth.get(presetId) || "unknown",
-  };
-}
 
 // Recording API
-export type RecordingResult = {
+type RecordingResult = {
   blob: Blob;
   url: string;
   duration: number;
@@ -598,10 +571,6 @@ export function stopRecording(): Promise<RecordingResult | null> {
     });
     recorder.stop();
   });
-}
-
-export function isRecording(): boolean {
-  return activeRecorder !== null && activeRecorder.state === "recording";
 }
 
 // Custom recording preset (from user's mic)
@@ -663,61 +632,6 @@ export function deleteRecording(id: string): void {
   localStorage.setItem(RECORDINGS_KEY, JSON.stringify(filtered));
 }
 
-export function renameRecording(id: string, name: string): void {
-  const all = loadRecordings();
-  const found = all.find((r) => r.id === id);
-  if (found) {
-    found.name = name;
-    localStorage.setItem(RECORDINGS_KEY, JSON.stringify(all));
-  }
-}
-
-export function setRecordingVisibility(id: string, visibility: "local" | "public", serverId?: string | null): void {
-  const all = loadRecordings();
-  const found = all.find((r) => r.id === id);
-  if (found) {
-    found.visibility = visibility;
-    if (serverId !== undefined) found.serverId = serverId;
-    localStorage.setItem(RECORDINGS_KEY, JSON.stringify(all));
-  }
-}
-
 // Favorites tracking (per-animal tap count)
-const TAPS_KEY = "fart-tap-counts";
-
-export function loadTapCounts(): Record<string, number> {
-  try {
-    const raw = localStorage.getItem(TAPS_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw);
-  } catch { return {}; }
-}
-
-export function recordTap(id: string): Record<string, number> {
-  const counts = loadTapCounts();
-  counts[id] = (counts[id] || 0) + 1;
-  localStorage.setItem(TAPS_KEY, JSON.stringify(counts));
-  return counts;
-}
-
-export function clearTaps(): void {
-  localStorage.removeItem(TAPS_KEY);
-}
 
 // Per-card loop state (UI)
-export function setCardLoop(id: string, looping: boolean): void {
-  try {
-    const raw = localStorage.getItem("fart-card-loops");
-    const obj = raw ? JSON.parse(raw) : {};
-    obj[id] = looping;
-    localStorage.setItem("fart-card-loops", JSON.stringify(obj));
-  } catch {}
-}
-
-export function loadCardLoops(): Record<string, boolean> {
-  try {
-    const raw = localStorage.getItem("fart-card-loops");
-    if (!raw) return {};
-    return JSON.parse(raw);
-  } catch { return {}; }
-}

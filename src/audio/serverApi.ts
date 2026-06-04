@@ -5,10 +5,8 @@
 import type { CustomRecording } from "./fartEngine";
 
 const DEVICE_ID_KEY = "fart-device-id";
-const API_BASE_KEY = "fart-api-base";
-
 // Generate or retrieve a stable per-device ID (persisted in localStorage)
-export function getDeviceId(): string {
+function getDeviceId(): string {
   const existing = localStorage.getItem(DEVICE_ID_KEY);
   if (existing) return existing;
   // Crypto.randomUUID where available, fallback to manual
@@ -19,19 +17,15 @@ export function getDeviceId(): string {
   return id;
 }
 
-export function getApiBase(): string {
+function getApiBase(): string {
   try {
-    const v = localStorage.getItem(API_BASE_KEY);
+    const v = localStorage.getItem("fart-api-base");
     if (v) return v.replace(/\/$/, "");
   } catch {}
   return ""; // same origin
 }
 
-export function setApiBase(url: string) {
-  try { localStorage.setItem(API_BASE_KEY, url.replace(/\/$/, "")); } catch {}
-}
-
-export type SharedRecording = {
+type SharedRecording = {
   id: number;
   name: string;
   emoji: string;
@@ -109,7 +103,7 @@ export async function uploadCustomRecording(rec: CustomRecording, kidName?: stri
 
 // === Social API (users, follows, comments, feed) ===
 
-export type SocialUser = {
+type SocialUser = {
   handle: string;
   displayName: string;
   avatar: string;
@@ -122,15 +116,15 @@ export type SocialUser = {
   isMe: boolean;
 };
 
-export type SocialComment = {
+type SocialComment = {
   id: number;
   body: string;
   createdAt: number;
   author: { handle: string; displayName: string; avatar: string };
 };
 
-export type FeedRecording = SharedRecording & { author?: SocialUser };
-export type FeedGroup = { author: SocialUser; recordings: FeedRecording[] };
+type FeedRecording = SharedRecording & { author?: SocialUser };
+type FeedGroup = { author: SocialUser; recordings: FeedRecording[] };
 
 export async function getMe(): Promise<SocialUser> {
   return jsonFetch("/api/me");
@@ -186,7 +180,7 @@ export async function deleteComment(id: number): Promise<void> {
 }
 
 // === Reactions (emoji-only) ===
-export type Reactions = { counts: Record<string, number>; mine: string[] };
+type Reactions = { counts: Record<string, number>; mine: string[] };
 
 export async function getReactions(recordingId: number): Promise<Reactions> {
   try {

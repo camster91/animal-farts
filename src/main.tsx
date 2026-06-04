@@ -10,13 +10,12 @@ createRoot(document.getElementById("root")!).render(
   </StrictMode>
 );
 
-// Register service worker for offline use + push
+// Register service worker for offline use
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker
       .register("/sw.js")
       .then((reg) => {
-        // Surface state for debug + enable update detection
         (window as any).__swReg = reg;
         reg.update().catch(() => {});
       })
@@ -26,7 +25,3 @@ if ("serviceWorker" in navigator) {
 
 // PWA install prompt capture (Android Chrome)
 captureInstallPrompt();
-
-// Expose audio state getter for QA verification
-import { getAudioState } from "./audio/fartEngine";
-(window as any).__fartState = getAudioState;

@@ -472,14 +472,14 @@ export default function App() {
     try {
       const resp = await fetch(rec.url);
       const blob = await resp.blob();
-      await playBlobWithFx(blob, (window as any).__reverbAmount ?? 0);
+      await playBlobWithFx(blob, reverbAmount);
     } catch {
       const audio = new Audio(rec.url);
       audio.volume = 0.9;
       audio.play().catch(() => {});
     }
     setHypeLevel((h) => Math.min(5, h + 1));
-  }, []);
+  }, [reverbAmount]);
 
   const onShareRecording = useCallback(async (rec: CustomRecording) => {
     try {
