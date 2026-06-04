@@ -566,7 +566,7 @@ export default function App() {
       </header>
 
       {/* The kid's screen: animals + their recordings, all in one grid. */}
-      <main className="flex-1 px-3 pb-32 max-w-3xl mx-auto w-full">
+      <main className="flex-1 px-3 pb-40 max-w-3xl mx-auto w-full">
         {parentalBlocked ? (
           <div className="bg-slate-700 text-white rounded-3xl p-6 text-center mt-4">
             <div className="text-5xl mb-3">🌙</div>
