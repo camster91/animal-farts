@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
+  playAnimal,
   playRandomFart,
   stopAllSounds,
   setPitchRate,
@@ -27,6 +28,9 @@ export default function SoundsPage() {
 
   // Active animal for the brief scale animation
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Filter category for the animal grid (v25q). Default = all 37.
+  type Filter = "all" | "long" | "farm" | "wild" | "sea" | "bugs";
+  const [filter, setFilter] = useState<Filter>("all");
   const activeTimer = useRef<number | null>(null);
 
   // Stop button only shows when something is actually playing.
@@ -61,10 +65,11 @@ export default function SoundsPage() {
     return () => { if (recordInterval.current) window.clearInterval(recordInterval.current); };
   }, [recording]);
 
-  // Tap an animal → play a random fart
+  // Tap an animal → play that animal's sound (not random)
   const onTapAnimal = useCallback(
     (id: string, emoji: string, e: React.MouseEvent | React.TouchEvent) => {
-      void playRandomFart();
+      const animal = ANIMALS.find((a) => a.id === id);
+      if (animal) void playAnimal(animal.id, animal.srcs);
       setActiveId(id);
       if (activeTimer.current) window.clearTimeout(activeTimer.current);
       activeTimer.current = window.setTimeout(() => {
@@ -112,9 +117,26 @@ export default function SoundsPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Animal grid */}
-      <main className="flex-1 px-3 pb-44 max-w-3xl mx-auto w-full">
+      <main className="flex-1 px-3 pb-72 max-w-3xl mx-auto w-full">
+        {/* Filter chips — show all 34 regular animals or just the 3 long ones */}
+        <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
+          <FilterChip label="All animals" emoji="🐾" active={filter === "all"} onClick={() => setFilter("all")} />
+          <FilterChip label="Long" emoji="🦣" active={filter === "long"} onClick={() => setFilter("long")} />
+          <FilterChip label="Farm" emoji="🌾" active={filter === "farm"} onClick={() => setFilter("farm")} />
+          <FilterChip label="Wild" emoji="🌴" active={filter === "wild"} onClick={() => setFilter("wild")} />
+          <FilterChip label="Sea" emoji="🌊" active={filter === "sea"} onClick={() => setFilter("sea")} />
+          <FilterChip label="Bugs & Birds" emoji="🐝" active={filter === "bugs"} onClick={() => setFilter("bugs")} />
+        </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {ANIMALS.map((a) => (
+          {ANIMALS.filter((a) => {
+            if (filter === "all") return true;
+            if (filter === "long") return ["mammoth", "megaLion", "python"].includes(a.id);
+            if (filter === "farm") return ["cow", "pig", "duck", "rooster", "horse", "bull", "sheep", "goat", "rabbit"].includes(a.id);
+            if (filter === "wild") return ["lion", "elephant", "monkey", "snake", "bear", "tiger", "rhino", "zebra", "giraffe", "moose", "kangaroo", "hippo", "sloth", "skunk", "raccoon", "mammoth", "megaLion", "python"].includes(a.id);
+            if (filter === "sea") return ["whale", "seal", "penguin"].includes(a.id);
+            if (filter === "bugs") return ["bee", "owl", "turkey", "frog", "turtle", "bird"].includes(a.id);
+            return true;
+          }).map((a) => (
             <AnimalTile
               key={a.id}
               animal={a}
@@ -249,6 +271,25 @@ function AnimalTile({
           {animal.name}
         </div>
       </div>
+    </button>
+  );
+}
+
+// Horizontal filter pill — picks a category of animals to show.
+function FilterChip({ label, emoji, active, onClick }: {
+  label: string; emoji: string; active: boolean; onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border-2 active:scale-95 transition-colors ${
+        active
+          ? "bg-amber-500 text-white border-amber-500"
+          : "bg-white text-slate-700 border-slate-200 hover:border-amber-300"
+      }`}
+    >
+      <span className="mr-1">{emoji}</span>
+      {label}
     </button>
   );
 }

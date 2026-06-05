@@ -111,6 +111,22 @@ export function playRandomFart(activeFlavors: Set<Flavor> = new Set()): Promise<
   return playFartUrl(randomFart(activeFlavors));
 }
 
+// === Per-animal play (v25q) ===
+// Each animal has a list of sound variants; we round-robin through them
+// so the same tap never plays the exact same audio twice in a row, but
+// tapping Cow always plays a cow sound, not a random wet-flavor fart.
+const animalNextIdx = new Map<string, number>();
+export function pickAnimalSrc(id: string, srcs: string[]): string {
+  if (srcs.length === 0) return "";
+  const i = animalNextIdx.get(id) ?? 0;
+  const src = srcs[i % srcs.length];
+  animalNextIdx.set(id, (i + 1) % srcs.length);
+  return src;
+}
+export function playAnimal(id: string, srcs: string[]): Promise<void> {
+  return playFartUrl(pickAnimalSrc(id, srcs));
+}
+
 export function playUrl(src: string): Promise<void> {
   return playFartUrl(src);
 }
