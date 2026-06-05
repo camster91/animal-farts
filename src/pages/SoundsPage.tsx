@@ -10,7 +10,7 @@ import {
   stopRecording,
   MAX_RECORDING_SEC,
 } from "../audio/fartEngine";
-import { TILES, FILTERS, type Tile } from "../animals";
+import { TILES, CLUSTERS, randomSoundInCluster, type Tile } from "../animals";
 import { useFx } from "../fxContext";
 import { usePoof } from "../poofContext";
 
@@ -28,12 +28,9 @@ export default function SoundsPage() {
 
   // Active animal for the brief scale animation
   const [activeId, setActiveId] = useState<string | null>(null);
-  // Filter chip selection. v25t: 9 chips (all + animal + 6 flavors + fun).
-  // Each chip's groups[] tells us which TILES.group values to include.
-  // v25t default is "animal" so the page is ~49 tiles instead of 388.
-  // Kids tap "All" or any other chip to expand the grid.
-  type Filter = typeof FILTERS[number]["id"];
-  const [filter, setFilter] = useState<Filter>("animal");
+  // v25u: no filter chips. The grid is small enough (44 clusters) that
+  // the order itself is the navigation: animals first, then flavor, then
+  // themed. The 🎲 button still picks a random cluster + random sound.
   const activeTimer = useRef<number | null>(null);
 
   // Stop button only shows when something is actually playing.
@@ -68,14 +65,15 @@ export default function SoundsPage() {
     return () => { if (recordInterval.current) window.clearInterval(recordInterval.current); };
   }, [recording]);
 
-  // Tap a tile → play that tile's unique sound.
-  // v25s: the tile has its own `sound` field (different emoji = different
-  // sound). Same tile = same sound every time. playSound calls
-  // stopActiveElements() first, so consecutive taps just restart the
-  // sound without layering.
+  // Tap a cluster tile → play a random sound from its bucket.
+  // v25u: each tile is a "thing" the kid recognizes (Cow, Wet, Toilet),
+  // and the sound is randomly picked from the cluster's sounds[] array.
+  // Same tile = different sound every tap. playSound calls
+  // stopActiveElements() first, so consecutive taps just restart.
   const onTapTile = useCallback(
     (tile: Tile, e: React.MouseEvent | React.TouchEvent) => {
-      void playSound(tile.sound);
+      const sound = randomSoundInCluster(tile.id) ?? tile.sound;
+      void playSound(sound);
       setActiveId(tile.id);
       if (activeTimer.current) window.clearTimeout(activeTimer.current);
       activeTimer.current = window.setTimeout(() => {
@@ -126,35 +124,27 @@ export default function SoundsPage() {
           FX card when open. FX card top ≈ 374px from bottom + 16px gap
           = 390px. We use 400px (rounded). */}
       <main className="flex-1 px-3 pb-[400px] max-w-3xl mx-auto w-full">
-        {/* Filter chips — v25t: 9 chips. The "All" chip shows all 388 tiles.
-            Animal / Wet / Dry / Echo / Long / Bubbly / Squeaky / Fun are
-            the 8 flavor categories. */}
-        <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
-          {FILTERS.map((f) => (
-            <FilterChip
-              key={f.id}
-              label={f.label}
-              emoji={f.emoji}
-              active={filter === f.id}
-              onClick={() => setFilter(f.id)}
-            />
-          ))}
-        </div>
-        {/* v25t: 4-column grid on mobile (was 2-col). Tiles are smaller
-            so 49 animal tiles fit on one screen and even 388 flavor
-            tiles scroll smoothly without jank. */}
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
-          {TILES.filter((t) => {
-            const f = FILTERS.find((x) => x.id === filter) ?? FILTERS[0];
-            return f.groups == null || f.groups.includes(t.group);
-          }).map((t) => (
-            <TileView
-              key={t.id}
-              tile={t}
-              active={activeId === t.id}
-              onTap={onTapTile}
-            />
-          ))}
+        {/* v25u: no filter chips. The 44 clusters are laid out in a
+            sensible order (animals → flavor → themed) so the kid
+            scrolls naturally through them. The 🎲 button picks a
+            random cluster + random sound for a surprise. */}
+        {/* v25u: 4-column grid. 44 cluster tiles fit on one screen.
+            Each tile shows its emoji + name, with a small "×N" badge
+            if the cluster has more than 1 sound. */}
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+          {TILES.map((t) => {
+            const c = CLUSTERS.find((x: { id: string }) => x.id === t.id);
+            const count = c?.sounds.length ?? 1;
+            return (
+              <TileView
+                key={t.id}
+                tile={t}
+                count={count}
+                active={activeId === t.id}
+                onTap={onTapTile}
+              />
+            );
+          })}
         </div>
       </main>
 
@@ -268,26 +258,23 @@ function SliderRow({
   );
 }
 
-// v25t: Tile is now self-contained (no separate Animal lookup). It
-// has its own emoji, name, and color. We pick a color per group.
+// v25u: tile is bigger than v25t. Name visible at all times, with a
+// small "×N" badge for multi-sound clusters so the kid knows the tile
+// has variety.
 function tileColor(t: Tile): string {
-  switch (t.group) {
+  switch (t.kind) {
     case 'animal':  return 'from-amber-200 to-orange-300';
-    case 'wet':     return 'from-blue-200 to-cyan-300';
-    case 'dry':     return 'from-yellow-200 to-amber-300';
-    case 'echo':    return 'from-purple-200 to-indigo-300';
-    case 'long':    return 'from-emerald-200 to-teal-300';
-    case 'bubbly':  return 'from-sky-200 to-blue-300';
-    case 'squeaky': return 'from-rose-200 to-pink-300';
-    case 'other':   return 'from-violet-200 to-purple-300';
+    case 'flavor':  return 'from-rose-200 to-pink-300';
+    case 'themed':  return 'from-violet-200 to-purple-300';
     default:        return 'from-amber-200 to-orange-300';
   }
 }
 
 function TileView({
-  tile, active, onTap,
+  tile, count, active, onTap,
 }: {
   tile: Tile;
+  count: number;
   active: boolean;
   onTap: (tile: Tile, e: React.MouseEvent | React.TouchEvent) => void;
 }) {
@@ -295,38 +282,21 @@ function TileView({
     <button
       onClick={(e) => onTap(tile, e)}
       style={{ touchAction: "manipulation" }}
-      className={`relative aspect-square rounded-2xl bg-gradient-to-br ${tileColor(tile)} shadow-md border-2 border-white/70 active:scale-95 select-none`}
+      className={`relative aspect-square rounded-3xl bg-gradient-to-br ${tileColor(tile)} shadow-md border-4 border-white/70 active:scale-95 select-none`}
     >
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className={`text-3xl sm:text-4xl transition-transform ${active ? "scale-90" : ""}`}>
+      <div className="absolute inset-0 flex flex-col items-center justify-center p-1 pointer-events-none">
+        <div className={`text-4xl sm:text-5xl transition-transform ${active ? "scale-90" : ""}`}>
           {tile.emoji}
         </div>
-      </div>
-      {/* Name tooltip only on tap (v25t: too small for inline labels). */}
-      {active && (
-        <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-amber-900 text-white text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap shadow-lg z-10">
+        <div className="mt-0.5 text-[11px] sm:text-xs font-bold text-amber-950 drop-shadow truncate max-w-full text-center leading-tight">
           {tile.name}
         </div>
+      </div>
+      {count > 1 && (
+        <div className="absolute top-1 right-1 bg-amber-900 text-white text-[9px] font-bold rounded-full w-5 h-5 flex items-center justify-center shadow">
+          {count > 99 ? "99+" : count}
+        </div>
       )}
-    </button>
-  );
-}
-
-// Horizontal filter pill — picks a category of animals to show.
-function FilterChip({ label, emoji, active, onClick }: {
-  label: string; emoji: string; active: boolean; onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border-2 active:scale-95 transition-colors ${
-        active
-          ? "bg-amber-500 text-white border-amber-500"
-          : "bg-white text-slate-700 border-slate-200 hover:border-amber-300"
-      }`}
-    >
-      <span className="mr-1">{emoji}</span>
-      {label}
     </button>
   );
 }

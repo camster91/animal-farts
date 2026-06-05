@@ -1,62 +1,39 @@
-// Shared animal/catalog list. v25t: drops the v25s animal-only model
-// and uses the full 388-entry SOUND_CATALOG. Each tile is a unique
-// (sound, emoji, name) tuple. The grid shows ALL tiles by default.
-// Animal sound tiles still get animal emoji + animal name. Flavor
-// farts get flavor emoji (💦 wet, 🍂 dry, 🏛️ echo, 🐌 long, 🎺 squeaky,
-// 🫧 bubbly). Flat /farts/ cycle through a curated non-animal emoji
-// pool so the kid gets visual variety.
+// v25u: cluster catalog — 44 tiles covering all 388 sounds.
+//
+// Each tile is a "thing" the kid recognizes (an animal, a flavor
+// bucket, or a themed cluster). Tapping a tile plays a random sound
+// from its sounds[] array. The kid gets surprise variety without
+// having to scroll through 50 tiles that all look the same.
 
-import { SOUND_CATALOG, type SoundEntry } from "./audio/soundCatalog";
+import { CLUSTERS, type Cluster } from "./audio/clusterCatalog";
 
-export type { SoundEntry };
+export { CLUSTERS };
+export type { Cluster };
 
-/** A single grid tile. v25t: 1:1 with a catalog entry. */
+/** A single grid tile. v25u: 1:1 with a cluster. */
 export type Tile = {
-  id: string;        // catalog index as string ("0", "1", ...)
-  sound: string;
+  id: string;        // cluster id
+  sound: string;     // canonical sound (for tooltips/preview) — picks a random one at tap time
   emoji: string;
   name: string;
-  /** "animal" | "wet" | "dry" | "echo" | "long" | "squeaky" | "bubbly" | "other" */
-  group: string;
+  kind: "animal" | "flavor" | "themed";
 };
 
-/** Group classification. The grid can filter by group. */
-function classify(entry: SoundEntry): string {
-  const s = entry.sound;
-  // Per-animal sounds (49 total)
-  if (s.match(/^\/sounds\/(?:extra\/|v1\/)?[a-z]+(?:\.mp3|_v\d+\.mp3|_long\.mp3|2\.mp3|3\.mp3|_2\.mp3|_3\.mp3)$/)
-      && !s.includes('/farts/')) {
-    return 'animal';
-  }
-  if (s.includes('/farts/wet/')) return 'wet';
-  if (s.includes('/farts/dry/')) return 'dry';
-  if (s.includes('/farts/echo/')) return 'echo';
-  if (s.includes('/farts/long/')) return 'long';
-  if (s.includes('/farts/squeaky/')) return 'squeaky';
-  if (s.includes('/farts/bubbly/')) return 'bubbly';
-  if (s.includes('/farts/')) return 'other';
-  return 'animal';
-}
-
-export const TILES: Tile[] = SOUND_CATALOG.map((e, i) => ({
-  id: String(i),
-  sound: e.sound,
-  emoji: e.emoji,
-  name: e.name,
-  group: classify(e),
+export const TILES: Tile[] = CLUSTERS.map((c) => ({
+  id: c.id,
+  // The displayed sound is a stable pick (first sound in the cluster).
+  // The engine picks a random sound from c.sounds at tap time.
+  sound: c.sounds[0],
+  emoji: c.emoji,
+  name: c.name,
+  kind: c.kind,
 }));
 
 export const TILE_BY_ID = new Map(TILES.map((t) => [t.id, t]));
 
-/** Filter chip definitions. */
-export const FILTERS = [
-  { id: 'all',     label: 'All sounds',  emoji: '💨', groups: null as readonly string[] | null },
-  { id: 'animal',  label: 'Animals',     emoji: '🐾', groups: ['animal'] },
-  { id: 'wet',     label: 'Wet',         emoji: '💦', groups: ['wet'] },
-  { id: 'dry',     label: 'Dry',         emoji: '🍂', groups: ['dry'] },
-  { id: 'echo',    label: 'Echo',        emoji: '🏛️', groups: ['echo'] },
-  { id: 'long',    label: 'Long',        emoji: '🐌', groups: ['long'] },
-  { id: 'bubbly',  label: 'Bubbly',      emoji: '🫧', groups: ['bubbly'] },
-  { id: 'squeaky', label: 'Squeaky',     emoji: '🎺', groups: ['squeaky'] },
-  { id: 'other',   label: 'Fun',         emoji: '🎲', groups: ['other'] },
-];
+/** Pick a random sound from the cluster's sounds[] array. */
+export function randomSoundInCluster(clusterId: string): string | null {
+  const c = CLUSTERS.find((x) => x.id === clusterId);
+  if (!c || c.sounds.length === 0) return null;
+  return c.sounds[Math.floor(Math.random() * c.sounds.length)];
+}
