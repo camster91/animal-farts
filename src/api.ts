@@ -86,10 +86,10 @@ export const api = {
     req<User>("PATCH", "/api/me", patch),
   getUser: (handle: string) => req<User>("GET", `/api/users/${encodeURIComponent(handle)}`),
 
-  // Recordings
-  listMyRecordings: () => req<Recording[]>("GET", "/api/recordings?mine=1"),
+  // Recordings (server returns { recordings: [...] })
+  listMyRecordings: () => req<{ recordings: Recording[] }>("GET", "/api/recordings?mine=1").then((r) => r.recordings),
   listUserRecordings: (handle: string) =>
-    req<Recording[]>("GET", `/api/users/${encodeURIComponent(handle)}/recordings`),
+    req<{ recordings: Recording[] }>("GET", `/api/users/${encodeURIComponent(handle)}/recordings`).then((r) => r.recordings),
   uploadRecording: (meta: { name: string; emoji: string; kidName?: string; durationSec: number; visibility?: "public" | "private" }, audio: Blob) =>
     req<Recording>("POST", "/api/recordings", { ...meta, visibility: meta.visibility || "public" }, audio),
   deleteRecording: (id: number) => req<{ ok: true }>("DELETE", `/api/recordings/${id}`),
@@ -99,11 +99,17 @@ export const api = {
   follow: (handle: string) => req<{ following: boolean }>("POST", `/api/users/${encodeURIComponent(handle)}/follow`),
   unfollow: (handle: string) => req<{ following: boolean }>("DELETE", `/api/users/${encodeURIComponent(handle)}/follow`),
 
-  // Feed
-  getFeed: (limit = 50) => req<FeedEntry[]>("GET", `/api/feed?limit=${limit}`),
+  // Feed (server returns { groups: [{ author, recordings }] })
+  getFeed: (limit = 50) => req<{ groups: { author: User; recordings: Recording[] }[] }>("GET", `/api/feed?limit=${limit}`)
+    .then((r) => r.groups.flatMap((g) => g.recordings.map((rec) => ({
+      ...rec,
+      posterHandle: g.author.handle,
+      posterName: g.author.displayName,
+      posterAvatar: g.author.avatar || "👤",
+    })))),
 
   // List all users (for Explore's "discover people" panel)
-  listUsers: () => req<User[]>("GET", "/api/users"),
+  listUsers: () => req<{ users: User[] }>("GET", "/api/users").then((r) => r.users),
 };
 
 // Audio URL helper — uploads are served from /uploads/<filename>.
