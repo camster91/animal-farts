@@ -30,8 +30,10 @@ export default function SoundsPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   // Filter chip selection. v25t: 9 chips (all + animal + 6 flavors + fun).
   // Each chip's groups[] tells us which TILES.group values to include.
+  // v25t default is "animal" so the page is ~49 tiles instead of 388.
+  // Kids tap "All" or any other chip to expand the grid.
   type Filter = typeof FILTERS[number]["id"];
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>("animal");
   const activeTimer = useRef<number | null>(null);
 
   // Stop button only shows when something is actually playing.
@@ -138,7 +140,10 @@ export default function SoundsPage() {
             />
           ))}
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {/* v25t: 4-column grid on mobile (was 2-col). Tiles are smaller
+            so 49 animal tiles fit on one screen and even 388 flavor
+            tiles scroll smoothly without jank. */}
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
           {TILES.filter((t) => {
             const f = FILTERS.find((x) => x.id === filter) ?? FILTERS[0];
             return f.groups == null || f.groups.includes(t.group);
@@ -290,16 +295,19 @@ function TileView({
     <button
       onClick={(e) => onTap(tile, e)}
       style={{ touchAction: "manipulation" }}
-      className={`relative aspect-square rounded-3xl bg-gradient-to-br ${tileColor(tile)} shadow-xl border-4 border-white/70 active:scale-95 select-none`}
+      className={`relative aspect-square rounded-2xl bg-gradient-to-br ${tileColor(tile)} shadow-md border-2 border-white/70 active:scale-95 select-none`}
     >
-      <div className="absolute inset-0 flex flex-col items-center justify-center p-2 pointer-events-none">
-        <div className={`text-5xl sm:text-6xl transition-transform ${active ? "scale-90" : ""}`}>
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className={`text-3xl sm:text-4xl transition-transform ${active ? "scale-90" : ""}`}>
           {tile.emoji}
         </div>
-        <div className="mt-1 text-xs sm:text-sm font-bold text-amber-950 drop-shadow truncate max-w-full">
+      </div>
+      {/* Name tooltip only on tap (v25t: too small for inline labels). */}
+      {active && (
+        <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-amber-900 text-white text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap shadow-lg z-10">
           {tile.name}
         </div>
-      </div>
+      )}
     </button>
   );
 }
