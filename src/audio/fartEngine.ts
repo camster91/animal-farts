@@ -1,31 +1,24 @@
-// Animal Farts — audio engine. v25m.
+// Animal Farts — audio engine. v25n.
 //
-// Catalog: 270 real MyInstants farts across 6 flavor buckets. Every
-// tap picks a random fart from the active flavor(s) and plays it.
-//
-// v25m design: NO preloaded pool, NO sample, NO synth. The MP3 is
-// played directly. Per-fart <audio> elements are created on demand
-// (cheap, garbage-collected) — this keeps first-install size small
-// (no need to precache 23MB) and keeps the code simple.
-//
-// The "FX" controls (length, pitch, echo) are applied at play time
-// via Web Audio (playbackRate, convolver). They cost nothing when
-// the user doesn't touch them.
+// - 270 real MyInstants farts (random pick from active flavors)
+// - Recording: 6s hard cap, mic permission, returns a Blob + duration
+// - FX: pitch (playbackRate) + bathroom echo (Web Audio convolver)
 
 import {
   wet, dry, long, bubbly, squeaky, echo,
-  FLAVORS, FLAVOR_LABELS, type Flavor,
+  FLAVORS, FLAVOR_LABELS, type Flavor as CatFlavor,
 } from "./fartCatalog";
 
-export { FLAVORS, FLAVOR_LABELS, type Flavor };
+export { FLAVORS, FLAVOR_LABELS };
+export type Flavor = CatFlavor;
 
-// FX state. All settable from App.tsx.
-let pitchRate = 1.0;        // 0.5 = half speed (low), 2.0 = double (chipmunk)
-let echoAmount = 0;         // 0 = dry, 1 = bathroom echo
+// === FX state ===
+let pitchRate = 1.0;        // 0.5x = deep, 2.0x = chipmunk
+let echoAmount = 0;         // 0 = dry, 1 = bathroom
 
 export function setPitchRate(r: number) { pitchRate = r; }
 export function setEchoAmount(e: number) { echoAmount = e; }
-export function setLengthScale(_s: number) { /* reserved for future use */ }
+export function setLengthScale(_s: number) { /* reserved */ }
 
 // === Audio context (lazy) for the echo convolver ===
 let audioCtx: AudioContext | null = null;
@@ -38,7 +31,6 @@ function getCtx(): AudioContext {
   return audioCtx;
 }
 
-// Bathroom echo: cached impulse response. Synthesized at runtime — no asset.
 let echoImpulse: AudioBuffer | null = null;
 function getEchoImpulse(ctx: AudioContext): AudioBuffer {
   if (echoImpulse && echoImpulse.sampleRate === ctx.sampleRate) return echoImpulse;
@@ -54,14 +46,10 @@ function getEchoImpulse(ctx: AudioContext): AudioBuffer {
   return buf;
 }
 
-// Play an MP3 URL with the current FX applied.
-// echoAmount > 0 → route through convolver (Web Audio graph).
-// pitchRate != 1 → adjust playbackRate.
-// lengthScale != 1 → trim or pad the playback via currentTime + scheduled stop.
+// === Playback ===
+
 export function playFartUrl(src: string): Promise<void> {
-  if (echoAmount > 0) {
-    return playWithEcho(src);
-  }
+  if (echoAmount > 0) return playWithEcho(src);
   return playDirect(src);
 }
 
@@ -80,32 +68,27 @@ async function playWithEcho(src: string): Promise<void> {
     const resp = await fetch(src);
     const arrayBuf = await resp.arrayBuffer();
     const audioBuf = await ctx.decodeAudioData(arrayBuf);
-
     const src2 = ctx.createBufferSource();
     src2.buffer = audioBuf;
     src2.playbackRate.value = pitchRate;
-
     const convolver = ctx.createConvolver();
     convolver.buffer = getEchoImpulse(ctx);
     const dry = ctx.createGain();
     dry.gain.value = 0.4;
     const wet = ctx.createGain();
     wet.gain.value = 0.6;
-
     src2.connect(dry).connect(ctx.destination);
     src2.connect(convolver).connect(wet).connect(ctx.destination);
     src2.start();
     setTimeout(() => { try { src2.stop(); } catch {} }, (audioBuf.duration / pitchRate + 0.5) * 1000);
   } catch (err) {
-    // Fall back to direct playback if decodeAudioData fails
     console.warn("[fart] echo playback failed, falling back:", err);
     void playDirect(src);
   }
 }
 
-// === Public: pick a random fart from the active flavors and play it. ===
-//
-// activeFlavors is a Set the UI keeps in sync — empty means "all flavors".
+// === Random fart picker ===
+
 export function randomFart(activeFlavors: Set<Flavor> = new Set()): string {
   const pool: string[] = [];
   for (const f of FLAVORS) {
@@ -119,10 +102,7 @@ export function randomFart(activeFlavors: Set<Flavor> = new Set()): string {
       pool.push(...list);
     }
   }
-  if (pool.length === 0) {
-    // All flavors disabled — fall back to dry
-    pool.push(...dry);
-  }
+  if (pool.length === 0) pool.push(...dry);
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
@@ -130,14 +110,71 @@ export function playRandomFart(activeFlavors: Set<Flavor> = new Set()): Promise<
   return playFartUrl(randomFart(activeFlavors));
 }
 
-// Play a specific URL (for recordings).
 export function playUrl(src: string): Promise<void> {
   return playFartUrl(src);
 }
 
 export function stopAllSounds() {
-  // With per-tap audio elements, there's no global pool to pause.
-  // The browser GCs each Audio once it ends. We just suspend the
-  // AudioContext which is used for echo.
   if (audioCtx) audioCtx.suspend();
+}
+
+// === Recording ===
+// 6-second hard cap. After 6s, auto-stop. Result is a Blob (webm)
+// and the actual duration.
+
+export const MAX_RECORDING_SEC = 6;
+
+let activeRecorder: MediaRecorder | null = null;
+let activeStream: MediaStream | null = null;
+let chunks: Blob[] = [];
+let startedAt = 0;
+let autoStopTimer: number | null = null;
+
+export async function startRecording(): Promise<void> {
+  if (activeRecorder) return;
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  activeStream = stream;
+  chunks = [];
+  const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+    ? "audio/webm;codecs=opus"
+    : "audio/webm";
+  activeRecorder = new MediaRecorder(stream, { mimeType: mime });
+  activeRecorder.addEventListener("dataavailable", (e) => {
+    if (e.data.size > 0) chunks.push(e.data);
+  });
+  activeRecorder.start(100);
+  startedAt = Date.now();
+  // 6s hard cap — auto-stop
+  autoStopTimer = window.setTimeout(() => {
+    if (activeRecorder && activeRecorder.state === "recording") {
+      void stopRecording();
+    }
+  }, MAX_RECORDING_SEC * 1000);
+}
+
+export type RecordingResult = {
+  blob: Blob;
+  duration: number;
+};
+
+export async function stopRecording(): Promise<RecordingResult | null> {
+  if (autoStopTimer) {
+    window.clearTimeout(autoStopTimer);
+    autoStopTimer = null;
+  }
+  if (!activeRecorder) return null;
+  return new Promise((resolve) => {
+    const recorder = activeRecorder!;
+    const stream = activeStream;
+    recorder.addEventListener("stop", () => {
+      const duration = (Date.now() - startedAt) / 1000;
+      const blob = new Blob(chunks, { type: recorder.mimeType });
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      activeRecorder = null;
+      activeStream = null;
+      chunks = [];
+      resolve({ blob, duration });
+    }, { once: true });
+    recorder.stop();
+  });
 }
