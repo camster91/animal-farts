@@ -93,9 +93,8 @@ async function playWithEcho(src: string): Promise<void> {
 
 // === Random fart picker ===
 // v25r: drops the 270-MyInstants library (v25m) and the per-flavor
-// filter system. The 🎲 button now picks from the curated per-animal
-// sounds (one per tile in the grid) — a kid pressing "Random" gets
-// any animal sound, not an external library that no one curated.
+// filter system. The 🎲 button picks from the 388-sound catalog so
+// a kid pressing "Random" gets any sound in the app.
 //
 // v25s: tiles each have their own unique sound. playRandomFart pulls
 // from the TILES list so we don't double-import soundPool here.
@@ -105,7 +104,7 @@ import { TILES } from "../animals";
 export function playRandomFart(): Promise<void> {
   if (TILES.length === 0) return Promise.resolve();
   const tile = TILES[Math.floor(Math.random() * TILES.length)];
-  return playFartUrl(tile.sound);
+  return playSound(tile.sound);
 }
 
 // === Per-tile play (v25s) ===

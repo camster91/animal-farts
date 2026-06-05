@@ -10,7 +10,7 @@ import {
   stopRecording,
   MAX_RECORDING_SEC,
 } from "../audio/fartEngine";
-import { TILES, FILTER_ANIMALS, ANIMAL_BY_ID, type Animal, type Tile } from "../animals";
+import { TILES, FILTERS, type Tile } from "../animals";
 import { useFx } from "../fxContext";
 import { usePoof } from "../poofContext";
 
@@ -28,8 +28,9 @@ export default function SoundsPage() {
 
   // Active animal for the brief scale animation
   const [activeId, setActiveId] = useState<string | null>(null);
-  // Filter category for the animal grid (v25q). Default = all 37.
-  type Filter = "all" | "long" | "farm" | "wild" | "sea" | "bugs";
+  // Filter chip selection. v25t: 9 chips (all + animal + 6 flavors + fun).
+  // Each chip's groups[] tells us which TILES.group values to include.
+  type Filter = typeof FILTERS[number]["id"];
   const [filter, setFilter] = useState<Filter>("all");
   const activeTimer = useRef<number | null>(null);
 
@@ -123,32 +124,32 @@ export default function SoundsPage() {
           FX card when open. FX card top ≈ 374px from bottom + 16px gap
           = 390px. We use 400px (rounded). */}
       <main className="flex-1 px-3 pb-[400px] max-w-3xl mx-auto w-full">
-        {/* Filter chips — show all 34 regular animals or just the 3 long ones */}
+        {/* Filter chips — v25t: 9 chips. The "All" chip shows all 388 tiles.
+            Animal / Wet / Dry / Echo / Long / Bubbly / Squeaky / Fun are
+            the 8 flavor categories. */}
         <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
-          <FilterChip label="All animals" emoji="🐾" active={filter === "all"} onClick={() => setFilter("all")} />
-          <FilterChip label="Long" emoji="🦣" active={filter === "long"} onClick={() => setFilter("long")} />
-          <FilterChip label="Farm" emoji="🌾" active={filter === "farm"} onClick={() => setFilter("farm")} />
-          <FilterChip label="Wild" emoji="🌴" active={filter === "wild"} onClick={() => setFilter("wild")} />
-          <FilterChip label="Sea" emoji="🌊" active={filter === "sea"} onClick={() => setFilter("sea")} />
-          <FilterChip label="Bugs & Birds" emoji="🐝" active={filter === "bugs"} onClick={() => setFilter("bugs")} />
+          {FILTERS.map((f) => (
+            <FilterChip
+              key={f.id}
+              label={f.label}
+              emoji={f.emoji}
+              active={filter === f.id}
+              onClick={() => setFilter(f.id)}
+            />
+          ))}
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {TILES.filter((t) => {
-            const animals = FILTER_ANIMALS[filter] ?? FILTER_ANIMALS.all;
-            return animals.includes(t.animalId);
-          }).map((t) => {
-            const animal = ANIMAL_BY_ID.get(t.animalId);
-            if (!animal) return null;
-            return (
-              <TileView
-                key={t.id}
-                tile={t}
-                animal={animal}
-                active={activeId === t.id}
-                onTap={onTapTile}
-              />
-            );
-          })}
+            const f = FILTERS.find((x) => x.id === filter) ?? FILTERS[0];
+            return f.groups == null || f.groups.includes(t.group);
+          }).map((t) => (
+            <TileView
+              key={t.id}
+              tile={t}
+              active={activeId === t.id}
+              onTap={onTapTile}
+            />
+          ))}
         </div>
       </main>
 
@@ -262,11 +263,26 @@ function SliderRow({
   );
 }
 
+// v25t: Tile is now self-contained (no separate Animal lookup). It
+// has its own emoji, name, and color. We pick a color per group.
+function tileColor(t: Tile): string {
+  switch (t.group) {
+    case 'animal':  return 'from-amber-200 to-orange-300';
+    case 'wet':     return 'from-blue-200 to-cyan-300';
+    case 'dry':     return 'from-yellow-200 to-amber-300';
+    case 'echo':    return 'from-purple-200 to-indigo-300';
+    case 'long':    return 'from-emerald-200 to-teal-300';
+    case 'bubbly':  return 'from-sky-200 to-blue-300';
+    case 'squeaky': return 'from-rose-200 to-pink-300';
+    case 'other':   return 'from-violet-200 to-purple-300';
+    default:        return 'from-amber-200 to-orange-300';
+  }
+}
+
 function TileView({
-  tile, animal, active, onTap,
+  tile, active, onTap,
 }: {
   tile: Tile;
-  animal: Animal;
   active: boolean;
   onTap: (tile: Tile, e: React.MouseEvent | React.TouchEvent) => void;
 }) {
@@ -274,17 +290,15 @@ function TileView({
     <button
       onClick={(e) => onTap(tile, e)}
       style={{ touchAction: "manipulation" }}
-      className={`relative aspect-square rounded-3xl bg-gradient-to-br ${animal.color} shadow-xl border-4 border-white/70 active:scale-95 select-none`}
+      className={`relative aspect-square rounded-3xl bg-gradient-to-br ${tileColor(tile)} shadow-xl border-4 border-white/70 active:scale-95 select-none`}
     >
       <div className="absolute inset-0 flex flex-col items-center justify-center p-2 pointer-events-none">
-        <div className={`text-6xl sm:text-7xl transition-transform ${active ? "scale-90" : ""}`}>
+        <div className={`text-5xl sm:text-6xl transition-transform ${active ? "scale-90" : ""}`}>
           {tile.emoji}
         </div>
-        {tile.showName && (
-          <div className="mt-1 text-base sm:text-lg font-bold text-amber-950 drop-shadow truncate max-w-full">
-            {animal.name}
-          </div>
-        )}
+        <div className="mt-1 text-xs sm:text-sm font-bold text-amber-950 drop-shadow truncate max-w-full">
+          {tile.name}
+        </div>
       </div>
     </button>
   );
