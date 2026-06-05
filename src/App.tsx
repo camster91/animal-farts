@@ -50,7 +50,10 @@ export default function App() {
           className="min-h-screen flex flex-col"
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         >
-          <div className="flex-1 overflow-hidden">
+          {/* Page content. v25v: Sounds tab fills the whole viewport
+              (above the bottom nav). My/Explore/Profile have their
+              own layouts with normal padding. */}
+          <div className={`flex-1 ${tab === "sounds" ? "overflow-hidden" : "overflow-y-auto pb-20"}`}>
             {tab === "sounds" && <SoundsPage />}
             {tab === "my" && <MySoundsPage me={me} />}
             {tab === "explore" && <ExplorePage me={me} />}
@@ -59,13 +62,14 @@ export default function App() {
             )}
           </div>
 
+          {/* Bottom nav — for parents to access recordings/profile. */}
           <nav
-            className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t-2 border-amber-200"
+            className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t-2 border-amber-200"
             style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
           >
             <div className="flex max-w-3xl mx-auto">
-              <TabButton tab="sounds" current={tab} onClick={setTab} emoji="💨" label="Sounds" />
-              <TabButton tab="my" current={tab} onClick={setTab} emoji="🎤" label="My" />
+              <TabButton tab="sounds" current={tab} onClick={setTab} emoji="💨" label="Play" />
+              <TabButton tab="my" current={tab} onClick={setTab} emoji="🎤" label="My Sounds" />
               <TabButton tab="explore" current={tab} onClick={setTab} emoji="🌍" label="Explore" />
               <TabButton tab="profile" current={tab} onClick={setTab} emoji="👤" label="Me" />
             </div>
