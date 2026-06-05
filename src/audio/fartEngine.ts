@@ -1,16 +1,14 @@
-// Animal Farts — audio engine. v25n.
+// Animal Farts — audio engine. v25r.
 //
-// - 270 real MyInstants farts (random pick from active flavors)
-// - Recording: 6s hard cap, mic permission, returns a Blob + duration
-// - FX: pitch (playbackRate) + bathroom echo (Web Audio convolver)
-
-import {
-  wet, dry, long, bubbly, squeaky, echo,
-  FLAVORS, FLAVOR_LABELS, type Flavor as CatFlavor,
-} from "./fartCatalog";
-
-export { FLAVORS, FLAVOR_LABELS };
-export type Flavor = CatFlavor;
+// - Per-animal play (v25q): each animal has its own sound files, round-
+//   robined through `srcs` on every tap. No more "tapping Cow plays a
+//   random wet-flavor fart".
+// - v25r: playback stops any in-flight audio first (auto-stop-on-tap).
+// - Random play (the 🎲 button): 270 MyInstants farts, picked across
+//   the active flavor filters. The catalog is imported lazily so the
+//   per-animal hot path doesn't pull it.
+// - Recording: 6s hard cap, mic permission, returns a Blob + duration.
+// - FX: pitch (playbackRate) + bathroom echo (Web Audio convolver).
 
 // === FX state ===
 let pitchRate = 1.0;        // 0.5x = deep, 2.0x = chipmunk
@@ -47,8 +45,13 @@ function getEchoImpulse(ctx: AudioContext): AudioBuffer {
 }
 
 // === Playback ===
+// v25r: every playback now stops all currently-playing sounds first.
+// This is what the kid wants: tap a new animal = new sound, not "two
+// animals at once". The previously-active element is paused, rewound,
+// and dropped from the active set.
 
 export function playFartUrl(src: string): Promise<void> {
+  stopActiveElements();
   if (echoAmount > 0) return playWithEcho(src);
   return playDirect(src);
 }
@@ -89,26 +92,18 @@ async function playWithEcho(src: string): Promise<void> {
 }
 
 // === Random fart picker ===
+// v25r: drops the 270-MyInstants library (v25m) and the per-flavor
+// filter system. The 🎲 button now picks from the 49 per-animal
+// sounds — a kid pressing "Random" gets any animal sound, not
+// an external library that no one curated.
 
-export function randomFart(activeFlavors: Set<Flavor> = new Set()): string {
-  const pool: string[] = [];
-  for (const f of FLAVORS) {
-    if (activeFlavors.size === 0 || activeFlavors.has(f)) {
-      const list = f === "wet" ? wet
-        : f === "dry" ? dry
-        : f === "long" ? long
-        : f === "bubbly" ? bubbly
-        : f === "squeaky" ? squeaky
-        : echo;
-      pool.push(...list);
-    }
-  }
-  if (pool.length === 0) pool.push(...dry);
-  return pool[Math.floor(Math.random() * pool.length)];
-}
+import { ANIMALS } from "../animals";
 
-export function playRandomFart(activeFlavors: Set<Flavor> = new Set()): Promise<void> {
-  return playFartUrl(randomFart(activeFlavors));
+export function playRandomFart(): Promise<void> {
+  const all = ANIMALS.flatMap((a) => a.srcs);
+  if (all.length === 0) return Promise.resolve();
+  const src = all[Math.floor(Math.random() * all.length)];
+  return playFartUrl(src);
 }
 
 // === Per-animal play (v25q) ===
@@ -145,12 +140,18 @@ function trackActive(a: HTMLAudioElement) {
   window.setTimeout(() => activeElements.delete(a), 30000);
 }
 
-export function stopAllSounds() {
+// v25r: pause + rewind every active element so the next tap wins.
+// Called by playFartUrl (auto-stop-on-tap) and the explicit Stop button.
+function stopActiveElements() {
   for (const a of activeElements) {
     try { a.pause(); } catch {}
     try { a.currentTime = 0; } catch {}
   }
   activeElements.clear();
+}
+
+export function stopAllSounds() {
+  stopActiveElements();
   if (audioCtx && audioCtx.state === "running") audioCtx.suspend();
 }
 

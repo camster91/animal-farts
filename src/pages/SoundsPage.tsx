@@ -65,7 +65,9 @@ export default function SoundsPage() {
     return () => { if (recordInterval.current) window.clearInterval(recordInterval.current); };
   }, [recording]);
 
-  // Tap an animal → play that animal's sound (not random)
+  // Tap an animal → play that animal's sound (not random).
+  // v25r: `emoji` param is now the chosen variant emoji (one of the
+  // animal's `emojis` array) so the poof matches what the kid tapped.
   const onTapAnimal = useCallback(
     (id: string, emoji: string, e: React.MouseEvent | React.TouchEvent) => {
       const animal = ANIMALS.find((a) => a.id === id);
@@ -116,8 +118,10 @@ export default function SoundsPage() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Animal grid */}
-      <main className="flex-1 px-3 pb-72 max-w-3xl mx-auto w-full">
+      {/* Animal grid. v25r: pb-72 (288px) cleared the footer but not the
+          FX card when open. FX card top ≈ 374px from bottom + 16px gap
+          = 390px. We use 400px (rounded). */}
+      <main className="flex-1 px-3 pb-[400px] max-w-3xl mx-auto w-full">
         {/* Filter chips — show all 34 regular animals or just the 3 long ones */}
         <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
           <FilterChip label="All animals" emoji="🐾" active={filter === "all"} onClick={() => setFilter("all")} />
@@ -136,20 +140,35 @@ export default function SoundsPage() {
             if (filter === "sea") return ["whale", "seal", "penguin"].includes(a.id);
             if (filter === "bugs") return ["bee", "owl", "turkey", "frog", "turtle", "bird"].includes(a.id);
             return true;
-          }).map((a) => (
-            <AnimalTile
-              key={a.id}
-              animal={a}
-              active={activeId === a.id}
-              onTap={onTapAnimal}
-            />
-          ))}
+          }).flatMap((a) =>
+            // v25r: each animal expands into one tile per emoji variant.
+            // Same sound, different visual. The first tile shows the
+            // animal name; subsequent tiles show just the emoji so the
+            // kid can scan and pick the one they like.
+            (a.emojis ?? [a.emoji]).map((em, idx) => (
+              <AnimalTile
+                key={`${a.id}-${em}-${idx}`}
+                animal={a}
+                emoji={em}
+                showName={idx === 0}
+                active={activeId === a.id}
+                onTap={onTapAnimal}
+              />
+            ))
+          )}
         </div>
       </main>
 
-      {/* FX card — collapsible */}
+      {/* FX card — sits ABOVE the footer (which is bottom-14 ≈ 56px gap,
+          ~64px tall, so its top is at ~120px). v25r used bottom-20 (80px)
+          which crashed the FX card's bottom into the footer. Bottom-[124px]
+          leaves 4px breathing room. The card is ~250px tall, so its top is
+          at ~374px from the bottom of the viewport. */}
       {showFx && (
-        <div className="fixed inset-x-0 bottom-20 z-40 px-3">
+        <div
+          className="fixed inset-x-0 z-40 px-3"
+          style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 124px)" }}
+        >
           <div className="max-w-3xl mx-auto bg-white rounded-3xl shadow-2xl border-2 border-amber-200 p-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-bold text-amber-900">🎚️ Make it funny</h2>
@@ -251,25 +270,32 @@ function SliderRow({
 }
 
 function AnimalTile({
-  animal, active, onTap,
+  animal, emoji, showName, active, onTap,
 }: {
   animal: Animal;
+  /** Which emoji variant this tile is showing. */
+  emoji: string;
+  /** Only the first variant of each animal shows the name; the rest
+   *  are visual duplicates of the same sound. */
+  showName: boolean;
   active: boolean;
   onTap: (id: string, emoji: string, e: React.MouseEvent | React.TouchEvent) => void;
 }) {
   return (
     <button
-      onClick={(e) => onTap(animal.id, animal.emoji, e)}
+      onClick={(e) => onTap(animal.id, emoji, e)}
       style={{ touchAction: "manipulation" }}
       className={`relative aspect-square rounded-3xl bg-gradient-to-br ${animal.color} shadow-xl border-4 border-white/70 active:scale-95 select-none`}
     >
       <div className="absolute inset-0 flex flex-col items-center justify-center p-2 pointer-events-none">
         <div className={`text-6xl sm:text-7xl transition-transform ${active ? "scale-90" : ""}`}>
-          {animal.emoji}
+          {emoji}
         </div>
-        <div className="mt-1 text-base sm:text-lg font-bold text-amber-950 drop-shadow truncate max-w-full">
-          {animal.name}
-        </div>
+        {showName && (
+          <div className="mt-1 text-base sm:text-lg font-bold text-amber-950 drop-shadow truncate max-w-full">
+            {animal.name}
+          </div>
+        )}
       </div>
     </button>
   );
