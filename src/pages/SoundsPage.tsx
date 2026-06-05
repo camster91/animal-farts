@@ -168,7 +168,7 @@ export default function SoundsPage() {
   }, [showGear]);
 
   return (
-    <div className="relative w-full h-full overflow-hidden">
+    <div className="absolute inset-0 overflow-hidden">
       {/* Scene container — full bleed */}
       <div
         ref={sceneContainerRef}

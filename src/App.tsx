@@ -53,7 +53,7 @@ export default function App() {
           {/* Page content. v25v: Sounds tab fills the whole viewport
               (above the bottom nav). My/Explore/Profile have their
               own layouts with normal padding. */}
-          <div className={`flex-1 ${tab === "sounds" ? "overflow-hidden" : "overflow-y-auto pb-20"}`}>
+          <div className={`flex-1 relative ${tab === "sounds" ? "overflow-hidden" : "overflow-y-auto pb-20"}`}>
             {tab === "sounds" && <SoundsPage />}
             {tab === "my" && <MySoundsPage me={me} />}
             {tab === "explore" && <ExplorePage me={me} />}
