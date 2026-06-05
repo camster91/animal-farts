@@ -1,0 +1,16 @@
+NN	SLUG	SOURCE_URL
+001	deflated-balloon-squeaks	https://www.myinstants.com/en/search/?name=squeak+fart
+002	squeaky-fart	https://www.myinstants.com/en/search/?name=squeak+fart
+003	fart-squeak-01	https://www.myinstants.com/en/search/?name=squeak+fart
+004	fart-squeak-reverb	https://www.myinstants.com/en/search/?name=squeak+fart
+005	fart3	https://www.myinstants.com/en/search/?name=squeak+fart
+006	squeak-HUuPUEl	https://www.myinstants.com/en/search/?name=squeak+fart
+007	pior-som	https://www.myinstants.com/en/search/?name=squeaky+high
+008	brain-fart-high-pitch	https://www.myinstants.com/en/search/?name=high+pitch+fart
+009	high-pitch-fart-with-reverb	https://www.myinstants.com/en/search/?name=high+pitch+fart
+010	high-pitch-fart	https://www.myinstants.com/en/search/?name=high+pitch+fart
+011	good-meme	https://www.myinstants.com/en/search/?name=peep+fart
+012	peepee-farts-1	https://www.myinstants.com/en/search/?name=peep+fart
+013	peepee-farts-2	https://www.myinstants.com/en/search/?name=peep+fart
+014	peepee-farts-supercut	https://www.myinstants.com/en/search/?name=peep+fart
+015	whistle-fart	https://www.myinstants.com/en/search/?name=whistle+fart

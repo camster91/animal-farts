@@ -3,7 +3,7 @@
 // the app works fully offline on first load. Asset paths are injected at
 // build time by scripts/inject-sw-assets.mjs.
 
-const CACHE = "animal-farts-v25l";
+const CACHE = "animal-farts-v25m";
 
 const SHELL_ASSETS = [
   "/",
@@ -13,51 +13,11 @@ const SHELL_ASSETS = [
   "/apple-touch-icon.png",
 ];
 
-const SOUND_ASSETS = [
-  // v25j: original 12 — v1 sounds recovered from git, no pitch shift
-  "/sounds/v1/cow.mp3",
-  "/sounds/v1/dog.mp3",
-  "/sounds/v1/cat.mp3",
-  "/sounds/v1/bird.mp3",
-  "/sounds/v1/horse.mp3",
-  "/sounds/v1/pig.mp3",
-  "/sounds/v1/duck.mp3",
-  "/sounds/v1/elephant.mp3",
-  "/sounds/v1/monkey.mp3",
-  "/sounds/v1/snake.mp3",
-  "/sounds/v1/lion.mp3",
-  "/sounds/v1/frog.mp3",
-  // v25j: bull/rabbit/bear/rooster/turtle/whale (one source each)
-  "/sounds/bull.mp3",
-  "/sounds/rabbit.mp3",
-  "/sounds/bear.mp3",
-  "/sounds/rooster.mp3",
-  "/sounds/turtle.mp3",
-  "/sounds/whale.mp3",
-  // v25j: dropped the 50+ v2/v3 altSrcs — we only ship one source per
-  // animal now. Saving ~5MB of precache and a much faster first install.
-  // v13: 10 new animals (single source each, no alts)
-  "/sounds/extra/goat.mp3",
-  "/sounds/extra/sheep.mp3",
-  "/sounds/extra/bee.mp3",
-  "/sounds/extra/turkey.mp3",
-  "/sounds/extra/owl.mp3",
-  "/sounds/extra/penguin.mp3",
-  "/sounds/extra/seal.mp3",
-  "/sounds/extra/hippo.mp3",
-  "/sounds/extra/rhino.mp3",
-  "/sounds/extra/zebra.mp3",
-  "/sounds/extra/giraffe.mp3",
-  "/sounds/extra/moose.mp3",
-  "/sounds/extra/kangaroo.mp3",
-  "/sounds/extra/sloth.mp3",
-  "/sounds/extra/skunk.mp3",
-  "/sounds/extra/raccoon.mp3",
-  // Long sounds (v11 era, 4-12s versions)
-  "/sounds/extra/elephant_long.mp3",
-  "/sounds/extra/lion_long.mp3",
-  "/sounds/extra/snake_long.mp3",
-];
+// v25m: the catalog is 270+ farts (~23MB). Don't precache — too big.
+// Runtime caching fetches and stores each fart on first play. After
+// the kid has tapped 30 different animals, their active flavors are
+// cached and the app works offline. Best of both worlds.
+const SOUND_ASSETS = [];
 
 // __PRECACHE_ASSETS__
 const PRECACHE_ASSETS = self.__INJECTED_PRECACHE__ || [];
