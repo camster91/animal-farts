@@ -57,6 +57,7 @@ function playDirect(src: string): Promise<void> {
   const a = new Audio(src);
   a.playbackRate = pitchRate;
   a.volume = 0.9;
+  trackActive(a);
   return a.play().catch((err) => {
     console.warn("[fart] play failed:", err);
   });
@@ -114,8 +115,27 @@ export function playUrl(src: string): Promise<void> {
   return playFartUrl(src);
 }
 
+// === Active audio tracker ===
+// We don't preload — every tap creates a new <audio>. To stop them all
+// we keep a Set of in-flight elements, prune them on `ended`, and pause
+// them all on `stopAllSounds()`.
+
+const activeElements = new Set<HTMLAudioElement>();
+
+function trackActive(a: HTMLAudioElement) {
+  activeElements.add(a);
+  a.addEventListener("ended", () => activeElements.delete(a), { once: true });
+  // Safety: prune after 30s if `ended` never fires
+  window.setTimeout(() => activeElements.delete(a), 30000);
+}
+
 export function stopAllSounds() {
-  if (audioCtx) audioCtx.suspend();
+  for (const a of activeElements) {
+    try { a.pause(); } catch {}
+    try { a.currentTime = 0; } catch {}
+  }
+  activeElements.clear();
+  if (audioCtx && audioCtx.state === "running") audioCtx.suspend();
 }
 
 // === Recording ===

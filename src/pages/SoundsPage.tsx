@@ -1,15 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  FLAVORS,
-  FLAVOR_LABELS,
   playRandomFart,
+  stopAllSounds,
   setPitchRate,
   setEchoAmount,
   setLengthScale,
   startRecording,
   stopRecording,
   MAX_RECORDING_SEC,
-  type Flavor,
 } from "../audio/fartEngine";
 import { ANIMALS, type Animal } from "../animals";
 import { useFx } from "../fxContext";
@@ -17,9 +15,7 @@ import { usePoof } from "../poofContext";
 
 export default function SoundsPage() {
   const onPoof = usePoof();
-  // FX — shared via context so the FX card on this page (or elsewhere)
-  // can write to the same global state.
-  const { activeFlavors, setActiveFlavors, pitch, setPitch, length, setLength, echo, setEcho, resetFx } = useFx();
+  const { pitch, setPitch, length, setLength, echo, setEcho, resetFx } = useFx();
 
   // Recording state
   const [recording, setRecording] = useState(false);
@@ -33,7 +29,20 @@ export default function SoundsPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const activeTimer = useRef<number | null>(null);
 
-  // Sync FX to engine
+  // Stop button only shows when something is actually playing.
+  const [anySoundPlaying, setAnySoundPlaying] = useState(false);
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      let n = 0;
+      for (const a of document.querySelectorAll("audio")) {
+        if (!a.paused) n++;
+      }
+      setAnySoundPlaying(n > 0);
+    }, 200);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // Sync FX to engine.
   useEffect(() => { setPitchRate(pitch); }, [pitch]);
   useEffect(() => { setLengthScale(length); }, [length]);
   useEffect(() => { setEchoAmount(echo ? 1 : 0); }, [echo]);
@@ -55,7 +64,7 @@ export default function SoundsPage() {
   // Tap an animal → play a random fart
   const onTapAnimal = useCallback(
     (id: string, emoji: string, e: React.MouseEvent | React.TouchEvent) => {
-      void playRandomFart(activeFlavors);
+      void playRandomFart();
       setActiveId(id);
       if (activeTimer.current) window.clearTimeout(activeTimer.current);
       activeTimer.current = window.setTimeout(() => {
@@ -64,11 +73,9 @@ export default function SoundsPage() {
       const point = "touches" in e
         ? (e as any).changedTouches?.[0] ?? (e as any).touches?.[0]
         : (e as any);
-      const x = point?.clientX ?? window.innerWidth / 2;
-      const y = point?.clientY ?? window.innerHeight / 2;
-      onPoof(x, y, emoji);
+      onPoof(point?.clientX ?? window.innerWidth / 2, point?.clientY ?? window.innerHeight / 2, emoji);
     },
-    [activeFlavors, onPoof]
+    [onPoof]
   );
 
   // Record button toggle. Auto-saves a local recording (used later by
@@ -102,47 +109,8 @@ export default function SoundsPage() {
     }
   }, [recording, onPoof]);
 
-  // Flavor toggle
-  const toggleFlavor = useCallback((f: Flavor) => {
-    setActiveFlavors((cur) => {
-      const next = new Set(cur);
-      if (cur.size === 0) {
-        // "all" mode → disable this one
-        for (const x of FLAVORS) if (x !== f) next.add(x);
-        return next;
-      }
-      if (next.has(f)) next.delete(f);
-      else next.add(f);
-      if (next.size === FLAVORS.length) return new Set();
-      return next;
-    });
-  }, [setActiveFlavors]);
-
-  const flavorsActive = activeFlavors.size > 0;
-
   return (
     <div className="flex flex-col h-full">
-      {/* Flavor filter chips */}
-      <div className="px-3 pb-2 flex gap-1.5 flex-wrap justify-center max-w-3xl mx-auto w-full">
-        {FLAVORS.map((f) => {
-          const isActive = !flavorsActive || activeFlavors.has(f);
-          return (
-            <button
-              key={f}
-              onClick={() => toggleFlavor(f)}
-              className={`text-xs font-bold px-2.5 py-1 rounded-full border-2 active:scale-95 transition-colors ${
-                isActive
-                  ? "bg-amber-100 text-amber-900 border-amber-400"
-                  : "bg-white text-slate-400 border-slate-200"
-              }`}
-              aria-pressed={isActive}
-            >
-              {FLAVOR_LABELS[f]}
-            </button>
-          );
-        })}
-      </div>
-
       {/* Animal grid */}
       <main className="flex-1 px-3 pb-44 max-w-3xl mx-auto w-full">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -177,7 +145,7 @@ export default function SoundsPage() {
         </div>
       )}
 
-      {/* Footer — record + FX toggle + random */}
+      {/* Footer — FX + Stop + Make a sound + Random */}
       <footer
         className="fixed bottom-14 left-0 right-0 z-30 p-2 bg-gradient-to-t from-white via-white/95 to-transparent"
         style={{ paddingBottom: "0.25rem" }}
@@ -193,6 +161,20 @@ export default function SoundsPage() {
           >
             🎚️
           </button>
+          {anySoundPlaying && (
+            <button
+              onClick={() => {
+                stopAllSounds();
+                onPoof(window.innerWidth / 2, window.innerHeight / 2, "⏹");
+                setAnySoundPlaying(false);
+              }}
+              className="w-12 h-12 rounded-2xl bg-red-100 text-red-700 border-2 border-red-400 text-2xl active:scale-95 flex items-center justify-center shadow animate-pulse"
+              title="Stop all sounds"
+              aria-label="Stop"
+            >
+              ⏹
+            </button>
+          )}
           <button
             onClick={onToggleRecord}
             className={`flex-1 font-extrabold text-sm py-3 rounded-2xl shadow-lg border-2 border-white active:scale-95 ${recording ? "bg-red-500 text-white" : "bg-gradient-to-br from-pink-500 to-purple-500 text-white"}`}
@@ -201,7 +183,7 @@ export default function SoundsPage() {
           </button>
           <button
             onClick={(e) => {
-              void playRandomFart(activeFlavors);
+              void playRandomFart();
               const point = "touches" in e
                 ? (e as any).changedTouches?.[0] ?? (e as any).touches?.[0]
                 : (e as any);
