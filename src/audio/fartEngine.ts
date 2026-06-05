@@ -93,37 +93,27 @@ async function playWithEcho(src: string): Promise<void> {
 
 // === Random fart picker ===
 // v25r: drops the 270-MyInstants library (v25m) and the per-flavor
-// filter system. The 🎲 button now picks from the 49 per-animal
-// sounds — a kid pressing "Random" gets any animal sound, not
-// an external library that no one curated.
+// filter system. The 🎲 button now picks from the curated per-animal
+// sounds (one per tile in the grid) — a kid pressing "Random" gets
+// any animal sound, not an external library that no one curated.
+//
+// v25s: tiles each have their own unique sound. playRandomFart pulls
+// from the TILES list so we don't double-import soundPool here.
 
-import { ANIMALS } from "../animals";
+import { TILES } from "../animals";
 
 export function playRandomFart(): Promise<void> {
-  const all = ANIMALS.flatMap((a) => a.srcs);
-  if (all.length === 0) return Promise.resolve();
-  const src = all[Math.floor(Math.random() * all.length)];
-  return playFartUrl(src);
+  if (TILES.length === 0) return Promise.resolve();
+  const tile = TILES[Math.floor(Math.random() * TILES.length)];
+  return playFartUrl(tile.sound);
 }
 
-// === Per-animal play (v25q) ===
-// Each animal has a list of sound variants; we round-robin through them
-// so the same tap never plays the exact same audio twice in a row, but
-// tapping Cow always plays a cow sound, not a random wet-flavor fart.
-const animalNextIdx = new Map<string, number>();
-export function pickAnimalSrc(id: string, srcs: string[]): string {
-  if (srcs.length === 0) return "";
-  const i = animalNextIdx.get(id) ?? 0;
-  const src = srcs[i % srcs.length];
-  animalNextIdx.set(id, (i + 1) % srcs.length);
-  return src;
-}
-export function playAnimal(id: string, srcs: string[]): Promise<void> {
-  return playFartUrl(pickAnimalSrc(id, srcs));
-}
-
-export function playUrl(src: string): Promise<void> {
-  return playFartUrl(src);
+// === Per-tile play (v25s) ===
+// Each grid tile has a unique sound. Tapping the same tile always
+// plays the same sound (no rotation). playFartUrl already stops the
+// prior audio, so re-tapping the same tile just restarts.
+export function playSound(sound: string): Promise<void> {
+  return playFartUrl(sound);
 }
 
 // === Active audio tracker ===

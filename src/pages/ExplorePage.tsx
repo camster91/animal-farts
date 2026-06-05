@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { api, audioUrl, type User, type FeedEntry } from "../api";
-import { playUrl } from "../audio/fartEngine";
+import { playSound } from "../audio/fartEngine";
 import { usePoof } from "../poofContext";
 
 export default function ExplorePage({ me }: { me: User | null }) {
@@ -82,7 +82,7 @@ export default function ExplorePage({ me }: { me: User | null }) {
                   key={r.id}
                   entry={r}
                   onPlay={(e) => {
-                    void playUrl(audioUrl(r.audioUrl.split("/").pop()!));
+                    void playSound(audioUrl(r.audioUrl.split("/").pop()!));
                     const point = "touches" in e
                       ? (e as any).changedTouches?.[0] ?? (e as any).touches?.[0]
                       : (e as any);

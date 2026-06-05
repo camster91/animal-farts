@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { api, audioUrl, type Recording, type User } from "../api";
-import { playUrl } from "../audio/fartEngine";
+import { playSound } from "../audio/fartEngine";
 import { usePoof } from "../poofContext";
 
 type LocalRecording = {
@@ -101,7 +101,7 @@ export default function MySoundsPage({ me }: { me: User | null }) {
 
   // Tap to play
   const onPlay = useCallback((url: string, e: React.MouseEvent | React.TouchEvent) => {
-    void playUrl(url);
+    void playSound(url);
     const point = "touches" in e
       ? (e as any).changedTouches?.[0] ?? (e as any).touches?.[0]
       : (e as any);

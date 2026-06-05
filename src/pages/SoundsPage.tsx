@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  playAnimal,
+  playSound,
   playRandomFart,
   stopAllSounds,
   setPitchRate,
@@ -10,7 +10,7 @@ import {
   stopRecording,
   MAX_RECORDING_SEC,
 } from "../audio/fartEngine";
-import { ANIMALS, type Animal } from "../animals";
+import { TILES, FILTER_ANIMALS, ANIMAL_BY_ID, type Animal, type Tile } from "../animals";
 import { useFx } from "../fxContext";
 import { usePoof } from "../poofContext";
 
@@ -65,22 +65,23 @@ export default function SoundsPage() {
     return () => { if (recordInterval.current) window.clearInterval(recordInterval.current); };
   }, [recording]);
 
-  // Tap an animal → play that animal's sound (not random).
-  // v25r: `emoji` param is now the chosen variant emoji (one of the
-  // animal's `emojis` array) so the poof matches what the kid tapped.
-  const onTapAnimal = useCallback(
-    (id: string, emoji: string, e: React.MouseEvent | React.TouchEvent) => {
-      const animal = ANIMALS.find((a) => a.id === id);
-      if (animal) void playAnimal(animal.id, animal.srcs);
-      setActiveId(id);
+  // Tap a tile → play that tile's unique sound.
+  // v25s: the tile has its own `sound` field (different emoji = different
+  // sound). Same tile = same sound every time. playSound calls
+  // stopActiveElements() first, so consecutive taps just restart the
+  // sound without layering.
+  const onTapTile = useCallback(
+    (tile: Tile, e: React.MouseEvent | React.TouchEvent) => {
+      void playSound(tile.sound);
+      setActiveId(tile.id);
       if (activeTimer.current) window.clearTimeout(activeTimer.current);
       activeTimer.current = window.setTimeout(() => {
-        setActiveId((cur) => (cur === id ? null : cur));
+        setActiveId((cur) => (cur === tile.id ? null : cur));
       }, 300);
       const point = "touches" in e
         ? (e as any).changedTouches?.[0] ?? (e as any).touches?.[0]
         : (e as any);
-      onPoof(point?.clientX ?? window.innerWidth / 2, point?.clientY ?? window.innerHeight / 2, emoji);
+      onPoof(point?.clientX ?? window.innerWidth / 2, point?.clientY ?? window.innerHeight / 2, tile.emoji);
     },
     [onPoof]
   );
@@ -132,30 +133,22 @@ export default function SoundsPage() {
           <FilterChip label="Bugs & Birds" emoji="🐝" active={filter === "bugs"} onClick={() => setFilter("bugs")} />
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {ANIMALS.filter((a) => {
-            if (filter === "all") return true;
-            if (filter === "long") return ["mammoth", "megaLion", "python"].includes(a.id);
-            if (filter === "farm") return ["cow", "pig", "duck", "rooster", "horse", "bull", "sheep", "goat", "rabbit"].includes(a.id);
-            if (filter === "wild") return ["lion", "elephant", "monkey", "snake", "bear", "tiger", "rhino", "zebra", "giraffe", "moose", "kangaroo", "hippo", "sloth", "skunk", "raccoon", "mammoth", "megaLion", "python"].includes(a.id);
-            if (filter === "sea") return ["whale", "seal", "penguin"].includes(a.id);
-            if (filter === "bugs") return ["bee", "owl", "turkey", "frog", "turtle", "bird"].includes(a.id);
-            return true;
-          }).flatMap((a) =>
-            // v25r: each animal expands into one tile per emoji variant.
-            // Same sound, different visual. The first tile shows the
-            // animal name; subsequent tiles show just the emoji so the
-            // kid can scan and pick the one they like.
-            (a.emojis ?? [a.emoji]).map((em, idx) => (
-              <AnimalTile
-                key={`${a.id}-${em}-${idx}`}
-                animal={a}
-                emoji={em}
-                showName={idx === 0}
-                active={activeId === a.id}
-                onTap={onTapAnimal}
+          {TILES.filter((t) => {
+            const animals = FILTER_ANIMALS[filter] ?? FILTER_ANIMALS.all;
+            return animals.includes(t.animalId);
+          }).map((t) => {
+            const animal = ANIMAL_BY_ID.get(t.animalId);
+            if (!animal) return null;
+            return (
+              <TileView
+                key={t.id}
+                tile={t}
+                animal={animal}
+                active={activeId === t.id}
+                onTap={onTapTile}
               />
-            ))
-          )}
+            );
+          })}
         </div>
       </main>
 
@@ -269,29 +262,25 @@ function SliderRow({
   );
 }
 
-function AnimalTile({
-  animal, emoji, showName, active, onTap,
+function TileView({
+  tile, animal, active, onTap,
 }: {
+  tile: Tile;
   animal: Animal;
-  /** Which emoji variant this tile is showing. */
-  emoji: string;
-  /** Only the first variant of each animal shows the name; the rest
-   *  are visual duplicates of the same sound. */
-  showName: boolean;
   active: boolean;
-  onTap: (id: string, emoji: string, e: React.MouseEvent | React.TouchEvent) => void;
+  onTap: (tile: Tile, e: React.MouseEvent | React.TouchEvent) => void;
 }) {
   return (
     <button
-      onClick={(e) => onTap(animal.id, emoji, e)}
+      onClick={(e) => onTap(tile, e)}
       style={{ touchAction: "manipulation" }}
       className={`relative aspect-square rounded-3xl bg-gradient-to-br ${animal.color} shadow-xl border-4 border-white/70 active:scale-95 select-none`}
     >
       <div className="absolute inset-0 flex flex-col items-center justify-center p-2 pointer-events-none">
         <div className={`text-6xl sm:text-7xl transition-transform ${active ? "scale-90" : ""}`}>
-          {emoji}
+          {tile.emoji}
         </div>
-        {showName && (
+        {tile.showName && (
           <div className="mt-1 text-base sm:text-lg font-bold text-amber-950 drop-shadow truncate max-w-full">
             {animal.name}
           </div>
