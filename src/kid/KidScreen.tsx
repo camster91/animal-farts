@@ -101,23 +101,33 @@ export default function KidScreen() {
       {/* Scene dot indicator */}
       <div style={{
         position: 'fixed',
-        bottom: 24,
+        bottom: 20,
         left: 0,
         right: 0,
         display: 'flex',
         justifyContent: 'center',
         gap: 8,
         pointerEvents: 'none',
+        zIndex: 9999,
+        padding: '6px 12px',
+        borderRadius: 12,
+        background: 'rgba(0,0,0,0.18)',
+        backdropFilter: 'blur(4px)',
+        WebkitBackdropFilter: 'blur(4px)',
+        width: 'fit-content',
+        margin: '0 auto',
       }}>
         {Array.from({ length: VISIBLE_SCENES }).map((_, i) => (
           <div
             key={i}
             style={{
-              width: 6,
-              height: 6,
+              width: 8,
+              height: 8,
               borderRadius: '50%',
-              background: i === currentSceneIndex ? '#fff' : 'rgba(255,255,255,0.4)',
-              transition: 'background 200ms',
+              background: i === currentSceneIndex ? '#fff' : 'rgba(255,255,255,0.45)',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.5)',
+              transition: 'background 200ms, transform 200ms',
+              transform: i === currentSceneIndex ? 'scale(1.25)' : 'scale(1)',
             }}
           />
         ))}
