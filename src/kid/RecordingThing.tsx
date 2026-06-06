@@ -170,10 +170,18 @@ export function RecordingThing({
       setShowPill(true);
       setTimeout(() => setShowPill(false), 1000);
     } else {
-      const sound = thing.sounds[Math.floor(Math.random() * thing.sounds.length)];
-      onPlayKidRecording(sound, thing);
+      // Check for a parent-uploaded custom sound (per-profile)
+      const uploaded = await storage.getUploadedSound(sceneId, thing.id, profileId);
+      if (uploaded) {
+        await engine.playBlob(uploaded.blob);
+        setShowPill(true);
+        setTimeout(() => setShowPill(false), 1000);
+      } else {
+        const sound = thing.sounds[Math.floor(Math.random() * thing.sounds.length)];
+        onPlayKidRecording(sound, thing);
+      }
     }
-  }, [thing, sceneId, profileId, onPlayKidRecording, spawnFloatingEmojis]);
+  }, [thing, sceneId, profileId, onPlayKidRecording, engine, storage]);
 
   // Long-press (500ms): start recording OR show delete dialog if has recording
   const onPointerDown = useCallback((e: React.PointerEvent) => {

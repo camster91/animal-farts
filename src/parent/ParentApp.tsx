@@ -7,6 +7,7 @@ import RecordingLimitCard from './RecordingLimitCard';
 import EffectsCard from './EffectsCard';
 import ProfilesCard from './ProfilesCard';
 import ShareCodeCard from './ShareCodeCard';
+import UploadSoundCard from './UploadSoundCard';
 
 type View = 'dashboard' | 'changepin';
 
@@ -170,6 +171,9 @@ export default function ParentApp() {
           shareCode={settings.shareCode}
           onRegenerate={regenerateShareCode}
           onCopy={copyShareCode}
+        />
+        <UploadSoundCard
+          activeProfileId={settings.activeProfileId}
         />
       </main>
     </div>

@@ -13,6 +13,7 @@ export interface RecordingResult {
 
 export interface AudioEngine {
   play(soundUrl: string): Promise<void>;
+  playBlob(blob: Blob): Promise<void>;
   playRandom(sounds: string[]): string | null;
   stopAll(): void;
   setPitch(semitones: number): void;   // 0.5–2.0
@@ -165,6 +166,21 @@ export function getAudioEngine(): AudioEngine {
       } else {
         await playDirect(soundUrl);
       }
+    },
+
+    async playBlob(blob: Blob): Promise<void> {
+      stopActiveElements();
+      // Uploaded sounds play at default rate (1.0) — pitch/speed are parent preview only
+      const url = URL.createObjectURL(blob);
+      const a = new Audio(url);
+      a.playbackRate = 1.0;
+      a.volume = 0.9;
+      trackActive(a);
+      a.play().catch((err) => {
+        console.warn("[engine] playBlob failed:", err);
+      });
+      // Revoke after 30s to free memory
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
     },
 
     playRandom(sounds: string[]): string | null {

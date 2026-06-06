@@ -4,7 +4,7 @@
 // All operations are local-first. No server.
 
 const DB_NAME = "poot-party";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 // === Public types ===
 
@@ -38,6 +38,16 @@ export type Profile = {
   lastSceneId: string; // 'farm', 'jungle', etc.
 };
 
+export type UploadedSound = {
+  id: string;
+  sceneId: string;
+  thingId: string;
+  profileId: string;
+  blob: Blob;
+  mimeType: string;
+  createdAt: number;
+};
+
 export interface KidStorage {
   // Recordings
   saveRecording(r: Omit<Recording, "id">& { id: string }): Promise<string>;
@@ -63,6 +73,11 @@ export interface KidStorage {
   getAllProfiles(): Promise<Profile[]>;
   deleteProfile(id: string): Promise<void>;
   updateProfile(p: Profile): Promise<void>;
+
+  // Uploaded sounds (v3)
+  saveUploadedSound(s: UploadedSound): Promise<string>;
+  getUploadedSound(sceneId: string, thingId: string, profileId: string): Promise<UploadedSound | null>;
+  deleteUploadedSound(id: string): Promise<void>;
 }
 
 // === DB open (lazy singleton) ===
@@ -100,6 +115,12 @@ function openDB(): Promise<IDBDatabase> {
       // profiles store (keyPath = id) — added in v2
       if (!db.objectStoreNames.contains("profiles")) {
         db.createObjectStore("profiles", { keyPath: "id" });
+      }
+
+      // uploadedSounds store — added in v3 (per-profile custom sounds)
+      if (!db.objectStoreNames.contains("uploadedSounds")) {
+        const us = db.createObjectStore("uploadedSounds", { keyPath: "id" });
+        us.createIndex("byThing", ["sceneId", "thingId", "profileId"], { unique: false });
       }
     });
 
@@ -276,6 +297,33 @@ export function getKidStorage(): KidStorage {
       const db = await openDB();
       const store = getStore(db, "profiles", "readwrite");
       await promisifyRequest(store.put(p));
+    },
+
+    // --- Uploaded sounds (v3) ---
+
+    async saveUploadedSound(s: UploadedSound): Promise<string> {
+      const db = await openDB();
+      const store = getStore(db, "uploadedSounds", "readwrite");
+      await promisifyRequest(store.put(s));
+      return s.id;
+    },
+
+    async getUploadedSound(
+      sceneId: string,
+      thingId: string,
+      profileId: string
+    ): Promise<UploadedSound | null> {
+      const db = await openDB();
+      const store = getStore(db, "uploadedSounds", "readonly");
+      const index = store.index("byThing");
+      const all = await promisifyRequest(index.getAll(IDBKeyRange.only([sceneId, thingId, profileId])));
+      return (all as UploadedSound[])[0] ?? null;
+    },
+
+    async deleteUploadedSound(id: string): Promise<void> {
+      const db = await openDB();
+      const store = getStore(db, "uploadedSounds", "readwrite");
+      await promisifyRequest(store.delete(id));
     },
   };
 
