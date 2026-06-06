@@ -36,6 +36,7 @@ export type Profile = {
   avatar: string;      // emoji
   createdAt: number;
   lastSceneId: string; // 'farm', 'jungle', etc.
+  shareCode: string;   // 4-char code, e.g. 'K9XM'
 };
 
 export type UploadedSound = {
@@ -78,6 +79,9 @@ export interface KidStorage {
   saveUploadedSound(s: UploadedSound): Promise<string>;
   getUploadedSound(sceneId: string, thingId: string, profileId: string): Promise<UploadedSound | null>;
   deleteUploadedSound(id: string): Promise<void>;
+
+  // Share codes (v4)
+  findProfileByShareCode(code: string): Promise<{ profile: Profile; sceneName: string; emoji: string } | null>;
 }
 
 // === DB open (lazy singleton) ===
@@ -324,6 +328,22 @@ export function getKidStorage(): KidStorage {
       const db = await openDB();
       const store = getStore(db, "uploadedSounds", "readwrite");
       await promisifyRequest(store.delete(id));
+    },
+
+    // --- Share codes (v4) ---
+    // Looks up a profile by its 4-char share code.
+    // Returns metadata only (name, scene, emoji, time) — NO recording playback.
+    async findProfileByShareCode(code: string): Promise<{ profile: Profile; sceneName: string; emoji: string } | null> {
+      const all = await this.getAllProfiles();
+      const normalized = code.replace(/^POOT-/i, '').toUpperCase();
+      const found = all.find(p => p.shareCode === normalized);
+      if (!found) return null;
+      // Get the scene name from lastSceneId
+      const { SCENES } = await import('./scenes');
+      const scene = SCENES.find(s => s.id === found.lastSceneId);
+      const sceneName = scene?.name ?? found.lastSceneId;
+      const emoji = scene?.things[0]?.emoji ?? '💨';
+      return { profile: found, sceneName, emoji };
     },
   };
 

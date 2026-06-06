@@ -18,12 +18,15 @@ export function NewProfileModal({ onCreate, onCancel }: Props) {
 
   const handleCreate = useCallback(() => {
     if (!canCreate || !avatar) return;
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const code = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
     const profile: Profile = {
       id: `prof-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       name: name.trim(),
       avatar,
       createdAt: Date.now(),
-      lastSceneId: "farm",
+      lastSceneId: 'farm',
+      shareCode: code,
     };
     onCreate(profile);
   }, [canCreate, avatar, name, onCreate]);

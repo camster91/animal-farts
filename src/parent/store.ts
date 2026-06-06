@@ -87,15 +87,18 @@ export function useParentStore() {
 
   // --- Profiles ---
   const addProfile = useCallback((name: string, avatar: string) => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const code = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
     const newProfile: Profile = {
       id: `profile-${Date.now()}`,
       name,
       avatar,
       recordingsCount: 0,
       createdAt: Date.now(),
+      shareCode: code,
     };
     setSettings((s) => ({ ...s, profiles: [...s.profiles, newProfile] }));
- }, []);
+  }, []);
 
   const updateProfile = useCallback((id: string, updates: Partial<Profile>) => {
     setSettings((s) => ({
@@ -115,6 +118,7 @@ export function useParentStore() {
           avatar: '🐷',
           recordingsCount: 0,
           createdAt: Date.now(),
+          shareCode: '',
         });
       }
       const activeProfileId = s.activeProfileId === id ? profiles[0].id : s.activeProfileId;

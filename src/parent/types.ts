@@ -6,6 +6,7 @@ export interface Profile {
   avatar: string; // emoji
   recordingsCount: number;
   createdAt: number;
+  shareCode: string;
 }
 
 export interface QuietHours {
@@ -58,6 +59,7 @@ export const DEFAULT_PARENT_SETTINGS: ParentSettings = {
       avatar: '🐷',
       recordingsCount: 0,
       createdAt: Date.now(),
+      shareCode: '',
     },
   ],
   activeProfileId: 'default',

@@ -6,10 +6,11 @@ import QuietHoursCard from './QuietHoursCard';
 import RecordingLimitCard from './RecordingLimitCard';
 import EffectsCard from './EffectsCard';
 import ProfilesCard from './ProfilesCard';
-import ShareCodeCard from './ShareCodeCard';
-import TvModeCard from './TvModeCard';
-import UploadSoundCard from './UploadSoundCard';
 import PremiumCard from './PremiumCard';
+import TvModeCard from './TvModeCard';
+import ShareCodeCard from './ShareCodeCard';
+import ImportCodeCard from './ImportCodeCard';
+import UploadSoundCard from './UploadSoundCard';
 
 type View = 'dashboard' | 'changepin';
 
@@ -183,6 +184,9 @@ export default function ParentApp() {
         <TvModeCard
           tvModeEnabled={settings.tvModeEnabled}
           onChange={setTvModeEnabled}
+        />
+        <ImportCodeCard
+          activeProfileId={settings.activeProfileId}
         />
         <UploadSoundCard
           activeProfileId={settings.activeProfileId}
