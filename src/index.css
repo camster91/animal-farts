@@ -189,3 +189,11 @@ body {
     transform: translate(0, 0) rotate(0deg);
   }
 }
+
+/* === HeardCountBadge count bump === */
+@keyframes count-bump {
+  0%   { transform: scale(1); color: #1f2937; }
+  35%  { transform: scale(1.6); color: #b45309; }
+  65%  { transform: scale(0.92); color: #1f2937; }
+  100% { transform: scale(1); color: #1f2937; }
+}

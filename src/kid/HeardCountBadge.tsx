@@ -5,32 +5,43 @@ interface Props {
 }
 
 export function HeardCountBadge({ count }: Props) {
-  const [visible, setVisible] = useState(true);
-  const timerRef = useRef<number | null>(null);
+  // Pulse the badge on every count change. Never fade — the count is a
+  // kid-facing status ("you've heard 7 sounds!") and should always be visible.
+  const [pulseKey, setPulseKey] = useState(0);
+  const lastCountRef = useRef(count);
 
   useEffect(() => {
-    setVisible(true);
-    if (timerRef.current) window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => setVisible(false), 5000);
-    return () => {
-      if (timerRef.current) window.clearTimeout(timerRef.current);
-    };
+    if (count !== lastCountRef.current) {
+      lastCountRef.current = count;
+      setPulseKey(k => k + 1);
+    }
   }, [count]);
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-50 flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-bold"
+      className="fixed z-50 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-base font-extrabold"
       style={{
-        background: '#fbbf24',
+        bottom: 'max(16px, env(safe-area-inset-bottom, 16px))',
+        right: 'max(16px, env(safe-area-inset-right, 16px))',
+        background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
         color: '#1f2937',
-        opacity: visible ? 1 : 0.3,
-        transition: 'opacity 400ms ease',
-        backdropFilter: 'blur(4px)',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+        boxShadow: '0 4px 12px rgba(245, 158, 11, 0.4), 0 0 0 3px rgba(255, 255, 255, 0.4)',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        letterSpacing: '0.02em',
       }}
     >
-      <span>🏆</span>
-      <span>{count}</span>
+      <span style={{ fontSize: '1.4em', lineHeight: 1 }}>🏆</span>
+      <span
+        key={pulseKey}
+        style={{
+          display: 'inline-block',
+          minWidth: '1.5em',
+          textAlign: 'center',
+          animation: pulseKey > 0 ? 'count-bump 480ms cubic-bezier(0.34, 1.56, 0.64, 1)' : 'none',
+        }}
+      >
+        {count}
+      </span>
     </div>
   );
 }
