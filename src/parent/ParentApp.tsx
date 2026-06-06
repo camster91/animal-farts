@@ -7,6 +7,7 @@ import RecordingLimitCard from './RecordingLimitCard';
 import EffectsCard from './EffectsCard';
 import ProfilesCard from './ProfilesCard';
 import ShareCodeCard from './ShareCodeCard';
+import TvModeCard from './TvModeCard';
 import UploadSoundCard from './UploadSoundCard';
 import PremiumCard from './PremiumCard';
 
@@ -27,6 +28,7 @@ export default function ParentApp() {
     regenerateShareCode,
     copyShareCode,
     setPremium,
+    setTvModeEnabled,
   } = useParentStore();
 
   const [view, setView] = useState<View>('dashboard');
@@ -177,6 +179,10 @@ export default function ParentApp() {
         <PremiumCard
           isPremium={settings.isPremium}
           onSimulatePremium={() => setPremium(true)}
+        />
+        <TvModeCard
+          tvModeEnabled={settings.tvModeEnabled}
+          onChange={setTvModeEnabled}
         />
         <UploadSoundCard
           activeProfileId={settings.activeProfileId}

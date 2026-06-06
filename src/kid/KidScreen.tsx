@@ -18,7 +18,10 @@ import type { Pin, Profile } from './useKidStorage';
 import { ConfettiBurst } from './ConfettiBurst';
 import { MilestoneBanner } from './MilestoneBanner';
 import { injectKeyframes } from './reactions';
+import { PootPartyTV } from './PootPartyTV';
 injectKeyframes();
+
+const PARENT_SETTINGS_KEY = 'poot-party-parent-settings';
 
 // The "real" scenes that rotate (exclude home)
 const REAL_SCENES = SCENES.filter(s => s.id !== 'home');
@@ -61,6 +64,8 @@ export default function KidScreen() {
   const [musicNotes, setMusicNotes] = useState<MusicNote[]>([]);
   const [showWelcome, setShowWelcome] = useState(false);
   const [shakeJitter, setShakeJitter] = useState(false);
+  const [tvMode, setTvMode] = useState(false);
+  const [tvModeEnabled, setTvModeEnabled] = useState(false); // from parent settings
 
   const { playRandom, stopAll, isRecording } = useSoundEngine();
   const storage = getKidStorage();
@@ -97,6 +102,17 @@ export default function KidScreen() {
   useEffect(() => {
     setCurrentSceneIndex(0);
     setActiveProfile(null);
+  }, []);
+
+  // Read tvModeEnabled from parent settings
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PARENT_SETTINGS_KEY);
+      if (raw) {
+        const s = JSON.parse(raw);
+        setTvModeEnabled(!!s.tvModeEnabled);
+      }
+    } catch { /* ignore */ }
   }, []);
 
   // Load heard count when profile changes
@@ -507,6 +523,37 @@ export default function KidScreen() {
           onSave={onPinSave}
           onCancel={onPinCancel}
         />
+      )}
+
+      {/* Poot Party TV — full-screen auto-play mode */}
+      <PootPartyTV tvModeEnabled={tvMode && tvModeEnabled} onExit={() => setTvMode(false)} />
+
+      {/* TV mode entry button — top right (only shown when parent enabled) */}
+      {tvModeEnabled && (
+        <button
+          onClick={() => setTvMode(true)}
+          style={{
+            position: 'fixed',
+            top: 'max(12px, env(safe-area-inset-top, 12px))',
+            right: 12,
+            width: 40,
+            height: 40,
+            borderRadius: 10,
+            background: 'rgba(0,0,0,0.4)',
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '1.2rem',
+            zIndex: 9999,
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+          }}
+          aria-label="Poot Party TV"
+        >
+          📺
+        </button>
       )}
     </div>
   );

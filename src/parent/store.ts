@@ -138,6 +138,11 @@ export function useParentStore() {
     setSettings((s) => ({ ...s, isPremium }));
   }, []);
 
+  // --- TV Mode ---
+  const setTvModeEnabled = useCallback((tvModeEnabled: boolean) => {
+    setSettings((s) => ({ ...s, tvModeEnabled }));
+  }, []);
+
   return {
     settings,
     setPin,
@@ -153,5 +158,6 @@ export function useParentStore() {
     regenerateShareCode,
     copyShareCode,
     setPremium,
+    setTvModeEnabled,
   };
 }
