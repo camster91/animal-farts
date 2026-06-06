@@ -1,7 +1,7 @@
 // Poot Party — KidScreen. v26f-surprise.
+// Poot Party — KidScreen. v26f.
 // Profile picker home scene → scene loop (Farm → Jungle → ...).
 // Supports multiple kid profiles with lastSceneId persistence.
-// Adds: multi-tap band chain, shake-to-shuffle, milestone confetti.
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { SCENES } from './scenes';
@@ -15,6 +15,7 @@ import { HomeScene } from './HomeScene';
 import { useSoundEngine } from './useSoundEngine';
 import { getKidStorage } from './useKidStorage';
 import type { Pin, Profile } from './useKidStorage';
+import type { ReactionType } from './reactions';
 import { ConfettiBurst } from './ConfettiBurst';
 import { MilestoneBanner } from './MilestoneBanner';
 
@@ -187,21 +188,21 @@ export default function KidScreen() {
       playRandom(sound);
  }
 
-    // Update count
-    const newCount = heardCount + 1;
-    setHeardCount(newCount);
-    if (activeProfile) {
-      void storage.markHeard(sound, activeProfile.id);
-    }
-
-    // Check milestone
-    const crossed = MILESTONES.find(m => newCount >= m && !milestoneSeenRef.current.has(m));
-    if (crossed !== undefined) {
-      milestoneSeenRef.current.add(crossed);
-      setMilestoneCount(crossed);
-      setConfettiVisible(true);
-    }
-  }, [playRandom, stopAll, resetTimer, playQueuedBand, heardCount, activeProfile, storage]);
+    // Update count via functional update to always get latest state
+    setHeardCount(prev => {
+      const newCount = prev + 1;
+      if (activeProfile) {
+        void storage.markHeard(sound, activeProfile.id);
+      }
+      const crossed = MILESTONES.find(m => newCount >= m && !milestoneSeenRef.current.has(m));
+      if (crossed !== undefined) {
+        milestoneSeenRef.current.add(crossed);
+        setMilestoneCount(crossed);
+        setConfettiVisible(true);
+      }
+      return newCount;
+    });
+  }, [playRandom, stopAll, resetTimer, playQueuedBand, activeProfile, storage]);
 
   // === Shake-to-shuffle ===
   useEffect(() => {
