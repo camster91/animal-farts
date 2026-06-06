@@ -10,8 +10,8 @@ import { useSoundEngine } from './useSoundEngine';
 import { getKidStorage } from './useKidStorage';
 import type { Pin } from './useKidStorage';
 
-// v26c: show exactly 2 scenes (Farm + Jungle), no more
-const VISIBLE_SCENES = 2;
+// v26e: all 6 scenes, IndexedDB-persisted heard count
+const VISIBLE_SCENES = 6;
 const SWIPE_THRESHOLD = 50; // px
 const AUTO_ROTATE_MS = 30_000; // 30 seconds
 const LONG_PRESS_MS = 500; // ms threshold for empty-area pin drop
@@ -26,11 +26,16 @@ export default function KidScreen() {
   const { playRandom, stopAll, isRecording } = useSoundEngine();
   const storage = getKidStorage();
 
-  // Auto-rotate timer
+  // Timers & pointer refs
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pointerStartRef = useRef<number | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Load persisted heard count from IndexedDB on mount
+  useEffect(() => {
+    storage.getHeardCount(PROFILE_ID).then(c => setHeardCount(c));
+  }, [storage]);
 
   // Load pins whenever scene changes
   useEffect(() => {
@@ -68,7 +73,9 @@ export default function KidScreen() {
     const sound = thing.sounds[Math.floor(Math.random() * thing.sounds.length)];
     playRandom(sound);
     setHeardCount(c => c + 1);
-  }, [playRandom, stopAll, resetTimer]);
+    // Persist to IndexedDB
+    void storage.markHeard(sound, PROFILE_ID);
+  }, [playRandom, stopAll, resetTimer, storage]);
 
   // Swipe handling
   const onPointerDown = useCallback((e: React.PointerEvent) => {
@@ -168,10 +175,10 @@ export default function KidScreen() {
         <HeardCountBadge count={heardCount} />
       </SceneBackground>
 
-      {/* Scene dot indicator */}
+      {/* Scene dot indicator — padded for iOS safe area */}
       <div style={{
         position: 'fixed',
-        bottom: 20,
+        bottom: 'max(20px, env(safe-area-inset-bottom, 20px))',
         left: 0,
         right: 0,
         display: 'flex',

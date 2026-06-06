@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import type { Thing } from './scenes';
 import { injectKeyframes, randomReaction } from './reactions';
 
@@ -11,8 +11,35 @@ interface Props {
 
 export function ThingTile({ thing, onTap }: Props) {
   const tileRef = useRef<HTMLButtonElement>(null);
+  const [idleWobble, setIdleWobble] = useState(false);
+  const lastTapRef = useRef<number>(Date.now());
+  const wobbleTimerRef = useRef<number | null>(null);
+
+  // Subtle idle wobble: if not tapped in 10s, do a tiny 1.0→1.05→1.0 scale pulse
+  useEffect(() => {
+    const scheduleWobble = () => {
+      wobbleTimerRef.current = window.setTimeout(() => {
+        const elapsed = Date.now() - lastTapRef.current;
+        if (elapsed >= 10_000) {
+          setIdleWobble(true);
+          setTimeout(() => {
+            setIdleWobble(false);
+            scheduleWobble();
+          }, 2000);
+        } else {
+          scheduleWobble();
+        }
+      }, 10_000);
+    };
+    scheduleWobble();
+    return () => {
+      if (wobbleTimerRef.current) clearTimeout(wobbleTimerRef.current);
+    };
+  }, []);
 
   const handleTap = useCallback(() => {
+    lastTapRef.current = Date.now();
+    setIdleWobble(false);
     onTap(thing);
 
     // Reaction emoji at tap point
@@ -45,14 +72,15 @@ export function ThingTile({ thing, onTap }: Props) {
         top: `${thing.y}%`,
         width: `${thing.size}vw`,
         height: `${thing.size}vw`,
-        transform: 'translate(-50%, -50%)',
+        transform: 'translate(-50%, -50%)' + (idleWobble ? ' scale(1.05)' : ''),
+        transition: idleWobble ? 'transform 1000ms ease-in-out' : 'transform 280ms ease-out, scale 1000ms ease-in-out',
         touchAction: 'manipulation',
         WebkitTapHighlightColor: 'transparent',
       }}
     >
       <span
         className="block w-full h-full flex items-center justify-center text-6xl sm:text-7xl drop-shadow-lg"
-        style={{ animation: 'scale-bounce 280ms ease-out' }}
+        style={{ animation: idleWobble ? 'none' : 'scale-bounce 280ms ease-out' }}
       >
         {thing.emoji}
       </span>

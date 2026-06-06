@@ -1,10 +1,10 @@
-// Poot Party — kid storage (IndexedDB). v26.
-// Database: "poot-party" v1
-// Object stores: recordings, pins, progress
+// Poot Party — kid storage (IndexedDB). v26d.
+// Database: "poot-party" v2
+// Object stores: recordings, pins, progress, profiles
 // All operations are local-first. No server.
 
 const DB_NAME = "poot-party";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 // === Public types ===
 
@@ -30,6 +30,14 @@ export type Pin = {
   profileId: string;
 };
 
+export type Profile = {
+  id: string;          // 'prof-<timestamp>-<rand>'
+  name: string;        // 'Adelaide', 'Madden', etc.
+  avatar: string;      // emoji
+  createdAt: number;
+  lastSceneId: string; // 'farm', 'jungle', etc.
+};
+
 export interface KidStorage {
   // Recordings
   saveRecording(r: Omit<Recording, "id">& { id: string }): Promise<string>;
@@ -48,6 +56,13 @@ export interface KidStorage {
   getHeardCount(profileId: string): Promise<number>;
   getHeardSounds(profileId: string): Promise<string[]>;
   resetProgress(profileId: string): Promise<void>;
+
+  // Profiles
+  saveProfile(p: Profile): Promise<string>;
+  getProfile(id: string): Promise<Profile | null>;
+  getAllProfiles(): Promise<Profile[]>;
+  deleteProfile(id: string): Promise<void>;
+  updateProfile(p: Profile): Promise<void>;
 }
 
 // === DB open (lazy singleton) ===
@@ -80,6 +95,11 @@ function openDB(): Promise<IDBDatabase> {
       // progress store (keyPath = profileId)
       if (!db.objectStoreNames.contains("progress")) {
         db.createObjectStore("progress", { keyPath: "profileId" });
+      }
+
+      // profiles store (keyPath = id) — added in v2
+      if (!db.objectStoreNames.contains("profiles")) {
+        db.createObjectStore("profiles", { keyPath: "id" });
       }
     });
 
@@ -223,6 +243,39 @@ export function getKidStorage(): KidStorage {
       const db = await openDB();
       const store = getStore(db, "progress", "readwrite");
       await promisifyRequest(store.delete(profileId));
+    },
+
+    // --- Profiles ---
+
+    async saveProfile(p: Profile): Promise<string> {
+      const db = await openDB();
+      const store = getStore(db, "profiles", "readwrite");
+      await promisifyRequest(store.put(p));
+      return p.id;
+    },
+
+    async getProfile(id: string): Promise<Profile | null> {
+      const db = await openDB();
+      const store = getStore(db, "profiles", "readonly");
+      return (await promisifyRequest(store.get(id))) ?? null;
+    },
+
+    async getAllProfiles(): Promise<Profile[]> {
+      const db = await openDB();
+      const store = getStore(db, "profiles", "readonly");
+      return (await promisifyRequest(store.getAll())) as Profile[];
+    },
+
+    async deleteProfile(id: string): Promise<void> {
+      const db = await openDB();
+      const store = getStore(db, "profiles", "readwrite");
+      await promisifyRequest(store.delete(id));
+    },
+
+    async updateProfile(p: Profile): Promise<void> {
+      const db = await openDB();
+      const store = getStore(db, "profiles", "readwrite");
+      await promisifyRequest(store.put(p));
     },
   };
 
