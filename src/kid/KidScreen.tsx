@@ -92,31 +92,24 @@ export default function KidScreen() {
     resetTimer();
   }, [resetTimer]);
 
-  // Empty-area long-press detection on the container div.
-  // We use onPointerDown on a transparent overlay div that sits
-  // ABOVE things in the DOM (so it receives events first) but
-  // uses pointer-events: auto only for the empty-area detection.
-  // The actual long-press fires after LONG_PRESS_MS if no Thing was hit.
+  // Empty-area long-press detection on the transparent overlay div.
+  // The overlay sits INSIDE the root div so events bubble up to the root's
+  // swipe handler — but we use pendingPinPos as a gate so that:
+  //   - If long-press fires → pendingPinPos is set → root's onPointerUp skips swipe logic
+  //   - If short tap → timer cancelled before 500ms → root's onPointerUp does normal swipe check
   const onScenePointerDown = useCallback((e: React.PointerEvent) => {
-    // Ignore if already pending a pin
-    if (pendingPinPos !== null) return;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
     longPressTimerRef.current = window.setTimeout(() => {
+      longPressTimerRef.current = null;
       setPendingPinPos({ x, y });
     }, LONG_PRESS_MS);
-  }, [pendingPinPos]);
-
-  const onScenePointerUp = useCallback(() => {
-    if (longPressTimerRef.current !== null) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
   }, []);
 
-  const onScenePointerLeave = useCallback(() => {
+  const onScenePointerUp = useCallback(() => {
+    // Only clear if the timer hasn't fired yet (null = already fired)
     if (longPressTimerRef.current !== null) {
       window.clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
@@ -157,8 +150,6 @@ export default function KidScreen() {
         }}
         onPointerDown={onScenePointerDown}
         onPointerUp={onScenePointerUp}
-        onPointerLeave={onScenePointerLeave}
-        onPointerCancel={onScenePointerUp}
       />
 
       <SceneBackground bg={scene.bg}>
