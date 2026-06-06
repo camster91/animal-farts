@@ -21,87 +21,53 @@ export interface SceneDef {
 export const SCENES: Record<SceneId, SceneDef> = {
   farm: {
     id: "farm", name: "Farm", emoji: "🌾",
-    sky: "from-sky-300 via-sky-200 to-sky-100",
-    ground: "from-lime-300 via-green-400 to-emerald-500",
+    sky: "from-sky-300",
+    ground: "to-lime-300",
+    // v25w: illustrations handle most of the scene props now. We
+    // keep just a couple of "pop" decorations for kid interaction.
     decorations: [
-      { emoji: "☀️", x: 90, y: 10, size: 7, opacity: 0.95 },
-      { emoji: "☁️", x: 18, y: 12, size: 5, opacity: 0.85 },
-      { emoji: "☁️", x: 70, y: 20, size: 4, opacity: 0.7 },
-      { emoji: "🌳", x: 6, y: 32, size: 7, opacity: 0.9 },
-      { emoji: "🌳", x: 94, y: 34, size: 6, opacity: 0.85 },
-      { emoji: "🏠", x: 50, y: 28, size: 7, opacity: 0.9 },
-      { emoji: "🐝", x: 30, y: 22, size: 2, opacity: 0.7 },
-      { emoji: "🦋", x: 75, y: 28, size: 2, opacity: 0.6 },
+      { emoji: "🐝", x: 30, y: 22, size: 3, opacity: 0.9 },
+      { emoji: "🦋", x: 75, y: 28, size: 3, opacity: 0.85 },
     ],
   },
   jungle: {
     id: "jungle", name: "Jungle", emoji: "🌴",
-    sky: "from-emerald-200 via-lime-300 to-green-400",
-    ground: "from-emerald-500 via-green-600 to-emerald-700",
+    sky: "from-emerald-300",
+    ground: "to-emerald-700",
     decorations: [
-      { emoji: "🌴", x: 4, y: 28, size: 9, opacity: 0.95 },
-      { emoji: "🌴", x: 95, y: 30, size: 8, opacity: 0.9 },
-      { emoji: "🌿", x: 22, y: 12, size: 4, opacity: 0.6 },
-      { emoji: "🌿", x: 78, y: 10, size: 3, opacity: 0.6 },
-      { emoji: "🍃", x: 45, y: 6, size: 2, opacity: 0.5 },
-      { emoji: "🌺", x: 15, y: 70, size: 3, opacity: 0.7 },
-      { emoji: "🌺", x: 90, y: 75, size: 3, opacity: 0.7 },
-      { emoji: "🦜", x: 78, y: 16, size: 4, opacity: 0.85 },
+      { emoji: "🦜", x: 80, y: 16, size: 4, opacity: 0.9 },
     ],
   },
   ocean: {
     id: "ocean", name: "Ocean", emoji: "🌊",
-    sky: "from-sky-300 via-cyan-200 to-sky-200",
-    ground: "from-cyan-400 via-blue-500 to-blue-700",
+    sky: "from-sky-300",
+    ground: "to-blue-700",
     decorations: [
-      { emoji: "☀️", x: 86, y: 8, size: 5, opacity: 0.85 },
-      { emoji: "☁️", x: 16, y: 10, size: 4, opacity: 0.7 },
-      { emoji: "⛅", x: 70, y: 16, size: 3, opacity: 0.6 },
-      { emoji: "🌊", x: 10, y: 48, size: 4, opacity: 0.6 },
-      { emoji: "🌊", x: 80, y: 64, size: 4, opacity: 0.6 },
-      { emoji: "🐚", x: 25, y: 80, size: 2, opacity: 0.7 },
-      { emoji: "🐟", x: 60, y: 70, size: 3, opacity: 0.5 },
+      { emoji: "🐚", x: 25, y: 80, size: 2, opacity: 0.85 },
+      { emoji: "🐟", x: 60, y: 70, size: 3, opacity: 0.8 },
     ],
   },
   city: {
     id: "city", name: "City", emoji: "🏙️",
-    sky: "from-orange-200 via-amber-200 to-sky-200",
-    ground: "from-slate-400 via-gray-500 to-zinc-600",
-    decorations: [
-      { emoji: "☀️", x: 88, y: 8, size: 4, opacity: 0.85 },
-      { emoji: "☁️", x: 14, y: 12, size: 3, opacity: 0.6 },
-      { emoji: "🏢", x: 4, y: 24, size: 6, opacity: 0.85 },
-      { emoji: "🏢", x: 92, y: 22, size: 6, opacity: 0.85 },
-      { emoji: "🏬", x: 16, y: 48, size: 4, opacity: 0.6 },
-      { emoji: "🚏", x: 60, y: 76, size: 3, opacity: 0.7 },
-      { emoji: "🚦", x: 28, y: 74, size: 3, opacity: 0.7 },
-    ],
+    sky: "from-orange-200",
+    ground: "to-zinc-600",
+    decorations: [],
   },
   bedroom: {
     id: "bedroom", name: "Bedroom", emoji: "🛏️",
-    sky: "from-indigo-400 via-purple-400 to-pink-400",
-    ground: "from-purple-500 via-violet-500 to-indigo-600",
+    sky: "from-indigo-400",
+    ground: "to-indigo-600",
     decorations: [
-      { emoji: "🌙", x: 80, y: 10, size: 6, opacity: 0.95 },
-      { emoji: "⭐", x: 18, y: 8, size: 3, opacity: 0.85 },
-      { emoji: "⭐", x: 30, y: 16, size: 2, opacity: 0.7 },
-      { emoji: "⭐", x: 60, y: 12, size: 2, opacity: 0.7 },
-      { emoji: "🛏️", x: 5, y: 60, size: 7, opacity: 0.85 },
-      { emoji: "💤", x: 20, y: 70, size: 3, opacity: 0.8 },
+      { emoji: "💤", x: 20, y: 70, size: 3, opacity: 0.85 },
     ],
   },
   bathroom: {
     id: "bathroom", name: "Bathroom", emoji: "🛁",
-    sky: "from-cyan-200 via-sky-200 to-blue-200",
-    ground: "from-cyan-300 via-sky-300 to-blue-300",
+    sky: "from-cyan-200",
+    ground: "to-blue-300",
     decorations: [
-      { emoji: "🛁", x: 6, y: 55, size: 7, opacity: 0.85 },
-      { emoji: "🪥", x: 50, y: 22, size: 3, opacity: 0.85 },
-      { emoji: "🧼", x: 14, y: 16, size: 3, opacity: 0.85 },
-      { emoji: "🧴", x: 84, y: 20, size: 3, opacity: 0.85 },
-      { emoji: "🚿", x: 76, y: 48, size: 5, opacity: 0.85 },
-      { emoji: "🫧", x: 26, y: 38, size: 2, opacity: 0.7 },
-      { emoji: "🫧", x: 70, y: 68, size: 2, opacity: 0.7 },
+      { emoji: "🫧", x: 26, y: 38, size: 2, opacity: 0.85 },
+      { emoji: "🫧", x: 70, y: 68, size: 2, opacity: 0.85 },
     ],
   },
 };
@@ -172,12 +138,28 @@ export interface SceneBackgroundProps {
   children: ReactNode;
 }
 
+/** The page background for a scene. Renders the generated illustration
+ *  as a full-bleed background image, then layers the decorative emoji
+ *  on top, then the children (chips + tile grid).
+ *
+ *  Image path: /scenes/<id>.jpg (generated by
+ *  scripts/generate-scenes.mjs and committed to public/scenes/). */
 export function SceneBackground({ scene, children }: SceneBackgroundProps) {
   return (
     <div className="absolute inset-0 overflow-hidden">
-      <div className={"absolute inset-x-0 top-0 h-2/5 bg-gradient-to-b " + scene.sky} />
-      <div className={"absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-b " + scene.ground} />
-      <div className="absolute inset-x-0 top-2/5 h-px bg-white/30" />
+      {/* Generated illustration as full-bleed background.
+          The sky/ground Tailwind gradients from the SCENES def are used
+          as fallback background-color while the image loads. */}
+      <div
+        className={"absolute inset-0 bg-cover bg-center " + scene.sky + " " + scene.ground}
+        style={{
+          backgroundImage: `url('/scenes/${scene.id}.jpg')`,
+        }}
+      />
+      {/* Subtle dark scrim so the foreground text/emoji remain readable
+          over the bright illustration. */}
+      <div className="absolute inset-0 bg-black/10" />
+      {/* Decorative emoji (sparse — most scene props come from the image) */}
       {scene.decorations.map((d, i) => (
         <div
           key={i}
