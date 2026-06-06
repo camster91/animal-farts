@@ -1,13 +1,14 @@
 // Card: Premium tier status and upgrade CTA
 import { useState } from 'react';
 import PremiumModal from './PremiumModal';
+import { useParentStore } from './store';
 
 interface Props {
   isPremium: boolean;
-  onSimulatePremium: () => void;
 }
 
-export default function PremiumCard({ isPremium, onSimulatePremium }: Props) {
+export default function PremiumCard({ isPremium }: Props) {
+  const { setPremium } = useParentStore();
   const [showModal, setShowModal] = useState(false);
 
   return (
@@ -55,7 +56,7 @@ export default function PremiumCard({ isPremium, onSimulatePremium }: Props) {
       {showModal && (
         <PremiumModal
           onClose={() => setShowModal(false)}
-          onSimulatePremium={onSimulatePremium}
+          onSimulatePremium={() => setPremium(true)}
         />
       )}
     </>

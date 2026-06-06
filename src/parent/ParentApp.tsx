@@ -28,7 +28,6 @@ export default function ParentApp() {
     deleteProfile,
     regenerateShareCode,
     copyShareCode,
-    setPremium,
     setTvModeEnabled,
   } = useParentStore();
 
@@ -179,7 +178,6 @@ export default function ParentApp() {
         />
         <PremiumCard
           isPremium={settings.isPremium}
-          onSimulatePremium={() => setPremium(true)}
         />
         <TvModeCard
           tvModeEnabled={settings.tvModeEnabled}

@@ -13,8 +13,8 @@ export default function PremiumModal({ onClose, onSimulatePremium }: Props) {
 
   function handleContinue() {
     // In production this would call the real Stripe Checkout endpoint.
-    // For now it's a no-op since we don't have Stripe keys.
-    console.info('[premium] Continue clicked — Stripe not wired up yet');
+    // For now, flip premium via the store since we don't have Stripe keys.
+    onSimulatePremium();
     onClose();
   }
 
