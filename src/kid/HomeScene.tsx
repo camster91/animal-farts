@@ -1,5 +1,5 @@
 // Poot Party — HomeScene. v26d.
-// Profile picker screen shown at app launch.
+// Profile picker home scene shown at app launch.
 // Shown when no profile is selected; the kid picks a profile or creates one.
 
 import { useState, useEffect, useCallback } from "react";
@@ -7,6 +7,7 @@ import { getKidStorage } from "./useKidStorage";
 import type { Profile } from "./useKidStorage";
 import { ProfileCard } from "./ProfileCard";
 import { NewProfileModal } from "./NewProfileModal";
+import { WelcomeScreen } from "./WelcomeScreen";
 
 interface Props {
   onSelectProfile: (profile: Profile) => void;
@@ -20,7 +21,17 @@ interface ProfileWithCount {
 export function HomeScene({ onSelectProfile }: Props) {
   const [profiles, setProfiles] = useState<ProfileWithCount[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
   const storage = getKidStorage();
+
+  // Show welcome screen once per device (before profile picker)
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem('poot-party-welcome-seen')) {
+        setShowWelcome(true);
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   // Load all profiles + their heard counts
   const loadProfiles = useCallback(async () => {
@@ -47,8 +58,18 @@ export function HomeScene({ onSelectProfile }: Props) {
     [storage, onSelectProfile]
   );
 
+  const handleWelcomeDismiss = useCallback(() => {
+    setShowWelcome(false);
+    try {
+      localStorage.setItem('poot-party-welcome-seen', '1');
+    } catch { /* ignore */ }
+  }, []);
+
   return (
     <>
+      {/* Welcome screen — shown once per device before profile picker */}
+      {showWelcome && <WelcomeScreen onDismiss={handleWelcomeDismiss} />}
+
       {/* Full-bleed home background */}
       <div
         style={{
