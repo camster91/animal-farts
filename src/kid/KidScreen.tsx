@@ -255,10 +255,10 @@ export default function KidScreen() {
         <HeardCountBadge count={heardCount} />
       </SceneBackground>
 
-      {/* Scene dot indicator — only real scenes */}
+      {/* Scene dot indicator — only real scenes, padded for iOS safe area */}
       <div style={{
         position: 'fixed',
-        bottom: 20,
+        bottom: 'max(20px, env(safe-area-inset-bottom, 20px))',
         left: 0,
         right: 0,
         display: 'flex',

@@ -109,6 +109,9 @@ export function PinDropper({ x, y, sceneId, profileId, onSave, onCancel }: Props
       onPointerUp={onPointerUp}
       onPointerLeave={onPointerUp}
       onPointerCancel={onPointerUp}
+      // Also handle touch events directly for iOS Safari
+      onTouchStart={onPointerDown as unknown as React.TouchEventHandler}
+      onTouchEnd={onPointerUp as unknown as React.TouchEventHandler}
     >
       <div
         style={{
