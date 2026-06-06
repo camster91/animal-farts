@@ -24,8 +24,8 @@ export interface AudioEngine {
 
 // === Module-level FX state ===
 
-let pitchRate = 1.0;     // 0.5x = deep, 2.0x = chipmunk
-let speedFactor = 1.0;   // playback rate
+let pitchRate = 1.0;     //0.5–2.0 semitone multiplier (detune offset = (pitchRate-1)*1200 cents)
+let speedFactor = 1.0;   // playback rate (0.5–2.0)
 let reverbEnabled = false;
 
 // === Audio context (lazy, shared with Web Audio for reverb) ===
@@ -99,6 +99,8 @@ async function playWithReverb(src: string): Promise<void> {
     const audioBuf = await ctx.decodeAudioData(arrayBuf);
     const srcNode = ctx.createBufferSource();
     srcNode.buffer = audioBuf;
+    // pitch (detune) and speed (playbackRate) are independent
+    srcNode.detune.value = (pitchRate - 1) * 1200; // cents:0.5→-600, 2.0→+1200
     srcNode.playbackRate.value = speedFactor;
     const convolver = ctx.createConvolver();
     convolver.buffer = getEchoImpulse(ctx);
@@ -109,7 +111,8 @@ async function playWithReverb(src: string): Promise<void> {
     srcNode.connect(dry).connect(ctx.destination);
     srcNode.connect(convolver).connect(wet).connect(ctx.destination);
     srcNode.start();
-    const durationMs = (audioBuf.duration / speedFactor + 0.5) * 1000;
+    // use a constant timeout based on the original audio duration + 0.5s headroom
+    const durationMs = (audioBuf.duration + 0.5) * 1000;
     setTimeout(() => { try { srcNode.stop(); } catch { /* ignore */ } }, durationMs);
   } catch (err) {
     console.warn("[engine] reverb playback failed, falling back:", err);
@@ -173,14 +176,15 @@ export function getAudioEngine(): AudioEngine {
 
     stopAll(): void {
       stopActiveElements();
-      if (audioCtx && audioCtx.state === "running") {
-        audioCtx.suspend();
-      }
+      // Note: do NOT suspend the AudioContext — doing so breaks the next
+      // playWithReverb() call because suspend() is async and may still be
+      // pending when decodeAudioData is called, causing it to throw.
+      // Active Web Audio nodes (from reverb playback) are stopped via
+      // stopActiveElements being called before every play().
     },
 
     setPitch(semitones: number): void {
       pitchRate = Math.max(0.5, Math.min(2.0, semitones));
-      speedFactor = pitchRate;
     },
 
     setSpeed(factor: number): void {
