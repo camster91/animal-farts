@@ -164,6 +164,14 @@ app.get("/api/health", (req, res) => {
   res.json({ ok: true, recordings: count.n, uptime: process.uptime() });
 });
 
+// v29: lightweight self-hosted error monitoring (10% sample, logs to stderr)
+app.post("/api/errors", (req, res) => {
+  const { message, stack, url, userAgent, profileId, ts } = req.body || {};
+  // Log to server stderr — piped to the runbook's logging system
+  console.error(`[client-error] ts=${ts} url=${url} profileId=${profileId} ua=${userAgent} msg=${message} stack=${stack}`);
+  res.json({ ok: true });
+});
+
 // === Share codes (4-character) ===
 // Anyone can mint a code for a public recording URL. Anyone with the
 // code can fetch the audio. No accounts, no follows, no profiles.
