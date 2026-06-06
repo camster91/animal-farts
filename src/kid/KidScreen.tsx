@@ -204,7 +204,10 @@ export default function KidScreen() {
   // sound playback since the callback already handled it.
   const onTapThing = useCallback((thing: Thing, tapX: number, tapY: number, skipSound = false) => {
     resetTimer();
-    stopAll();
+    // Only stop currently-playing audio if WE'RE about to start a new sound.
+    // If skipSound is true, onPlayKidRecording already started playback;
+    // calling stopAll() here would kill the sound we just started.
+    if (!skipSound) stopAll();
     const sound = thing.sounds[Math.floor(Math.random() * thing.sounds.length)];
     const now = Date.now();
 
