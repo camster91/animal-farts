@@ -66,6 +66,18 @@
           "sizes": "192x192"
         }
       ]
+    },
+    {
+      "name": "Parent dashboard",
+      "short_name": "Parents",
+      "description": "Open the parent operator dashboard",
+      "url": "/parent?utm_source=shortcut",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     }
   ],
   "edge_side_panel": {
