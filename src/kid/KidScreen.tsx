@@ -6,7 +6,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { SCENES } from './scenes';
 import type { Thing } from './scenes';
 import { SceneBackground } from './SceneBackground';
-import { ThingTile } from './ThingTile';
+import { RecordingThing } from './RecordingThing';
 import { HeardCountBadge } from './HeardCountBadge';
 import { FirstTapHint } from './FirstTapHint';
 import { PinDropper } from './PinDropper';
@@ -27,7 +27,6 @@ const LONG_PRESS_MS = 500; // ms threshold for empty-area pin drop
 const BAND_CHAIN_WINDOW_MS = 1500; // 1.5s window for 3-tap band
 const BAND_PLAY_GAP_MS = 300; // gap between queued sounds
 const MILESTONES = [10, 25, 50, 100, 200];
-const SHAKE_THRESHOLD = 15; // m/s²
 
 // Map from real scene index to SCENES index (accounting for home at index 0)
 function realIndexToSceneIndex(realIndex: number): number {
@@ -57,7 +56,6 @@ export default function KidScreen() {
   const [bandBannerVisible, setBandBannerVisible] = useState(false);
   const [milestoneCount, setMilestoneCount] = useState<number | null>(null);
   const [confettiVisible, setConfettiVisible] = useState(false);
-  const [shakeJitter, setShakeJitter] = useState(false);
   const [musicNotes, setMusicNotes] = useState<MusicNote[]>([]);
 
   const { playRandom, stopAll, isRecording } = useSoundEngine();
@@ -67,7 +65,6 @@ export default function KidScreen() {
   const pointerStartRef = useRef<number | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const shakeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Recent taps for band chain detection
   const recentTapsRef = useRef<{ time: number; sound: string; x: number; y: number }[]>([]);
@@ -203,41 +200,6 @@ export default function KidScreen() {
     });
   }, [playRandom, stopAll, resetTimer, playQueuedBand, activeProfile, storage]);
 
-  // === Shake-to-shuffle ===
-  useEffect(() => {
-    if (!activeProfile) return;
-    const scene = SCENES[currentSceneIndex];
-    if (scene.id === 'home') return;
-
-    let lastShakeTime = 0;
-
-    const handleMotion = (event: DeviceMotionEvent) => {
-      const acc = event.accelerationIncludingGravity;
-      if (!acc) return;
-      const mag = Math.sqrt(
-        (acc.x ?? 0) ** 2 + (acc.y ?? 0) ** 2 + (acc.z ?? 0) ** 2
-      );
-      const now = Date.now();
-      // Debounce: only fire if > 500ms since last shake
-      if (mag > SHAKE_THRESHOLD && now - lastShakeTime > 500) {
-        lastShakeTime = now;
-        setShakeJitter(true);
-        if (shakeTimeoutRef.current) clearTimeout(shakeTimeoutRef.current);
-        shakeTimeoutRef.current = setTimeout(() => {
-          setShakeJitter(false);
-        }, 600);
-      }
-    };
-
-    // iOS 13+ requires a user gesture before devicemotion fires
-    // The first tap counts as the gesture; we add the listener on mount
-    window.addEventListener('devicemotion', handleMotion);
-    return () => {
-      window.removeEventListener('devicemotion', handleMotion);
-      if (shakeTimeoutRef.current) clearTimeout(shakeTimeoutRef.current);
-    };
-  }, [activeProfile, currentSceneIndex]);
-
   // Swipe handling
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     pointerStartRef.current = e.clientX;
@@ -341,17 +303,27 @@ export default function KidScreen() {
         ))}
 
         {scene.things.map((thing, i) => (
-          <ThingTile
+          <RecordingThing
             key={`${scene.id}-${thing.id}`}
             thing={thing}
+            sceneId={scene.id}
+            profileId={activeProfile?.id ?? 'default'}
             index={i}
-            onTap={(_thing, e) => {
-              const x = e ? e.clientX : window.innerWidth / 2;
-              const y = e ? e.clientY : window.innerHeight / 2;
-              onTapThing(thing, x, y);
+            wobbleOffset={i * 200}
+            onPlayKidRecording={(url, t) => {
+              stopAll();
+              playRandom(url);
+              setHeardCount(c => c + 1);
+              // Get tap coordinates from the button element
+              const x = window.innerWidth / 2;
+              const y = window.innerHeight / 2;
+              onTapThing(t, x, y);
             }}
-            shakeJitter={shakeJitter}
-          />
+          >
+            <span className="block w-full h-full flex items-center justify-center text-6xl sm:text-7xl drop-shadow-lg select-none">
+              {thing.emoji}
+            </span>
+          </RecordingThing>
         ))}
         <HeardCountBadge count={heardCount} />
         <FirstTapHint />
