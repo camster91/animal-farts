@@ -2,7 +2,10 @@
 // Samples 10% of errors, strips PII, logs to stderr on the Express server.
 // No external services, no third-party SDKs.
 
-const SAMPLE_RATE = 0.1;
+// v29-errors-fix: bump to 100% — for a kids' app shipping to <1000 users
+// the error volume is low, we need to know about every error. If volume
+// becomes a problem later, switch to 10% or add a max-per-minute.
+const SAMPLE_RATE = 1.0;
 const MAX_STACK = 200;
 
 // Kid names appear in some error messages via form inputs. Truncate
