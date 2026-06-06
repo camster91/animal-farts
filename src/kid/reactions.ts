@@ -105,6 +105,14 @@ const TAP_FLASH_KF = `
   100% { opacity: 1; }
 }`;
 
+// Welcome banner entrance
+const WELCOME_IN_KF = `
+@keyframes welcome-in {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(-12px) scale(0.9); }
+  60%  { opacity: 1; transform: translateX(-50%) translateY(2px) scale(1.03); }
+  100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}`;
+
 // ─── Export the keyframe strings so callers can reference them ───────────────
 export const REACTION_KEYFRAMES = {
   'scale-bounce':    SCALE_BOUNCE_KF,
@@ -118,6 +126,7 @@ export const REACTION_KEYFRAMES = {
   'ambient-wobble':  AMBIENT_WOBBLE_KF,
   'reaction-rise':   REACTION_RISE_KF,
   'tap-flash':       TAP_FLASH_KF,
+  'welcome-in':      WELCOME_IN_KF,
 } as const;
 
 export const ALL_KEYFRAMES = Object.values(REACTION_KEYFRAMES).join('\n');

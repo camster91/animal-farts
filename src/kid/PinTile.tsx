@@ -18,6 +18,7 @@ export function PinTile({ pin, onDelete }: Props) {
   const storage = getKidStorage();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const blobUrlRef = useRef<string | null>(null);
+  const hasShownConfettiRef = useRef(false);
 
   // Load recording URL once
   useEffect(() => {
@@ -32,17 +33,20 @@ export function PinTile({ pin, onDelete }: Props) {
     };
   }, [pin.recordingId, storage]);
 
-  // Scale-in animation on mount
+  // Scale-in animation + one-shot confetti on mount
   useEffect(() => {
     setScale(1.2);
     const t = setTimeout(() => setScale(1), 200);
-    return () => clearTimeout(t);
-  }, []);
-
-  // Trigger confetti flash
-  useEffect(() => {
-    setShowConfetti(true);
-    const t = setTimeout(() => setShowConfetti(false), 1500);
+    // Show confetti once on first mount
+    if (!hasShownConfettiRef.current) {
+      hasShownConfettiRef.current = true;
+      setShowConfetti(true);
+      const ct = setTimeout(() => setShowConfetti(false), 1500);
+      return () => {
+        clearTimeout(t);
+        clearTimeout(ct);
+      };
+    }
     return () => clearTimeout(t);
   }, []);
 

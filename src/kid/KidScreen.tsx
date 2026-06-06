@@ -17,6 +17,8 @@ import { getKidStorage } from './useKidStorage';
 import type { Pin, Profile } from './useKidStorage';
 import { ConfettiBurst } from './ConfettiBurst';
 import { MilestoneBanner } from './MilestoneBanner';
+import { injectKeyframes } from './reactions';
+injectKeyframes();
 
 // The "real" scenes that rotate (exclude home)
 const REAL_SCENES = SCENES.filter(s => s.id !== 'home');
@@ -57,6 +59,7 @@ export default function KidScreen() {
   const [milestoneCount, setMilestoneCount] = useState<number | null>(null);
   const [confettiVisible, setConfettiVisible] = useState(false);
   const [musicNotes, setMusicNotes] = useState<MusicNote[]>([]);
+  const [showWelcome, setShowWelcome] = useState(false);
 
   const { playRandom, stopAll, isRecording } = useSoundEngine();
   const storage = getKidStorage();
@@ -129,6 +132,9 @@ export default function KidScreen() {
   const handleSelectProfile = useCallback(async (profile: Profile) => {
     await storage.saveProfile(profile);
     setActiveProfile(profile);
+    // Show welcome message
+    setShowWelcome(true);
+    setTimeout(() => setShowWelcome(false), 1500);
     const startSceneId = profile.lastSceneId && profile.lastSceneId !== 'home'
       ? profile.lastSceneId
       : 'farm';
@@ -296,6 +302,34 @@ export default function KidScreen() {
         onPointerDown={onScenePointerDown}
         onPointerUp={onScenePointerUp}
       />
+
+      {/* Welcome banner */}
+      {showWelcome && activeProfile && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 'max(16px, env(safe-area-inset-top, 16px))',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 99990,
+            pointerEvents: 'none',
+            background: 'rgba(0,0,0,0.55)',
+            color: '#fff',
+            borderRadius: '999px',
+            padding: '10px 22px',
+            fontSize: 'clamp(1rem, 4vw, 1.4rem)',
+            fontWeight: 700,
+            fontFamily: 'Fredoka, system-ui, sans-serif',
+            whiteSpace: 'nowrap',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+            animation: 'welcome-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+          }}
+        >
+          👋 Welcome back, {activeProfile.name}!
+        </div>
+      )}
 
       <SceneBackground bg={scene.bg} sceneKey={scene.id}>
         {pins.map(pin => (
