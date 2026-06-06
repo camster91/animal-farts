@@ -186,7 +186,6 @@ export function getAudioEngine(): AudioEngine {
     setPitch(semitones: number): void {
       pitchRate = Math.max(0.5, Math.min(2.0, semitones));
     },
-
     setSpeed(factor: number): void {
       speedFactor = Math.max(0.5, Math.min(2.0, factor));
     },
