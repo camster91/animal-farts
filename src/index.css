@@ -1,4 +1,25 @@
-@import url("https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap");
+/* Fredoka — self-hosted v17 (OFL). No Google CDN calls. */
+@font-face {
+  font-family: 'Fredoka';
+  font-style: normal;
+  font-weight: 400;
+  src: url('/fonts/Fredoka-Regular.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Fredoka';
+  font-style: normal;
+  font-weight: 600;
+  src: url('/fonts/Fredoka-SemiBold.woff2') format('woff2');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Fredoka';
+  font-style: normal;
+  font-weight: 700;
+  src: url('/fonts/Fredoka-Bold.woff2') format('woff2');
+  font-display: swap;
+}
 
 @tailwind base;
 @tailwind components;

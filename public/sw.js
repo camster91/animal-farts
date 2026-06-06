@@ -3,7 +3,7 @@
 // the app works fully offline on first load. Asset paths are injected at
 // build time by scripts/inject-sw-assets.mjs.
 
-const CACHE = "poot-party-v28-audio-fix";
+const CACHE = "poot-party-v29-final";
 
 const SHELL_ASSETS = [
   "/",
@@ -21,6 +21,10 @@ const SHELL_ASSETS = [
   "/scenes/bedroom.jpg",
   "/scenes/bathroom.jpg",
   "/scenes/home.jpg",
+  // v29: self-hosted Fredoka (privacy, COPPA)
+  "/fonts/Fredoka-Regular.woff2",
+  "/fonts/Fredoka-SemiBold.woff2",
+  "/fonts/Fredoka-Bold.woff2",
 ];
 
 // v25m: the catalog is 270+ farts (~23MB). Don't precache — too big.
