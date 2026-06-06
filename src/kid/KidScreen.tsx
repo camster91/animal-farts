@@ -74,7 +74,6 @@ export default function KidScreen() {
   const recentTapsRef = useRef<{ time: number; sound: string; x: number; y: number }[]>([]);
   const noteIdRef = useRef(0);
   const milestoneSeenRef = useRef<Set<number>>(new Set()); // track milestones already fired
-  const shakeCleanupRef = useRef<(() => void) | null>(null);
 
   // Shake-to-shuffle: listen for device motion on mobile
   useEffect(() => {
@@ -89,9 +88,9 @@ export default function KidScreen() {
       }
     };
     window.addEventListener('devicemotion', handler);
-    const cleanup = () => window.removeEventListener('devicemotion', handler);
-    shakeCleanupRef.current = cleanup;
-    return cleanup;
+    return () => {
+      window.removeEventListener('devicemotion', handler);
+    };
   }, []);
 
   // Show home on mount
@@ -446,15 +445,15 @@ export default function KidScreen() {
         <ConfettiBurst onComplete={() => setConfettiVisible(false)} />
       )}
 
-      {/* Scene dot indicator */}
-      <div style={{
+      {/* Scene emoji indicator — replaces plain dots with recognizable emoji */}
+<div style={{
         position: 'fixed',
         bottom: 'max(20px, env(safe-area-inset-bottom, 20px))',
         left: 0,
         right: 0,
         display: 'flex',
         justifyContent: 'center',
-        gap: 8,
+        gap: 6,
         pointerEvents: 'none',
         zIndex: 9999,
         padding: '6px 12px',
@@ -465,25 +464,37 @@ export default function KidScreen() {
         width: 'fit-content',
         margin: '0 auto',
       }}>
-        {REAL_SCENES.map((_, i) => (
-          <button
-            key={i}
-            onClick={() => onDotTap(i)}
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: i === realSceneIndex ? '#fff' : 'rgba(255,255,255,0.45)',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.5)',
-              transition: 'background 200ms, transform 200ms',
-              transform: i === realSceneIndex ? 'scale(1.25)' : 'scale(1)',
-              border: 'none',
-              cursor: 'pointer',
-              padding: 0,
-              pointerEvents: 'auto',
-            }}
-          />
-        ))}
+        {REAL_SCENES.map((s, i) => {
+          const emoji = s.things[0]?.emoji ?? '📍';
+          return (
+            <button
+              key={i}
+              onClick={() => onDotTap(i)}
+              style={{
+                width: i === realSceneIndex ? 36 : 28,
+                height: i === realSceneIndex ? 36 : 28,
+                borderRadius: 10,
+                background: i === realSceneIndex ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.35)',
+                boxShadow: i === realSceneIndex
+                  ? '0 2px 8px rgba(0,0,0,0.4),0 0 0 2px rgba(255,255,255,0.6)'
+                  : '0 1px 3px rgba(0,0,0,0.3)',
+                transition: 'all 200ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+                transform: i === realSceneIndex ? 'scale(1.1)' : 'scale(1)',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+                pointerEvents: 'auto',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: i === realSceneIndex ? '1.2rem' : '1rem',
+              }}
+              aria-label={s.name}
+            >
+              {emoji}
+            </button>
+          );
+        })}
       </div>
 
       {/* Pin dropper modal */}

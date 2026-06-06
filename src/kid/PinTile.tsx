@@ -11,6 +11,7 @@ interface Props {
 }
 
 export function PinTile({ pin, onDelete }: Props) {
+  const confirmDeleteRef = useRef(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [scale, setScale] = useState(1);
   const [showConfetti, setShowConfetti] = useState(false);
@@ -51,7 +52,7 @@ export function PinTile({ pin, onDelete }: Props) {
   }, []);
 
   const onTap = useCallback(() => {
-    if (confirmDelete) return;
+    if (confirmDeleteRef.current) return;
     if (blobUrlRef.current) {
       if (audioRef.current) {
         audioRef.current.pause();
@@ -61,11 +62,12 @@ export function PinTile({ pin, onDelete }: Props) {
       audioRef.current = a;
       void a.play();
     }
-  }, [confirmDelete]);
+  }, []);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     e.stopPropagation();
     pressTimer.current = window.setTimeout(() => {
+      confirmDeleteRef.current = true;
       setConfirmDelete(true);
     }, 500);
   }, []);
@@ -149,7 +151,7 @@ export function PinTile({ pin, onDelete }: Props) {
               Yes
             </button>
             <button
-              onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }}
+              onClick={(e) => { e.stopPropagation(); confirmDeleteRef.current = false; setConfirmDelete(false); }}
               style={{
                 padding: "6px 14px",
                 borderRadius: 10,

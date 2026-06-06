@@ -32,6 +32,7 @@ export function PinDropper({ x, y, sceneId, profileId, onSave, onCancel }: Props
 
   // Cleanup blob URL on unmount
   const recordedUrl = useRef<string | null>(null);
+  const recordedDurationRef = useRef<number>(0);
   useEffect(() => {
     return () => {
       if (recordedUrl.current) URL.revokeObjectURL(recordedUrl.current);
@@ -48,6 +49,7 @@ export function PinDropper({ x, y, sceneId, profileId, onSave, onCancel }: Props
       if (result) {
         setRecordedBlob(result.blob);
         recordedUrl.current = URL.createObjectURL(result.blob);
+        recordedDurationRef.current = result.duration;
       }
     }, 500);
   }, [engine]);
@@ -74,7 +76,7 @@ export function PinDropper({ x, y, sceneId, profileId, onSave, onCancel }: Props
       sceneId,
       thingId: null,
       blob: recordedBlob,
-      duration: 0,
+      duration: recordedDurationRef.current,
       mimeType: recordedBlob.type || "audio/webm",
       createdAt: Date.now(),
       profileId,
