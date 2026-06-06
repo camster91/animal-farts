@@ -19,19 +19,18 @@ interface ProfileWithCount {
 }
 
 export function HomeScene({ onSelectProfile }: Props) {
+  // Initialize from localStorage on first render so the welcome screen
+  // mounts immediately (no useEffect timing race in React 19 strict mode).
+  const [showWelcome, setShowWelcome] = useState<boolean>(() => {
+    try {
+      return !localStorage.getItem('poot-party-welcome-seen');
+    } catch {
+      return true;
+    }
+  });
   const [profiles, setProfiles] = useState<ProfileWithCount[]>([]);
   const [showModal, setShowModal] = useState(false);
-  const [showWelcome, setShowWelcome] = useState(false);
   const storage = getKidStorage();
-
-  // Show welcome screen once per device (before profile picker)
-  useEffect(() => {
-    try {
-      if (!localStorage.getItem('poot-party-welcome-seen')) {
-        setShowWelcome(true);
-      }
-    } catch { /* ignore */ }
-  }, []);
 
   // Load all profiles + their heard counts
   const loadProfiles = useCallback(async () => {

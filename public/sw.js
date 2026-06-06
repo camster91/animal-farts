@@ -3,7 +3,7 @@
 // the app works fully offline on first load. Asset paths are injected at
 // build time by scripts/inject-sw-assets.mjs.
 
-const CACHE = "poot-party-v27-fixes";
+const CACHE = "poot-party-v28-welcome-fix";
 
 const SHELL_ASSETS = [
   "/",
