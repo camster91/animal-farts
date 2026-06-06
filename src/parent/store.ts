@@ -133,6 +133,11 @@ export function useParentStore() {
     }
   }, [settings.shareCode]);
 
+  // --- Premium ---
+  const setPremium = useCallback((isPremium: boolean) => {
+    setSettings((s) => ({ ...s, isPremium }));
+  }, []);
+
   return {
     settings,
     setPin,
@@ -147,5 +152,6 @@ export function useParentStore() {
     deleteProfile,
     regenerateShareCode,
     copyShareCode,
+    setPremium,
   };
 }

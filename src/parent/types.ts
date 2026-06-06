@@ -31,6 +31,7 @@ export interface ParentSettings {
   profiles: Profile[];
   activeProfileId: string;
   shareCode: string; // e.g. "POOT-7K2M"
+  isPremium: boolean;
 }
 
 export const DEFAULT_PARENT_SETTINGS: ParentSettings = {
@@ -60,4 +61,5 @@ export const DEFAULT_PARENT_SETTINGS: ParentSettings = {
   ],
   activeProfileId: 'default',
   shareCode: '',
+  isPremium: false,
 };

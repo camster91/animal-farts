@@ -8,6 +8,7 @@ import EffectsCard from './EffectsCard';
 import ProfilesCard from './ProfilesCard';
 import ShareCodeCard from './ShareCodeCard';
 import UploadSoundCard from './UploadSoundCard';
+import PremiumCard from './PremiumCard';
 
 type View = 'dashboard' | 'changepin';
 
@@ -25,6 +26,7 @@ export default function ParentApp() {
     deleteProfile,
     regenerateShareCode,
     copyShareCode,
+    setPremium,
   } = useParentStore();
 
   const [view, setView] = useState<View>('dashboard');
@@ -171,6 +173,10 @@ export default function ParentApp() {
           shareCode={settings.shareCode}
           onRegenerate={regenerateShareCode}
           onCopy={copyShareCode}
+        />
+        <PremiumCard
+          isPremium={settings.isPremium}
+          onSimulatePremium={() => setPremium(true)}
         />
         <UploadSoundCard
           activeProfileId={settings.activeProfileId}
