@@ -1,4 +1,3 @@
-// Poot Party — KidScreen. v26f-surprise.
 // Poot Party — KidScreen. v26f.
 // Profile picker home scene → scene loop (Farm → Jungle → ...).
 // Supports multiple kid profiles with lastSceneId persistence.
@@ -15,7 +14,6 @@ import { HomeScene } from './HomeScene';
 import { useSoundEngine } from './useSoundEngine';
 import { getKidStorage } from './useKidStorage';
 import type { Pin, Profile } from './useKidStorage';
-import type { ReactionType } from './reactions';
 import { ConfettiBurst } from './ConfettiBurst';
 import { MilestoneBanner } from './MilestoneBanner';
 
