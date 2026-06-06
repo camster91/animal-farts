@@ -223,3 +223,9 @@ body {
   60%  { opacity: 1; transform: translate(-50%, -50%) scale(1.18); }
   100% { opacity: 1; transform: translate(-50%, -50%) scale(1.0); }
 }
+
+/* === First-tap hint pulse (the "👆 Tap!" pill on first load) === */
+@keyframes hint-bounce {
+  0%   { transform: translate(-50%, -50%) scale(1.0); }
+  100% { transform: translate(-50%, -50%) scale(1.08); }
+}

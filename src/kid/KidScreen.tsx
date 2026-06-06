@@ -8,6 +8,7 @@ import type { Thing } from './scenes';
 import { SceneBackground } from './SceneBackground';
 import { ThingTile } from './ThingTile';
 import { HeardCountBadge } from './HeardCountBadge';
+import { FirstTapHint } from './FirstTapHint';
 import { PinDropper } from './PinDropper';
 import { PinTile } from './PinTile';
 import { HomeScene } from './HomeScene';
@@ -353,6 +354,7 @@ export default function KidScreen() {
           />
         ))}
         <HeardCountBadge count={heardCount} />
+        <FirstTapHint />
       </SceneBackground>
 
       {/* Floating music notes (band chain) */}

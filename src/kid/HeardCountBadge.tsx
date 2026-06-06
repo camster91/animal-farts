@@ -19,23 +19,26 @@ export function HeardCountBadge({ count }: Props) {
 
   return (
     <div
-      className="fixed z-50 flex items-center gap-1.5 px-3.5 py-2 rounded-full text-base font-extrabold"
+      className="fixed z-50 flex items-center gap-2 px-4 py-2.5 rounded-full font-extrabold"
       style={{
-        bottom: 'max(16px, env(safe-area-inset-bottom, 16px))',
-        right: 'max(16px, env(safe-area-inset-right, 16px))',
+        bottom: 'max(20px, env(safe-area-inset-bottom, 20px))',
+        right: 'max(20px, env(safe-area-inset-right, 20px))',
         background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
         color: '#1f2937',
-        boxShadow: '0 4px 12px rgba(245, 158, 11, 0.4), 0 0 0 3px rgba(255, 255, 255, 0.4)',
+        fontSize: '1.5rem',
+        boxShadow: '0 6px 16px rgba(245, 158, 11, 0.5), 0 0 0 4px rgba(255, 255, 255, 0.5)',
         fontFamily: 'system-ui, -apple-system, sans-serif',
         letterSpacing: '0.02em',
+        minWidth: '5rem',
+        justifyContent: 'center',
       }}
     >
-      <span style={{ fontSize: '1.4em', lineHeight: 1 }}>🏆</span>
+      <span style={{ fontSize: '1.5em', lineHeight: 1 }}>🏆</span>
       <span
         key={pulseKey}
         style={{
           display: 'inline-block',
-          minWidth: '1.5em',
+          minWidth: '1.2em',
           textAlign: 'center',
           animation: pulseKey > 0 ? 'count-bump 480ms cubic-bezier(0.34, 1.56, 0.64, 1)' : 'none',
         }}
