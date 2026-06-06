@@ -28,6 +28,8 @@ interface RecordingThingProps {
   wobbleOffset?: number;
   /** Index in the scene — used to stagger the entrance animation */
   index?: number;
+  /** When true, all things do a shake-jiggle (shake-to-shuffle) */
+  shakeJitter?: boolean;
 }
 
 const ANIMATION_MAP: Record<ReactionType, string> = {
@@ -47,6 +49,7 @@ export function RecordingThing({
   children,
   wobbleOffset = 0,
   index = 0,
+  shakeJitter = false,
 }: RecordingThingProps) {
   const [recording, setRecording] = useState(false);
   const [hasKidRecording, setHasKidRecording] = useState(false);
@@ -261,7 +264,7 @@ export function RecordingThing({
         }}
         className={`absolute select-none thing-entrance ${
           recording ? "animate-pulse" : "active:scale-90 transition-transform"
-        }`}
+        }${shakeJitter ? " shake-jiggle" : ""}`}
         aria-label={`${thing.name}, tap to hear a sound${
           hasKidRecording ? ", you have a recording" : ""
         }`}

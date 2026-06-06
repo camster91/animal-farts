@@ -60,6 +60,7 @@ export default function KidScreen() {
   const [confettiVisible, setConfettiVisible] = useState(false);
   const [musicNotes, setMusicNotes] = useState<MusicNote[]>([]);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [shakeJitter, setShakeJitter] = useState(false);
 
   const { playRandom, stopAll, isRecording } = useSoundEngine();
   const storage = getKidStorage();
@@ -73,6 +74,25 @@ export default function KidScreen() {
   const recentTapsRef = useRef<{ time: number; sound: string; x: number; y: number }[]>([]);
   const noteIdRef = useRef(0);
   const milestoneSeenRef = useRef<Set<number>>(new Set()); // track milestones already fired
+  const shakeCleanupRef = useRef<(() => void) | null>(null);
+
+  // Shake-to-shuffle: listen for device motion on mobile
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handler = (e: DeviceMotionEvent) => {
+      const acc = e.acceleration;
+      if (!acc || acc.x === null || acc.y === null || acc.z === null) return;
+      const magnitude = Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
+      if (magnitude > 20) {
+        setShakeJitter(true);
+        setTimeout(() => setShakeJitter(false), 600);
+      }
+    };
+    window.addEventListener('devicemotion', handler);
+    const cleanup = () => window.removeEventListener('devicemotion', handler);
+    shakeCleanupRef.current = cleanup;
+    return cleanup;
+  }, []);
 
   // Show home on mount
   useEffect(() => {
@@ -186,7 +206,7 @@ export default function KidScreen() {
       const bandTaps = [...taps];
       recentTapsRef.current = [];
       setBandBannerVisible(true);
-      setTimeout(() => setBandBannerVisible(false), 1000);
+      setTimeout(() => setBandBannerVisible(false), 1800); // 3 sounds × 300ms + music note fade
       playQueuedBand(bandTaps);
     } else {
       // Normal single tap — skipSound means a kid recording was already played
@@ -347,6 +367,7 @@ export default function KidScreen() {
             profileId={activeProfile?.id ?? 'default'}
             index={i}
             wobbleOffset={i * 200}
+            shakeJitter={shakeJitter}
             onPlayKidRecording={(url, t) => {
               stopAll();
               playRandom(url);
