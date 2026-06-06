@@ -6,10 +6,11 @@ injectKeyframes();
 
 interface Props {
   thing: Thing;
-  onTap: (thing: Thing) => void;
+  onTap: (thing: Thing, e?: React.MouseEvent) => void;
+  shakeJitter?: boolean;
 }
 
-export function ThingTile({ thing, onTap }: Props) {
+export function ThingTile({ thing, onTap, shakeJitter }: Props) {
   const tileRef = useRef<HTMLButtonElement>(null);
   const [idleWobble, setIdleWobble] = useState(false);
   const lastTapRef = useRef<number>(Date.now());
@@ -37,10 +38,10 @@ export function ThingTile({ thing, onTap }: Props) {
     };
   }, []);
 
-  const handleTap = useCallback(() => {
+  const handleTap = useCallback((e: React.MouseEvent) => {
     lastTapRef.current = Date.now();
     setIdleWobble(false);
-    onTap(thing);
+    onTap(thing, e);
 
     // Reaction emoji at tap point
     const el = tileRef.current;
@@ -66,7 +67,7 @@ export function ThingTile({ thing, onTap }: Props) {
       ref={tileRef}
       onClick={handleTap}
       aria-label={`${thing.name}, tap to hear a sound`}
-      className="absolute active:scale-90 select-none"
+      className={"absolute active:scale-90 select-none" + (shakeJitter ? " shake-jiggle" : "")}
       style={{
         left: `${thing.x}%`,
         top: `${thing.y}%`,

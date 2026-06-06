@@ -1,6 +1,7 @@
-// Poot Party — KidScreen. v26d.
+// Poot Party — KidScreen. v26f-surprise.
 // Profile picker home scene → scene loop (Farm → Jungle → ...).
 // Supports multiple kid profiles with lastSceneId persistence.
+// Adds: multi-tap band chain, shake-to-shuffle, milestone confetti.
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { SCENES } from './scenes';
@@ -14,6 +15,8 @@ import { HomeScene } from './HomeScene';
 import { useSoundEngine } from './useSoundEngine';
 import { getKidStorage } from './useKidStorage';
 import type { Pin, Profile } from './useKidStorage';
+import { ConfettiBurst } from './ConfettiBurst';
+import { MilestoneBanner } from './MilestoneBanner';
 
 // The "real" scenes that rotate (exclude home)
 const REAL_SCENES = SCENES.filter(s => s.id !== 'home');
@@ -21,40 +24,58 @@ const REAL_SCENE_COUNT = REAL_SCENES.length;
 const SWIPE_THRESHOLD = 50; // px
 const AUTO_ROTATE_MS = 30_000; // 30 seconds
 const LONG_PRESS_MS = 500; // ms threshold for empty-area pin drop
+const BAND_CHAIN_WINDOW_MS = 1500; // 1.5s window for 3-tap band
+const BAND_PLAY_GAP_MS = 300; // gap between queued sounds
+const MILESTONES = [10, 25, 50, 100, 200];
+const SHAKE_THRESHOLD = 15; // m/s²
 
 // Map from real scene index to SCENES index (accounting for home at index 0)
 function realIndexToSceneIndex(realIndex: number): number {
-  // SCENES[0] = home, so realIndex 0 → SCENES index 1, etc.
   return realIndex + 1;
 }
 
-// Find the SCENES index for a given scene id (or 1 for farm if not found)
 function sceneIdToSceneIndex(sceneId: string): number {
   const idx = SCENES.findIndex(s => s.id === sceneId);
-  return idx === -1 ? 1 : idx; // default to farm (index 1)
+  return idx === -1 ? 1 : idx;
+}
+
+// Music note for band chain
+interface MusicNote {
+  id: number;
+  x: number;
+  y: number;
 }
 
 export default function KidScreen() {
-  // null profile → show HomeScene; set → show scene loop
   const [activeProfile, setActiveProfile] = useState<Profile | null>(null);
-  // currentSceneIndex is always a SCENES index (0 = home, 1 = farm, etc.)
   const [currentSceneIndex, setCurrentSceneIndex] = useState<number>(0);
   const [heardCount, setHeardCount] = useState(0);
   const [pins, setPins] = useState<Pin[]>([]);
   const [pendingPinPos, setPendingPinPos] = useState<{ x: number; y: number } | null>(null);
 
+  // === Surprise interaction state ===
+  const [bandBannerVisible, setBandBannerVisible] = useState(false);
+  const [milestoneCount, setMilestoneCount] = useState<number | null>(null);
+  const [confettiVisible, setConfettiVisible] = useState(false);
+  const [shakeJitter, setShakeJitter] = useState(false);
+  const [musicNotes, setMusicNotes] = useState<MusicNote[]>([]);
+
   const { playRandom, stopAll, isRecording } = useSoundEngine();
   const storage = getKidStorage();
 
-  // Auto-rotate timer
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pointerStartRef = useRef<number | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const shakeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Recent taps for band chain detection
+  const recentTapsRef = useRef<{ time: number; sound: string; x: number; y: number }[]>([]);
+  const noteIdRef = useRef(0);
+  const milestoneSeenRef = useRef<Set<number>>(new Set()); // track milestones already fired
 
   // Show home on mount
   useEffect(() => {
-    // Start at home (index 0)
     setCurrentSceneIndex(0);
     setActiveProfile(null);
   }, []);
@@ -63,9 +84,11 @@ export default function KidScreen() {
   useEffect(() => {
     if (!activeProfile) return;
     void storage.getHeardCount(activeProfile.id).then(setHeardCount);
+    // Reset milestone tracking on profile switch
+    milestoneSeenRef.current = new Set();
   }, [activeProfile, storage]);
 
-  // Load pins whenever scene changes (only in scene loop, not home)
+  // Load pins whenever scene changes
   useEffect(() => {
     if (!activeProfile) return;
     const scene = SCENES[currentSceneIndex];
@@ -82,7 +105,6 @@ export default function KidScreen() {
     }
   }, [isRecording]);
 
-  // Initial timer on mount (only when in scene loop)
   useEffect(() => {
     resetTimer();
     return () => {
@@ -93,35 +115,28 @@ export default function KidScreen() {
 
   const resetTimer = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    // Only auto-rotate when not on home
     if (SCENES[currentSceneIndex]?.id === 'home') return;
     timerRef.current = setTimeout(() => {
       advanceScene(1);
     }, AUTO_ROTATE_MS);
   }, [currentSceneIndex]);
 
-  // Advance by delta in "real scene" space (0 = farm, 1 = jungle, ...)
   const advanceScene = useCallback((delta: number) => {
     if (!activeProfile) return;
-    // Compute real scene index from current SCENES index
-    const currentRealIndex = currentSceneIndex - 1; // -1 because 0=home
+    const currentRealIndex = currentSceneIndex - 1;
     const newRealIndex = (currentRealIndex + delta + REAL_SCENE_COUNT) % REAL_SCENE_COUNT;
     setCurrentSceneIndex(realIndexToSceneIndex(newRealIndex));
     void storage.updateProfile({ ...activeProfile, lastSceneId: REAL_SCENES[newRealIndex].id });
   }, [currentSceneIndex, activeProfile, storage]);
 
-  // Called when kid taps a profile card
   const handleSelectProfile = useCallback(async (profile: Profile) => {
-    // Save to storage first
     await storage.saveProfile(profile);
     setActiveProfile(profile);
-    // Resume at lastSceneId or farm
     const startSceneId = profile.lastSceneId && profile.lastSceneId !== 'home'
       ? profile.lastSceneId
       : 'farm';
     const startIndex = sceneIdToSceneIndex(startSceneId);
     setCurrentSceneIndex(startIndex);
-    // Load pins for the start scene
     const scene = SCENES[startIndex];
     const pins = await storage.getPins(scene.id, profile.id);
     setPins(pins);
@@ -129,16 +144,99 @@ export default function KidScreen() {
     setHeardCount(count);
   }, [storage]);
 
-  const onTapThing = useCallback((thing: Thing) => {
+  // === Band chain logic ===
+  const playQueuedBand = useCallback((taps: { time: number; sound: string; x: number; y: number }[]) => {
+    taps.forEach((tap, i) => {
+      setTimeout(() => {
+        stopAll();
+        playRandom(tap.sound);
+        // Spawn floating music note at tap location
+        const id = ++noteIdRef.current;
+        setMusicNotes(prev => [...prev, { id, x: tap.x, y: tap.y }]);
+        // Remove note after animation
+        setTimeout(() => {
+          setMusicNotes(prev => prev.filter(n => n.id !== id));
+        }, 800);
+      }, i * BAND_PLAY_GAP_MS);
+    });
+  }, [playRandom, stopAll]);
+
+  const onTapThing = useCallback((thing: Thing, tapX: number, tapY: number) => {
     resetTimer();
     stopAll();
     const sound = thing.sounds[Math.floor(Math.random() * thing.sounds.length)];
-    playRandom(sound);
-    setHeardCount(c => c + 1);
+    const now = Date.now();
+
+    // Record this tap
+    recentTapsRef.current.push({ time: now, sound, x: tapX, y: tapY });
+
+    // Keep only taps within the window
+    recentTapsRef.current = recentTapsRef.current.filter(t => now - t.time< BAND_CHAIN_WINDOW_MS);
+
+    const taps = recentTapsRef.current;
+
+    if (taps.length >= 3) {
+      // It's a band! Queue the sounds, clear the ref, show banner
+      const bandTaps = [...taps];
+      recentTapsRef.current = [];
+      setBandBannerVisible(true);
+      setTimeout(() => setBandBannerVisible(false), 1000);
+      playQueuedBand(bandTaps);
+    } else {
+      // Normal single tap
+      playRandom(sound);
+ }
+
+    // Update count
+    const newCount = heardCount + 1;
+    setHeardCount(newCount);
     if (activeProfile) {
       void storage.markHeard(sound, activeProfile.id);
     }
-  }, [playRandom, stopAll, resetTimer, activeProfile, storage]);
+
+    // Check milestone
+    const crossed = MILESTONES.find(m => newCount >= m && !milestoneSeenRef.current.has(m));
+    if (crossed !== undefined) {
+      milestoneSeenRef.current.add(crossed);
+      setMilestoneCount(crossed);
+      setConfettiVisible(true);
+    }
+  }, [playRandom, stopAll, resetTimer, playQueuedBand, heardCount, activeProfile, storage]);
+
+  // === Shake-to-shuffle ===
+  useEffect(() => {
+    if (!activeProfile) return;
+    const scene = SCENES[currentSceneIndex];
+    if (scene.id === 'home') return;
+
+    let lastShakeTime = 0;
+
+    const handleMotion = (event: DeviceMotionEvent) => {
+      const acc = event.accelerationIncludingGravity;
+      if (!acc) return;
+      const mag = Math.sqrt(
+        (acc.x ?? 0) ** 2 + (acc.y ?? 0) ** 2 + (acc.z ?? 0) ** 2
+      );
+      const now = Date.now();
+      // Debounce: only fire if > 500ms since last shake
+      if (mag > SHAKE_THRESHOLD && now - lastShakeTime > 500) {
+        lastShakeTime = now;
+        setShakeJitter(true);
+        if (shakeTimeoutRef.current) clearTimeout(shakeTimeoutRef.current);
+        shakeTimeoutRef.current = setTimeout(() => {
+          setShakeJitter(false);
+        }, 600);
+      }
+    };
+
+    // iOS 13+ requires a user gesture before devicemotion fires
+    // The first tap counts as the gesture; we add the listener on mount
+    window.addEventListener('devicemotion', handleMotion);
+    return () => {
+      window.removeEventListener('devicemotion', handleMotion);
+      if (shakeTimeoutRef.current) clearTimeout(shakeTimeoutRef.current);
+    };
+  }, [activeProfile, currentSceneIndex]);
 
   // Swipe handling
   const onPointerDown = useCallback((e: React.PointerEvent) => {
@@ -147,7 +245,7 @@ export default function KidScreen() {
 
   const onPointerUp = useCallback((e: React.PointerEvent) => {
     if (pointerStartRef.current === null) return;
-    if (!activeProfile) return; // no swipe in home
+    if (!activeProfile) return;
     const delta = e.clientX - pointerStartRef.current;
     if (Math.abs(delta) < SWIPE_THRESHOLD) {
       resetTimer();
@@ -163,7 +261,6 @@ export default function KidScreen() {
     resetTimer();
   }, [resetTimer, activeProfile, advanceScene]);
 
-  // Dot navigation — advance in real scene space
   const onDotTap = useCallback((realIndex: number) => {
     if (!activeProfile) return;
     setCurrentSceneIndex(realIndexToSceneIndex(realIndex));
@@ -218,11 +315,10 @@ export default function KidScreen() {
   }
 
   const scene = SCENES[currentSceneIndex];
-  // Compute which real index we're on (for dot indicator)
   const realSceneIndex = currentSceneIndex - 1;
 
   return (
-    <div
+<div
       style={{ width: '100vw', height: '100vh', position: 'relative', userSelect: 'none', touchAction: 'none' }}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
@@ -240,7 +336,6 @@ export default function KidScreen() {
       />
 
       <SceneBackground bg={scene.bg}>
-        {/* Render pins BELOW things */}
         {pins.map(pin => (
           <PinTile key={pin.id} pin={pin} onDelete={onPinDelete} />
         ))}
@@ -249,13 +344,76 @@ export default function KidScreen() {
           <ThingTile
             key={thing.id}
             thing={thing}
-            onTap={() => onTapThing(thing)}
+            onTap={(_thing, e) => {
+              const x = e ? e.clientX : window.innerWidth / 2;
+              const y = e ? e.clientY : window.innerHeight / 2;
+              onTapThing(thing, x, y);
+            }}
+            shakeJitter={shakeJitter}
           />
         ))}
         <HeardCountBadge count={heardCount} />
       </SceneBackground>
 
-      {/* Scene dot indicator — only real scenes, padded for iOS safe area */}
+      {/* Floating music notes (band chain) */}
+      {musicNotes.map(note => (
+<span
+          key={note.id}
+          className="music-note-float"
+          style={{
+            position: 'fixed',
+            top: note.y,
+            left: note.x,
+            fontSize: '1.8rem',
+            pointerEvents: 'none',
+            zIndex: 99997,
+          }}
+        >
+          🎵
+        </span>
+      ))}
+
+      {/* Band chain banner */}
+      {bandBannerVisible && (
+        <div
+          className="band-banner"
+          style={{
+            position: 'fixed',
+            bottom: 'max(48px, env(safe-area-inset-bottom, 48px))',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 99996,
+            pointerEvents: 'none',
+            background: 'rgba(0,0,0,0.6)',
+            color: '#fff',
+            borderRadius: '1rem',
+            padding: '0.4rem 1.2rem',
+            fontSize: 'clamp(0.9rem, 4vw, 1.4rem)',
+            fontWeight: 700,
+            fontFamily: 'Fredoka, system-ui, sans-serif',
+            whiteSpace: 'nowrap',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+          }}
+        >
+          🎵 Band! 🎵
+        </div>
+      )}
+
+      {/* Milestone banner */}
+      {milestoneCount !== null && (
+        <MilestoneBanner
+          count={milestoneCount}
+          onComplete={() => setMilestoneCount(null)}
+        />
+      )}
+
+      {/* Confetti burst */}
+      {confettiVisible && (
+        <ConfettiBurst onComplete={() => setConfettiVisible(false)} />
+      )}
+
+      {/* Scene dot indicator */}
       <div style={{
         position: 'fixed',
         bottom: 'max(20px, env(safe-area-inset-bottom, 20px))',
