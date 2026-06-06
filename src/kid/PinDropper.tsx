@@ -39,7 +39,8 @@ export function PinDropper({ x, y, sceneId, profileId, onSave, onCancel }: Props
   }, []);
 
   // Hold-to-record: pointerdown starts timer, pointerup cancels or fires
-  const onPointerDown = useCallback(() => {
+  const onRecordPointerDown = useCallback((e: React.PointerEvent) => {
+    e.stopPropagation(); // prevent modal backdrop's long-press timer from also firing
     pressTimer.current = window.setTimeout(async () => {
       setRecording(true);
       const result = await engine.record({ maxDurationMs: 3000 });
@@ -105,12 +106,12 @@ export function PinDropper({ x, y, sceneId, profileId, onSave, onCancel }: Props
         backdropFilter: "blur(6px)",
         WebkitBackdropFilter: "blur(6px)",
       }}
-      onPointerDown={onPointerDown}
+      onPointerDown={onRecordPointerDown}
       onPointerUp={onPointerUp}
       onPointerLeave={onPointerUp}
       onPointerCancel={onPointerUp}
       // Also handle touch events directly for iOS Safari
-      onTouchStart={onPointerDown as unknown as React.TouchEventHandler}
+      onTouchStart={onRecordPointerDown as unknown as React.TouchEventHandler}
       onTouchEnd={onPointerUp as unknown as React.TouchEventHandler}
     >
       <div

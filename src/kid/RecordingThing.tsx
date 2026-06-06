@@ -176,7 +176,8 @@ export function RecordingThing({
   }, [thing, sceneId, profileId, onPlayKidRecording, spawnFloatingEmojis]);
 
   // Long-press (500ms): start recording OR show delete dialog if has recording
-  const onPointerDown = useCallback(() => {
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    e.stopPropagation(); // prevent event bubbling to scene container's long-press detector
     pressTimer.current = window.setTimeout(async () => {
       // If already has a recording, show delete dialog instead of recording
       const kidRecs = await storage.getRecordingsForThing(sceneId, thing.id, profileId);
@@ -216,7 +217,24 @@ export function RecordingThing({
   }, [thing, sceneId, profileId, onPlayKidRecording]);
 
   // Release / leave: cancel the long-press timer if it hasn't fired yet
-  const onPointerUp = useCallback(() => {
+  const onPointerUp = useCallback((e: React.PointerEvent) => {
+    e.stopPropagation();
+    if (pressTimer.current !== null) {
+      window.clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  }, []);
+
+  const onPointerLeave = useCallback((e: React.PointerEvent) => {
+    e.stopPropagation();
+    if (pressTimer.current !== null) {
+      window.clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  }, []);
+
+  const onPointerCancel = useCallback((e: React.PointerEvent) => {
+    e.stopPropagation();
     if (pressTimer.current !== null) {
       window.clearTimeout(pressTimer.current);
       pressTimer.current = null;
@@ -246,8 +264,8 @@ export function RecordingThing({
         onClick={onTap}
         onPointerDown={onPointerDown}
         onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
-        onPointerCancel={onPointerUp}
+        onPointerLeave={onPointerLeave}
+        onPointerCancel={onPointerCancel}
         style={{
           position: "absolute",
           left: `${thing.x}%`,
