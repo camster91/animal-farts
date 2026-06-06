@@ -4,29 +4,39 @@ import type { Thing } from './scenes';
 import { SceneBackground } from './SceneBackground';
 import { ThingTile } from './ThingTile';
 import { HeardCountBadge } from './HeardCountBadge';
+import { PinDropper } from './PinDropper';
+import { PinTile } from './PinTile';
 import { useSoundEngine } from './useSoundEngine';
+import { getKidStorage } from './useKidStorage';
+import type { Pin } from './useKidStorage';
 
-// v26b: show exactly 2 scenes (Farm + Jungle), no more
+// v26c: show exactly 2 scenes (Farm + Jungle), no more
 const VISIBLE_SCENES = 2;
 const SWIPE_THRESHOLD = 50; // px
 const AUTO_ROTATE_MS = 30_000; // 30 seconds
+const LONG_PRESS_MS = 500; // ms threshold for empty-area pin drop
+const PROFILE_ID = 'default';
 
 export default function KidScreen() {
   const [currentSceneIndex, setCurrentSceneIndex] = useState(0);
   const [heardCount, setHeardCount] = useState(0);
+  const [pins, setPins] = useState<Pin[]>([]);
+  const [pendingPinPos, setPendingPinPos] = useState<{ x: number; y: number } | null>(null);
 
   const { playRandom, stopAll, isRecording } = useSoundEngine();
+  const storage = getKidStorage();
 
   // Auto-rotate timer
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pointerStartRef = useRef<number | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const resetTimer = useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      setCurrentSceneIndex(prev => (prev + 1) % VISIBLE_SCENES);
-    }, AUTO_ROTATE_MS);
-  }, []);
+  // Load pins whenever scene changes
+  useEffect(() => {
+    const scene = SCENES[currentSceneIndex];
+    storage.getPins(scene.id, PROFILE_ID).then(setPins);
+  }, [currentSceneIndex, storage]);
 
   // Pause auto-rotate while recording
   useEffect(() => {
@@ -35,7 +45,7 @@ export default function KidScreen() {
     } else {
       resetTimer();
     }
-  }, [isRecording, resetTimer]);
+  }, [isRecording]);
 
   // Initial timer on mount
   useEffect(() => {
@@ -43,7 +53,14 @@ export default function KidScreen() {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [resetTimer]);
+  }, []);
+
+  const resetTimer = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setCurrentSceneIndex(prev => (prev + 1) % VISIBLE_SCENES);
+    }, AUTO_ROTATE_MS);
+  }, []);
 
   const onTapThing = useCallback((thing: Thing) => {
     resetTimer();
@@ -62,22 +79,64 @@ export default function KidScreen() {
     if (pointerStartRef.current === null) return;
     const delta = e.clientX - pointerStartRef.current;
     if (Math.abs(delta) < SWIPE_THRESHOLD) {
-      // Treat as a tap — reset auto-rotate timer
       resetTimer();
       pointerStartRef.current = null;
       return;
     }
     if (delta < 0) {
-      // Swipe left → next scene
       setCurrentSceneIndex(prev => (prev + 1) % VISIBLE_SCENES);
     } else {
-      // Swipe right → previous scene
       setCurrentSceneIndex(prev => (prev - 1 + VISIBLE_SCENES) % VISIBLE_SCENES);
     }
     pointerStartRef.current = null;
-    // Reset timer on swipe too
     resetTimer();
   }, [resetTimer]);
+
+  // Empty-area long-press detection on the container div.
+  // We use onPointerDown on a transparent overlay div that sits
+  // ABOVE things in the DOM (so it receives events first) but
+  // uses pointer-events: auto only for the empty-area detection.
+  // The actual long-press fires after LONG_PRESS_MS if no Thing was hit.
+  const onScenePointerDown = useCallback((e: React.PointerEvent) => {
+    // Ignore if already pending a pin
+    if (pendingPinPos !== null) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    longPressTimerRef.current = window.setTimeout(() => {
+      setPendingPinPos({ x, y });
+    }, LONG_PRESS_MS);
+  }, [pendingPinPos]);
+
+  const onScenePointerUp = useCallback(() => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
+  const onScenePointerLeave = useCallback(() => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
+  const onPinSave = useCallback((pin: Pin) => {
+    setPins(prev => [...prev, pin]);
+    setPendingPinPos(null);
+  }, []);
+
+  const onPinCancel = useCallback(() => {
+    setPendingPinPos(null);
+  }, []);
+
+  const onPinDelete = useCallback((id: string) => {
+    storage.deletePin(id).then(() => {
+      setPins(prev => prev.filter(p => p.id !== id));
+    });
+  }, [storage]);
 
   const scene = SCENES[currentSceneIndex];
 
@@ -87,7 +146,27 @@ export default function KidScreen() {
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
     >
+      {/* Long-press detector — sits behind things (lower zIndex) so things get events first */}
+      <div
+        ref={containerRef}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 50,
+          // transparent — just captures pointer events for long-press
+        }}
+        onPointerDown={onScenePointerDown}
+        onPointerUp={onScenePointerUp}
+        onPointerLeave={onScenePointerLeave}
+        onPointerCancel={onScenePointerUp}
+      />
+
       <SceneBackground bg={scene.bg}>
+        {/* Render pins BELOW things */}
+        {pins.map(pin => (
+          <PinTile key={pin.id} pin={pin} onDelete={onPinDelete} />
+        ))}
+
         {scene.things.map(thing => (
           <ThingTile
             key={thing.id}
@@ -132,6 +211,18 @@ export default function KidScreen() {
           />
         ))}
       </div>
+
+      {/* Pin dropper modal */}
+      {pendingPinPos !== null && (
+        <PinDropper
+          x={pendingPinPos.x}
+          y={pendingPinPos.y}
+          sceneId={scene.id}
+          profileId={PROFILE_ID}
+          onSave={onPinSave}
+          onCancel={onPinCancel}
+        />
+      )}
     </div>
   );
 }

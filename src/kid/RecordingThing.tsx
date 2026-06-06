@@ -35,6 +35,8 @@ export function RecordingThing({
 }: RecordingThingProps) {
   const [recording, setRecording] = useState(false);
   const [hasKidRecording, setHasKidRecording] = useState(false);
+  const [showEmoji, setShowEmoji] = useState<'success' | 'warn' | null>(null);
+  const [showPill, setShowPill] = useState(false);
   const pressTimer = useRef<number | null>(null);
   const engine = getAudioEngine();
   const storage = getKidStorage();
@@ -54,6 +56,8 @@ export function RecordingThing({
     if (kidRecs.length > 0) {
       const url = URL.createObjectURL(kidRecs[0].blob);
       onPlayKidRecording(url, thing);
+      setShowPill(true);
+      setTimeout(() => setShowPill(false), 1000);
     } else {
       const sound = thing.sounds[Math.floor(Math.random() * thing.sounds.length)];
       onPlayKidRecording(sound, thing);
@@ -79,8 +83,14 @@ export function RecordingThing({
           profileId,
         });
         setHasKidRecording(true);
+        setShowEmoji('success');
+        setTimeout(() => setShowEmoji(null), 1200);
         const url = URL.createObjectURL(result.blob);
         onPlayKidRecording(url, thing);
+      } else {
+        // Mic denied or unavailable
+        setShowEmoji('warn');
+        setTimeout(() => setShowEmoji(null), 1500);
       }
     }, 500);
   }, [thing, sceneId, profileId, onPlayKidRecording]);
@@ -119,6 +129,44 @@ export function RecordingThing({
       {recording && (
         <div className="absolute inset-0 rounded-full ring-4 ring-red-500/70 animate-ping" />
       )}
+
+      {/* Pink dot: has kid recording */}
+      {hasKidRecording && (
+        <span className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-pink-500 ring-2 ring-white" />
+      )}
+
+      {/* Floating emoji: success 🎉 or warn ⚠️ */}
+      {showEmoji && (
+        <span
+          className="absolute text-xl pointer-events-none"
+          style={{
+            top: "-16px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            animation: "floatUp 1.2s ease-out forwards",
+          }}
+        >
+          {showEmoji === 'success' ? '🎉' : '⚠️'}
+        </span>
+      )}
+
+      {/* "your sound" pill */}
+      {showPill && (
+        <span
+          className="absolute text-xs pointer-events-none px-1.5 py-0.5 rounded-full bg-pink-500 text-white font-medium"
+          style={{
+            top: "-20px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            whiteSpace: "nowrap",
+            fontSize: "10px",
+            animation: "fadeOut 1s ease-out forwards",
+          }}
+        >
+          your sound
+        </span>
+      )}
+
       {children}
     </button>
   );
