@@ -62,7 +62,13 @@ export default function KidScreen() {
   const [milestoneCount, setMilestoneCount] = useState<number | null>(null);
   const [confettiVisible, setConfettiVisible] = useState(false);
   const [musicNotes, setMusicNotes] = useState<MusicNote[]>([]);
-  const [showWelcome, setShowWelcome] = useState(false);
+  const [showWelcome, setShowWelcome] = useState<boolean>(() => {
+    try {
+      return !localStorage.getItem('poot-party-welcome-seen');
+    } catch {
+      return true;
+    }
+  });
   const [shakeJitter, setShakeJitter] = useState(false);
   const [tvMode, setTvMode] = useState(false);
   const [tvModeEnabled, setTvModeEnabled] = useState(false); // from parent settings
