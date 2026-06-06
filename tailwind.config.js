@@ -10,6 +10,7 @@ export default {
         shake: "shake 0.4s ease-in-out",
         poof: "poof 0.8s ease-out forwards",
         wiggle: "wiggle 0.6s ease-in-out infinite",
+        ping: "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite",
       },
       keyframes: {
         shake: {
@@ -26,6 +27,10 @@ export default {
         wiggle: {
           "0%, 100%": { transform: "rotate(-3deg)" },
           "50%": { transform: "rotate(3deg)" },
+        },
+        ping: {
+          "0%, 100%": { transform: "scale(1)", opacity: "1" },
+          "50%": { transform: "scale(1.5)", opacity: "0.5" },
         },
       },
     },

@@ -164,7 +164,10 @@ export default function KidScreen() {
     });
   }, [playRandom, stopAll]);
 
-  const onTapThing = useCallback((thing: Thing, tapX: number, tapY: number) => {
+  // onTapThing: called when a thing is tapped. If skipSound is true (used when
+  // a kid recording was already played via onPlayKidRecording), skips the default
+  // sound playback since the callback already handled it.
+  const onTapThing = useCallback((thing: Thing, tapX: number, tapY: number, skipSound = false) => {
     resetTimer();
     stopAll();
     const sound = thing.sounds[Math.floor(Math.random() * thing.sounds.length)];
@@ -186,9 +189,9 @@ export default function KidScreen() {
       setTimeout(() => setBandBannerVisible(false), 1000);
       playQueuedBand(bandTaps);
     } else {
-      // Normal single tap
-      playRandom(sound);
- }
+      // Normal single tap — skipSound means a kid recording was already played
+      if (!skipSound) playRandom(sound);
+    }
 
     // Update count via functional update to always get latest state
     setHeardCount(prev => {
@@ -351,7 +354,8 @@ export default function KidScreen() {
               // Get tap coordinates from the button element
               const x = window.innerWidth / 2;
               const y = window.innerHeight / 2;
-              onTapThing(t, x, y);
+              // Pass skipSound=true so onTapThing doesn't double-play the sound
+              onTapThing(t, x, y, true);
             }}
           >
             <span className="block w-full h-full flex items-center justify-center text-6xl sm:text-7xl drop-shadow-lg select-none">
