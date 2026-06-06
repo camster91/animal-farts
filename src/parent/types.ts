@@ -15,7 +15,7 @@ export interface QuietHours {
 }
 
 export interface VoiceEffects {
-  pitch: number;    // 0.5–2.0
+  pitch: number;    // -6 to +6 semitones
   speed: number;    // 0.5–2.0
   reverb: boolean;
 }
@@ -45,7 +45,7 @@ export const DEFAULT_PARENT_SETTINGS: ParentSettings = {
   recordingCountToday: 0,
   recordingCountDate: '',
   effects: {
-    pitch: 1.0,
+    pitch: 0,   // -6 to +6 semitones
     speed: 1.0,
     reverb: false,
   },

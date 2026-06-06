@@ -15,7 +15,9 @@ export default function EffectsCard({ effects, onChange }: Props) {
     setPreviewing(true);
     try {
       const engine = getAudioEngine();
-      engine.setPitch(effects.pitch);
+      // Convert semitones to playback rate: 2^(semitones/12)
+      const rate = Math.pow(2, effects.pitch / 12);
+      engine.setPitch(rate);
       engine.setSpeed(effects.speed);
       engine.setReverb(effects.reverb);
       await engine.play('/sounds/cow.mp3');
@@ -40,20 +42,23 @@ export default function EffectsCard({ effects, onChange }: Props) {
       <label className="block mb-4">
         <div className="flex justify-between items-center mb-1">
           <span className="text-sm font-medium text-amber-800">Pitch</span>
-          <span className="text-sm text-amber-600 font-mono">{effects.pitch.toFixed(1)}x</span>
+          <span className="text-sm text-amber-600 font-mono">
+            {effects.pitch > 0 ? `+${effects.pitch}` : effects.pitch} st
+          </span>
         </div>
         <input
           type="range"
-          min={0.5}
-          max={2.0}
-          step={0.1}
+          min={-6}
+          max={6}
+          step={1}
           value={effects.pitch}
-          onChange={(e) => onChange({ ...effects, pitch: parseFloat(e.target.value) })}
+          onChange={(e) => onChange({ ...effects, pitch: parseInt(e.target.value, 10) })}
           className="w-full accent-amber-600"
         />
         <div className="flex justify-between text-xs text-amber-400 mt-0.5">
-          <span>0.5x (deep)</span>
-          <span>2.0x (high)</span>
+          <span>-6 (deep)</span>
+          <span>0</span>
+          <span>+6 (high)</span>
         </div>
       </label>
 
