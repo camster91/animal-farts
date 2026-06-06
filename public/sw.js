@@ -3,7 +3,7 @@
 // the app works fully offline on first load. Asset paths are injected at
 // build time by scripts/inject-sw-assets.mjs.
 
-const CACHE = "animal-farts-v25w2";
+const CACHE = "poot-party-v26a";
 
 const SHELL_ASSETS = [
   "/",
@@ -20,6 +20,7 @@ const SHELL_ASSETS = [
   "/scenes/city.jpg",
   "/scenes/bedroom.jpg",
   "/scenes/bathroom.jpg",
+  "/scenes/home.jpg",
 ];
 
 // v25m: the catalog is 270+ farts (~23MB). Don't precache — too big.

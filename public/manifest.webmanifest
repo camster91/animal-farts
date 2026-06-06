@@ -1,18 +1,26 @@
 {
-  "name": "Animal Farts 💨",
-  "short_name": "Farts",
-  "description": "Tap animals. Make fart noises. 34 animals, recordings, stickers & more.",
+  "name": "\ud83d\udca8 Poot Party",
+  "short_name": "Poot Party",
+  "description": "Make your own animal noises. 4 illustrated scenes, 48 tappable things, record your own.",
   "start_url": "/?utm_source=pwa",
   "scope": "/",
   "id": "/?utm_source=pwa",
   "display": "standalone",
-  "display_override": ["window-controls-overlay", "standalone", "browser"],
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "browser"
+  ],
   "orientation": "portrait",
   "background_color": "#fbbf24",
   "theme_color": "#fbbf24",
   "lang": "en",
   "dir": "ltr",
-  "categories": ["entertainment", "kids", "games"],
+  "categories": [
+    "entertainment",
+    "kids",
+    "games"
+  ],
   "prefer_related_applications": false,
   "icons": [
     {
@@ -46,46 +54,25 @@
       "purpose": "maskable"
     }
   ],
-  "screenshots": [
-    {
-      "src": "/screenshot-wide.png",
-      "sizes": "1280x720",
-      "type": "image/png",
-      "form_factor": "wide",
-      "label": "Animal Farts — grid of 34 animal buttons"
-    },
-    {
-      "src": "/screenshot-narrow.png",
-      "sizes": "750x1334",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "Animal Farts on iPhone"
-    }
-  ],
   "shortcuts": [
     {
-      "name": "Surprise Me",
-      "short_name": "Surprise",
-      "description": "Play a random animal fart",
-      "url": "/?action=surprise&utm_source=shortcut",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
-    },
-    {
-      "name": "Record a Fart",
-      "short_name": "Record",
-      "description": "Record and save a new sound",
-      "url": "/?action=record&utm_source=shortcut",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
-    },
-    {
-      "name": "Daily Challenge",
-      "short_name": "Challenge",
-      "description": "Today's fart challenge",
-      "url": "/?action=challenge&utm_source=shortcut",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+      "name": "Play",
+      "short_name": "Play",
+      "description": "Open Poot Party",
+      "url": "/?utm_source=shortcut",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     }
   ],
-  "edge_side_panel": { "preferred_width": 480 },
-  "launch_handler": { "client_mode": "auto" },
+  "edge_side_panel": {
+    "preferred_width": 480
+  },
+  "launch_handler": {
+    "client_mode": "auto"
+  },
   "handle_links": "preferred"
 }

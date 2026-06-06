@@ -1,22 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+    <radialGradient id="bg" cx="50%" cy="40%" r="65%">
       <stop offset="0%" stop-color="#fef3c7"/>
-      <stop offset="60%" stop-color="#fde68a"/>
-      <stop offset="100%" stop-color="#fbbf24"/>
-    </linearGradient>
-    <linearGradient id="puff" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="100%" stop-color="#d1d5db"/>
-    </linearGradient>
+      <stop offset="60%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </radialGradient>
   </defs>
-  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
-  <g transform="translate(96 96)">
-    <ellipse cx="160" cy="120" rx="180" ry="80" fill="url(#puff)" opacity="0.95"/>
-    <ellipse cx="100" cy="170" rx="120" ry="55" fill="url(#puff)" opacity="0.9"/>
-    <ellipse cx="200" cy="200" rx="140" ry="65" fill="url(#puff)" opacity="0.95"/>
-    <ellipse cx="80" cy="220" rx="80" ry="35" fill="url(#puff)" opacity="0.85"/>
-    <ellipse cx="240" cy="180" rx="100" ry="40" fill="url(#puff)" opacity="0.85"/>
-  </g>
-  <text x="50%" y="92%" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif" font-size="80" font-weight="900" fill="#7c2d12">💨</text>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <ellipse cx="32" cy="40" rx="22" ry="16" fill="white" fill-opacity="0.92"/>
+  <!-- two small eyes -->
+  <ellipse cx="25" cy="38" rx="2" ry="2.5" fill="#1f2937"/>
+  <ellipse cx="39" cy="38" rx="2" ry="2.5" fill="#1f2937"/>
+  <!-- smile -->
+  <path d="M 26 46 Q 32 51 38 46" stroke="#1f2937" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <!-- two cheek blushes -->
+  <ellipse cx="20" cy="43" rx="2.5" ry="1.5" fill="#fda4af" fill-opacity="0.7"/>
+  <ellipse cx="44" cy="43" rx="2.5" ry="1.5" fill="#fda4af" fill-opacity="0.7"/>
 </svg>
