@@ -1,9 +1,9 @@
-// Animal Farts — offline-first service worker
+// Poot Party — offline-first service worker
 // Precaches the app shell, all sound files, and the built JS/CSS bundles so
 // the app works fully offline on first load. Asset paths are injected at
 // build time by scripts/inject-sw-assets.mjs.
 
-const CACHE = "poot-party-v26c-parent";
+const CACHE = "poot-party-v26f-badge";
 
 const SHELL_ASSETS = [
   "/",

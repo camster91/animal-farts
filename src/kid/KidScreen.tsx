@@ -334,15 +334,16 @@ export default function KidScreen() {
         onPointerUp={onScenePointerUp}
       />
 
-      <SceneBackground bg={scene.bg}>
+      <SceneBackground bg={scene.bg} sceneKey={scene.id}>
         {pins.map(pin => (
           <PinTile key={pin.id} pin={pin} onDelete={onPinDelete} />
         ))}
 
-        {scene.things.map(thing => (
+        {scene.things.map((thing, i) => (
           <ThingTile
-            key={thing.id}
+            key={`${scene.id}-${thing.id}`}
             thing={thing}
+            index={i}
             onTap={(_thing, e) => {
               const x = e ? e.clientX : window.innerWidth / 2;
               const y = e ? e.clientY : window.innerHeight / 2;

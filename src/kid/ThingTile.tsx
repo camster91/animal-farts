@@ -21,6 +21,8 @@ interface Props {
   wobbleOffset?: number;
   /** When true, all things do a shake-jiggle (shake-to-shuffle) */
   shakeJitter?: boolean;
+  /** Index in the scene — used to stagger the entrance animation */
+  index?: number;
 }
 
 const ANIMATION_MAP: Record<ReactionType, string> = {
@@ -32,7 +34,7 @@ const ANIMATION_MAP: Record<ReactionType, string> = {
   pop:    'react-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
 };
 
-export function ThingTile({ thing, onTap, reaction, onReactionDone, wobbleOffset = 0, shakeJitter }: Props) {
+export function ThingTile({ thing, onTap, reaction, onReactionDone, wobbleOffset = 0, shakeJitter, index = 0 }: Props) {
   const tileRef = useRef<HTMLButtonElement>(null);
   const lastTapRef = useRef<number>(Date.now());
   const wobbleTimerRef = useRef<number | null>(null);
@@ -94,23 +96,46 @@ export function ThingTile({ thing, onTap, reaction, onReactionDone, wobbleOffset
       setTimeout(() => setCurrentReaction(null), duration);
     }, 0);
 
-    // Spawn floating kid-emoji at tap point
+    // Spawn TWO floating emojis at the tap point:
+    // 1. A "poot" puff (💨) — small, fast, signature of the app
+    // 2. A random kid emoji — bigger, slower, more delightful
     const el = tileRef.current;
     if (el) {
       const rect = el.getBoundingClientRect();
-      const emoji = document.createElement('div');
-      emoji.textContent = randomKidEmoji();
-      emoji.style.cssText = [
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+
+      // Poot puff
+      const poof = document.createElement('div');
+      poof.textContent = '💨';
+      poof.style.cssText = [
         'position: fixed',
         'pointer-events: none',
-        'z-index: 999',
-        'font-size: 2rem',
-        'left: ' + (rect.left + rect.width / 2 - 16) + 'px',
-        'top: ' + (rect.top + rect.height / 2 - 16) + 'px',
-        'animation: reaction-rise 1s ease-out forwards',
+        'z-index: 998',
+        'font-size: 1.6rem',
+        `left: ${cx - 14}px`,
+        `top: ${cy - 14}px`,
+        'animation: poof-rise 0.7s ease-out forwards',
       ].join(';');
-      document.body.appendChild(emoji);
-      setTimeout(() => emoji.remove(), 1_050);
+      document.body.appendChild(poof);
+      setTimeout(() => poof.remove(), 750);
+
+      // Bigger kid emoji (slightly offset, slightly delayed)
+      setTimeout(() => {
+        const emoji = document.createElement('div');
+        emoji.textContent = randomKidEmoji();
+        emoji.style.cssText = [
+          'position: fixed',
+          'pointer-events: none',
+          'z-index: 999',
+          'font-size: 2.2rem',
+          `left: ${cx - 18 + (Math.random() - 0.5) * 24}px`,
+          `top: ${cy - 18}px`,
+          'animation: reaction-rise 1s ease-out forwards',
+        ].join(';');
+        document.body.appendChild(emoji);
+        setTimeout(() => emoji.remove(), 1_050);
+      }, 60);
     }
 
     onTap(thing, e as React.MouseEvent);
@@ -123,7 +148,7 @@ export function ThingTile({ thing, onTap, reaction, onReactionDone, wobbleOffset
       ref={tileRef}
       onClick={handleTap}
       aria-label={`${thing.name}, tap to hear a sound`}
-      className={"absolute select-none" + (shakeJitter ? " shake-jiggle" : "")}
+      className={"absolute select-none thing-entrance" + (shakeJitter ? " shake-jiggle" : "")}
       style={{
         left: `${thing.x}%`,
         top: `${thing.y}%`,
@@ -135,7 +160,8 @@ export function ThingTile({ thing, onTap, reaction, onReactionDone, wobbleOffset
           : 'transform 100ms ease-out',
         touchAction: 'manipulation',
         WebkitTapHighlightColor: 'transparent',
-      }}
+        animationDelay: `${index * 60}ms`,
+      } as React.CSSProperties}
     >
       <span
         key={reactionKeyRef.current}
