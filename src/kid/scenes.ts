@@ -35,6 +35,37 @@ export const SCENES: Scene[] = [
       { id: 'owl',     emoji: '🦉', name: 'Owl',     x: 82, y: 32, size:  9, sounds: ['/sounds/extra/owl.mp3'] },
     ],
   },
+  {
+    id: 'jungle',
+    name: 'Jungle',
+    bg: '/scenes/jungle.jpg',
+    things: [
+      // Toucan — perched on right branch (x:86-98%, y:30-52% per scene analysis)
+      { id: 'toucan',  emoji: '🦜', name: 'Toucan',  x: 88, y: 36, size: 12, sounds: ['/sounds/extra/parrot.mp3', '/sounds/bird.mp3'] },
+      // Monkey — upper-left canopy (x:5-18%, y:8-25%)
+      { id: 'monkey',  emoji: '🐒', name: 'Monkey',  x: 12, y: 16, size: 11, sounds: ['/sounds/monkey.mp3', '/sounds/extra/monkey_v2.mp3'] },
+      // Elephant — lower-left (front of scene)
+      { id: 'elephant',emoji: '🐘', name: 'Elephant',x:  8, y: 68, size: 16, sounds: ['/sounds/elephant.mp3', '/sounds/elephant_long.mp3'] },
+      // Giraffe — left-center (tall, peeking from behind foliage)
+      { id: 'giraffe', emoji: '🦒', name: 'Giraffe', x: 25, y: 28, size: 15, sounds: ['/sounds/extra/giraffe.mp3'] },
+      // Lion — lower-center (on the forest floor)
+      { id: 'lion',    emoji: '🦁', name: 'Lion',    x: 45, y: 74, size: 13, sounds: ['/sounds/lion.mp3', '/sounds/lion_long.mp3'] },
+      // Snake — winding up left vine area (x:2-20%, y:55-75%)
+      { id: 'snake',   emoji: '🐍', name: 'Snake',   x: 14, y: 58, size:  9, sounds: ['/sounds/snake.mp3', '/sounds/snake_long.mp3'] },
+      // Frog — bottom-center (in the dense foliage)
+      { id: 'frog',    emoji: '🐸', name: 'Frog',    x: 48, y: 86, size:  9, sounds: ['/sounds/frog.mp3'] },
+      // Hippo — lower-right (in the dense foliage)
+      { id: 'hippo',   emoji: '🦛', name: 'Hippo',   x: 72, y: 76, size: 14, sounds: ['/sounds/extra/hippo.mp3'] },
+      // Zebra — lower-right center (grazing)
+      { id: 'zebra',   emoji: '🦓', name: 'Zebra',   x: 62, y: 72, size: 12, sounds: ['/sounds/extra/zebra.mp3'] },
+      // Tiger — right side middle (hidden in foliage edge)
+      { id: 'tiger',   emoji: '🐯', name: 'Tiger',   x: 78, y: 55, size: 13, sounds: ['/sounds/lion.mp3'] },
+      // Gorilla — center (in the clearing)
+      { id: 'gorilla', emoji: '🦍', name: 'Gorilla', x: 42, y: 52, size: 14, sounds: ['/sounds/extra/bull.mp3', '/sounds/monkey.mp3'] },
+      // Parrot — right upper (near the toucan)
+      { id: 'parrot',  emoji: '🦚', name: 'Parrot',  x: 92, y: 24, size: 10, sounds: ['/sounds/extra/parrot.mp3', '/sounds/bird.mp3'] },
+    ],
+  },
 ];
 
 export function getThing(sceneId: string, thingId: string): Thing | null {

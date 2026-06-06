@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { SCENES } from './scenes';
 import type { Thing } from './scenes';
 import { SceneBackground } from './SceneBackground';
@@ -6,115 +6,122 @@ import { ThingTile } from './ThingTile';
 import { HeardCountBadge } from './HeardCountBadge';
 import { useSoundEngine } from './useSoundEngine';
 
-const AUTO_ADVANCE_MS = 30_000;
+// v26b: show exactly 2 scenes (Farm + Jungle), no more
+const VISIBLE_SCENES = 2;
+const SWIPE_THRESHOLD = 50; // px
+const AUTO_ROTATE_MS = 30_000; // 30 seconds
 
-function SceneDots({ total, current, onSelect }: { total: number; current: number; onSelect: (i: number) => void }) {
+export default function KidScreen() {
+  const [currentSceneIndex, setCurrentSceneIndex] = useState(0);
+  const [heardCount, setHeardCount] = useState(0);
+
+  const { playRandom, stopAll, isRecording } = useSoundEngine();
+
+  // Auto-rotate timer
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pointerStartRef = useRef<number | null>(null);
+
+  const resetTimer = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setCurrentSceneIndex(prev => (prev + 1) % VISIBLE_SCENES);
+    }, AUTO_ROTATE_MS);
+  }, []);
+
+  // Pause auto-rotate while recording
+  useEffect(() => {
+    if (isRecording()) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    } else {
+      resetTimer();
+    }
+  }, [isRecording, resetTimer]);
+
+  // Initial timer on mount
+  useEffect(() => {
+    resetTimer();
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [resetTimer]);
+
+  const onTapThing = useCallback((thing: Thing) => {
+    resetTimer();
+    stopAll();
+    const sound = thing.sounds[Math.floor(Math.random() * thing.sounds.length)];
+    playRandom(sound);
+    setHeardCount(c => c + 1);
+  }, [playRandom, stopAll, resetTimer]);
+
+  // Swipe handling
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    pointerStartRef.current = e.clientX;
+  }, []);
+
+  const onPointerUp = useCallback((e: React.PointerEvent) => {
+    if (pointerStartRef.current === null) return;
+    const delta = e.clientX - pointerStartRef.current;
+    if (Math.abs(delta) < SWIPE_THRESHOLD) {
+      // Treat as a tap — reset auto-rotate timer
+      resetTimer();
+      pointerStartRef.current = null;
+      return;
+    }
+    if (delta < 0) {
+      // Swipe left → next scene
+      setCurrentSceneIndex(prev => (prev + 1) % VISIBLE_SCENES);
+    } else {
+      // Swipe right → previous scene
+      setCurrentSceneIndex(prev => (prev - 1 + VISIBLE_SCENES) % VISIBLE_SCENES);
+    }
+    pointerStartRef.current = null;
+    // Reset timer on swipe too
+    resetTimer();
+  }, [resetTimer]);
+
+  const scene = SCENES[currentSceneIndex];
+
   return (
     <div
-      style={{
+      style={{ width: '100vw', height: '100vh', position: 'relative', userSelect: 'none', touchAction: 'none' }}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+    >
+      <SceneBackground bg={scene.bg}>
+        {scene.things.map(thing => (
+          <ThingTile
+            key={thing.id}
+            thing={thing}
+            onTap={() => onTapThing(thing)}
+          />
+        ))}
+        <HeardCountBadge count={heardCount} />
+      </SceneBackground>
+
+      {/* Scene dot indicator */}
+      <div style={{
         position: 'fixed',
-        bottom: 'calc(env(safe-area-inset-bottom) + 12px)',
+        bottom: 24,
         left: 0,
         right: 0,
         display: 'flex',
         justifyContent: 'center',
         gap: 8,
         pointerEvents: 'none',
-        zIndex: 50,
-      }}
-    >
-      {Array.from({ length: total }).map((_, i) => {
-        const isActive = i === current;
-        return (
-          <button
+      }}>
+        {Array.from({ length: VISIBLE_SCENES }).map((_, i) => (
+          <div
             key={i}
-            onClick={() => onSelect(i)}
             style={{
-              pointerEvents: 'auto',
-              background: 'none',
-              border: 'none',
-              padding: 6,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: i === currentSceneIndex ? '#fff' : 'rgba(255,255,255,0.4)',
+              transition: 'background 200ms',
             }}
-            aria-label={`Go to scene ${i + 1}`}
-          >
-            <div
-              style={{
-                width: isActive ? 8 : 6,
-                height: isActive ? 8 : 6,
-                borderRadius: '50%',
-                background: isActive ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.3)',
-                transition: 'width 0.2s, height 0.2s, background 0.2s',
-              }}
-            />
-          </button>
-        );
-      })}
+          />
+        ))}
+      </div>
     </div>
-  );
-}
-
-export default function KidScreen() {
-  const [sceneIndex, setSceneIndex] = useState(0);
-  const { playRandom, stopAll, isRecording } = useSoundEngine();
-  const [heardCount, setHeardCount] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const scene = SCENES[sceneIndex];
-
-  const clearTimer = useCallback(() => {
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
-
-  const startTimer = useCallback(() => {
-    clearTimer();
-    if (SCENES.length < 2) return;
-    timerRef.current = setTimeout(() => {
-      setSceneIndex(i => (i + 1) % SCENES.length);
-    }, AUTO_ADVANCE_MS);
-  }, [clearTimer]);
-
-  // Start timer on mount (or when scenes change)
-  useEffect(() => {
-    startTimer();
-    return clearTimer;
-  }, [startTimer, clearTimer]);
-
-  const advanceToScene = useCallback((index: number) => {
-    setSceneIndex(index);
-    clearTimer();
-    startTimer();
-  }, [clearTimer, startTimer]);
-
-  const onTapThing = useCallback((thing: Thing) => {
-    // Pause auto-advance while recording so we don't yank the kid mid-fart
-    if (isRecording()) return;
-    stopAll();
-    const sound = thing.sounds[Math.floor(Math.random() * thing.sounds.length)];
-    playRandom(sound);
-    setHeardCount(c => c + 1);
-    // Reset auto-advance on interaction
-    clearTimer();
-    startTimer();
-  }, [playRandom, stopAll, isRecording, clearTimer, startTimer]);
-
-  return (
-    <SceneBackground bg={scene.bg}>
-      {scene.things.map(thing => (
-        <ThingTile
-          key={thing.id}
-          thing={thing}
-          onTap={() => onTapThing(thing)}
-        />
-      ))}
-      <HeardCountBadge count={heardCount} />
-      <SceneDots total={SCENES.length} current={sceneIndex} onSelect={advanceToScene} />
-    </SceneBackground>
   );
 }
