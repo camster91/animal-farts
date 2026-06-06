@@ -50,9 +50,10 @@ export default function App() {
           className="min-h-screen flex flex-col"
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         >
-          {/* Page content. v25v: Sounds tab fills the whole viewport
-              (above the bottom nav). My/Explore/Profile have their
-              own layouts with normal padding. */}
+          {/* Page content. v25w: Sounds tab uses absolute inset-0
+              (full-bleed) so the scene background fills the viewport.
+              My/Explore/Profile have their own layouts with normal
+              padding. */}
           <div className={`flex-1 relative ${tab === "sounds" ? "overflow-hidden" : "overflow-y-auto pb-20"}`}>
             {tab === "sounds" && <SoundsPage />}
             {tab === "my" && <MySoundsPage me={me} />}

@@ -1,10 +1,23 @@
-// v25v: scenes interface. Full-screen illustrated scene with
-// 6-10 tappable things. The kid swipes left/right to change
-// scenes. No menus, no filter chips, no library. The scene
-// IS the app.
+// v25w: scene + grid layout. The page shows:
+//   1. A row of scene chips (Farm, Jungle, Ocean, City, Bedroom, Bathroom)
+//   2. The selected scene's illustration as the background
+//   3. A grid of emoji tiles in the foreground (5-col mobile)
+//
+// Each tile is a cluster from the catalog (e.g. 🐄 Cow). Tap = random
+// sound from the cluster's bucket. Different tile = different sound.
+//
+// Bottom nav stays for parents to access My/Explore/Profile. Stop
+// + Record buttons are floating.
 
-import { useState, useRef, useCallback, useEffect } from "react";
-import { SCENES, type Scene, type SceneThing } from "../scenes";
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  SCENE_LIST,
+  SCENE_LAYOUTS,
+  SceneBackground,
+  findCluster,
+  type SceneId,
+  type Cluster,
+} from "../scenes";
 import {
   playSound,
   stopAllSounds,
@@ -18,17 +31,19 @@ import {
 import { useFx } from "../fxContext";
 import { usePoof } from "../poofContext";
 
-const TAP_SIZE_DEFAULT = 18; // % of scene width
-
 export default function SoundsPage() {
   const onPoof = usePoof();
   const { pitch, setPitch, length, setLength, echo, setEcho, resetFx } = useFx();
 
-  // Which scene is shown
-  const [sceneIdx, setSceneIdx] = useState(0);
-  const scene: Scene = SCENES[sceneIdx];
+  // Which scene is selected
+  const [sceneId, setSceneId] = useState<SceneId>("farm");
+  const layout = SCENE_LAYOUTS[sceneId];
+  const scene = layout.scene;
+  const tiles = layout.tiles
+    .map((id) => findCluster(id))
+    .filter((c): c is Cluster => c !== null);
 
-  // Active thing (brief scale animation)
+  // Active tile (scale animation)
   const [activeId, setActiveId] = useState<string | null>(null);
   const activeTimer = useRef<number | null>(null);
 
@@ -37,20 +52,13 @@ export default function SoundsPage() {
   const [recordSeconds, setRecordSeconds] = useState(0);
   const recordInterval = useRef<number | null>(null);
 
-  // Parental gear — hidden by default, revealed by long-pressing top-left
-  const [showGear, setShowGear] = useState(false);
-  const [showFx, setShowFx] = useState(false);
+  // Parental controls
   const [showKidsMenu, setShowKidsMenu] = useState(false);
+  const [showFx, setShowFx] = useState(false);
   const [anySoundPlaying, setAnySoundPlaying] = useState(false);
-  const gearLongPressTimer = useRef<number | null>(null);
-  const lastTapTime = useRef(0);
+  const gearTimer = useRef<number | null>(null);
 
-  // Swipe tracking
-  const touchStartX = useRef<number | null>(null);
-  const touchStartY = useRef<number | null>(null);
-  const sceneContainerRef = useRef<HTMLDivElement | null>(null);
-
-  // Sync FX to engine
+  // FX sync
   useEffect(() => { setPitchRate(pitch); }, [pitch]);
   useEffect(() => { setLengthScale(length); }, [length]);
   useEffect(() => { setEchoAmount(echo ? 1 : 0); }, [echo]);
@@ -69,7 +77,7 @@ export default function SoundsPage() {
     return () => { if (recordInterval.current) window.clearInterval(recordInterval.current); };
   }, [recording]);
 
-  // Stop button polling
+  // Stop button visibility
   useEffect(() => {
     const id = window.setInterval(() => {
       let n = 0;
@@ -81,39 +89,33 @@ export default function SoundsPage() {
     return () => window.clearInterval(id);
   }, []);
 
-  // Tap a thing → play a random sound from its sounds[]
-  const onTapThing = useCallback(
-    (thing: SceneThing, e: React.MouseEvent | React.TouchEvent) => {
-      const sound = thing.sounds[Math.floor(Math.random() * thing.sounds.length)];
+  // Tap a tile → play a random sound from its cluster's bucket
+  const onTapCluster = useCallback(
+    (cluster: Cluster, e: React.MouseEvent | React.TouchEvent) => {
+      const sound = cluster.sounds[Math.floor(Math.random() * cluster.sounds.length)];
       void playSound(sound);
-      setActiveId(thing.id);
+      setActiveId(cluster.id);
       if (activeTimer.current) window.clearTimeout(activeTimer.current);
       activeTimer.current = window.setTimeout(() => {
-        setActiveId((cur) => (cur === thing.id ? null : cur));
+        setActiveId((cur) => (cur === cluster.id ? null : cur));
       }, 350);
       const point = "touches" in e
         ? (e as any).changedTouches?.[0] ?? (e as any).touches?.[0]
         : (e as any);
-      onPoof(point?.clientX ?? window.innerWidth / 2, point?.clientY ?? window.innerHeight / 2, thing.emoji);
+      onPoof(point?.clientX ?? window.innerWidth / 2, point?.clientY ?? window.innerHeight / 2, cluster.emoji);
     },
     [onPoof]
   );
 
-  // Swipe handlers
-  const onTouchStart = useCallback((e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
+  // Parental gear: long-press top-left to reveal
+  const onGearTouchStart = useCallback(() => {
+    gearTimer.current = window.setTimeout(() => setShowKidsMenu(true), 1200);
   }, []);
-
-  const onTouchEnd = useCallback((e: React.TouchEvent) => {
-    if (touchStartX.current == null || touchStartY.current == null) return;
-    const dx = e.changedTouches[0].clientX - touchStartX.current;
-    const dy = e.changedTouches[0].clientY - touchStartY.current;
-    touchStartX.current = null;
-    touchStartY.current = null;
-    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    if (dx < 0) setSceneIdx((i) => Math.min(SCENES.length - 1, i + 1));
-    else setSceneIdx((i) => Math.max(0, i - 1));
+  const onGearTouchEnd = useCallback(() => {
+    if (gearTimer.current) {
+      window.clearTimeout(gearTimer.current);
+      gearTimer.current = null;
+    }
   }, []);
 
   // Record button
@@ -143,109 +145,41 @@ export default function SoundsPage() {
     }
   }, [recording, onPoof]);
 
-  // Parental gear — long-press in top-left to reveal
-  const onGearTouchStart = useCallback(() => {
-    gearLongPressTimer.current = window.setTimeout(() => setShowGear(true), 1200);
-  }, []);
-  const onGearTouchEnd = useCallback(() => {
-    if (gearLongPressTimer.current) {
-      window.clearTimeout(gearLongPressTimer.current);
-      gearLongPressTimer.current = null;
-    }
-  }, []);
-
-  // Show Kids menu on a single tap of the top-left (after long-press has been used once)
-  const onTopLeftTap = useCallback(() => {
-    if (showGear) return;
-    // Triple-tap in same spot to reveal
-    const now = Date.now();
-    if (now - lastTapTime.current < 400) {
-      setShowGear(true);
-      lastTapTime.current = 0;
-    } else {
-      lastTapTime.current = now;
-    }
-  }, [showGear]);
-
   return (
-    <div className="absolute inset-0 overflow-hidden">
-      {/* Scene container — full bleed */}
-      <div
-        ref={sceneContainerRef}
-        className={`absolute inset-0 bg-gradient-to-b ${scene.bg} transition-colors duration-700`}
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-        onClick={onTopLeftTap}
-      >
-        {/* Scene name overlay — fades in for 1.5s on scene change */}
-        <div
-          key={scene.id + "-name"}
-          className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/30 backdrop-blur-sm text-white text-sm font-bold px-4 py-1.5 rounded-full shadow-lg animate-[fadein_0.4s_ease-out,fadeout_0.6s_ease-in_1s_forwards] pointer-events-none z-10"
-        >
-          {scene.name}
-        </div>
-
-        {/* Tappable things */}
-        {scene.things.map((thing) => (
+    <SceneBackground scene={scene}>
+      {/* Scene chips (top, semi-transparent) */}
+      <div className="flex gap-1.5 px-2 py-2 overflow-x-auto shrink-0">
+        {SCENE_LIST.map((s) => (
           <button
-            key={thing.id}
-            onClick={(e) => {
-              e.stopPropagation();
-              onTapThing(thing, e);
-            }}
-            onTouchStart={(e) => { e.stopPropagation(); onGearTouchEnd(); }}
-            style={{
-              position: "absolute",
-              left: `${thing.x}%`,
-              top: `${thing.y}%`,
-              transform: "translate(-50%, -50%)",
-              width: `${thing.size ?? TAP_SIZE_DEFAULT}%`,
-              height: `${thing.size ?? TAP_SIZE_DEFAULT}%`,
-              touchAction: "manipulation",
-            }}
-            className="flex items-center justify-center active:scale-90 transition-transform select-none"
-            aria-label={thing.name}
+            key={s.id}
+            onClick={() => setSceneId(s.id)}
+            className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border-2 active:scale-95 transition-colors backdrop-blur-md ${
+              s.id === sceneId
+                ? "bg-amber-500 text-white border-amber-500 shadow"
+                : "bg-white/40 text-slate-800 border-white/50"
+            }`}
           >
-            <span className={`text-5xl sm:text-6xl transition-transform drop-shadow-lg ${activeId === thing.id ? "scale-125" : "scale-100"}`}>
-              {thing.emoji}
-            </span>
+            <span className="mr-1">{s.emoji}</span>
+            {s.name}
           </button>
         ))}
+      </div>
 
-        {/* Scene indicator dots — bottom center */}
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-10">
-          {SCENES.map((s, i) => (
-            <button
-              key={s.id}
-              onClick={(e) => { e.stopPropagation(); setSceneIdx(i); }}
-              aria-label={`Go to ${s.name}`}
-              className={`w-3 h-3 rounded-full transition-all ${
-                i === sceneIdx ? "bg-white scale-125" : "bg-white/40"
-              }`}
+      {/* Tile grid (3-col mobile, 4-col tablet, 5-col desktop) */}
+      <div className="flex-1 overflow-y-auto px-3 pb-32">
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 max-w-3xl mx-auto">
+          {tiles.map((cluster) => (
+            <ClusterTile
+              key={cluster.id}
+              cluster={cluster}
+              active={activeId === cluster.id}
+              onTap={onTapCluster}
             />
           ))}
         </div>
-
-        {/* Arrow hints — left/right edges for non-touch users */}
-        {sceneIdx > 0 && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setSceneIdx((i) => i - 1); }}
-            className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/30 backdrop-blur-sm text-white text-2xl flex items-center justify-center z-10 active:scale-90"
-            aria-label="Previous scene"
-          >‹</button>
-        )}
-        {sceneIdx < SCENES.length - 1 && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setSceneIdx((i) => i + 1); }}
-            className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/30 backdrop-blur-sm text-white text-2xl flex items-center justify-center z-10 active:scale-90"
-            aria-label="Next scene"
-          >›</button>
-        )}
       </div>
 
-      {/* Hidden parental gear — top-left corner is the trigger zone.
-          Long-press (1.2s) reveals the gear. After that, a single tap
-          on the gear opens the parents overlay. */}
+      {/* Hidden parental gear trigger (top-left corner) */}
       <div
         className="absolute top-0 left-0 w-20 h-20 z-20"
         onTouchStart={onGearTouchStart}
@@ -254,17 +188,8 @@ export default function SoundsPage() {
         onMouseUp={onGearTouchEnd}
         onMouseLeave={onGearTouchEnd}
       />
-      {showGear && (
-        <button
-          onClick={() => setShowKidsMenu(true)}
-          className="absolute top-3 left-3 w-12 h-12 rounded-full bg-white/40 backdrop-blur-md text-2xl flex items-center justify-center shadow-lg z-30 active:scale-90"
-          aria-label="Parental controls"
-        >
-          👪
-        </button>
-      )}
 
-      {/* Stop button (when sound playing) — bottom-right corner */}
+      {/* Stop button (when sound playing) — bottom-right */}
       {anySoundPlaying && !recording && (
         <button
           onClick={() => {
@@ -272,17 +197,17 @@ export default function SoundsPage() {
             onPoof(window.innerWidth / 2, window.innerHeight / 2, "⏹");
             setAnySoundPlaying(false);
           }}
-          className="absolute bottom-4 right-4 w-12 h-12 rounded-full bg-red-500 text-white text-2xl shadow-lg z-30 active:scale-90 animate-pulse"
+          className="absolute bottom-20 right-4 w-12 h-12 rounded-full bg-red-500 text-white text-2xl shadow-lg z-30 active:scale-90 animate-pulse"
           aria-label="Stop all sounds"
         >
           ⏹
         </button>
       )}
 
-      {/* Record button — bottom-left corner, semi-transparent */}
+      {/* Record button — bottom-left, semi-transparent */}
       <button
         onClick={onToggleRecord}
-        className={`absolute bottom-4 left-4 w-12 h-12 rounded-full text-2xl shadow-lg z-30 active:scale-90 ${
+        className={`absolute bottom-20 left-4 w-12 h-12 rounded-full text-2xl shadow-lg z-30 active:scale-90 ${
           recording
             ? "bg-red-500 text-white animate-pulse"
             : "bg-white/60 backdrop-blur-md text-amber-900"
@@ -292,7 +217,7 @@ export default function SoundsPage() {
         {recording ? `⏹${recordSeconds.toFixed(0)}` : "🎤"}
       </button>
 
-      {/* Parents overlay (kid menu + FX) */}
+      {/* Parents overlay (long-press top-left to reveal) */}
       {showKidsMenu && (
         <div
           className="absolute inset-0 z-40 bg-black/40 flex items-end sm:items-center justify-center p-4"
@@ -310,16 +235,15 @@ export default function SoundsPage() {
               >✕</button>
             </div>
             <button
-              onClick={() => { setShowFx(!showFx); }}
+              onClick={() => setShowFx(!showFx)}
               className="w-full mb-2 py-3 rounded-xl font-bold bg-amber-100 text-amber-900 active:scale-95"
             >
               🎚️ Make it funny (FX)
             </button>
             <button
               onClick={() => {
-                stopAllSounds();
-                const t = scene.things[Math.floor(Math.random() * scene.things.length)];
-                onTapThing(t, { touches: [{ clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 }], changedTouches: [{ clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 }] } as any);
+                const t = tiles[Math.floor(Math.random() * tiles.length)];
+                if (t) onTapCluster(t, { touches: [{ clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 }], changedTouches: [{ clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 }] } as any);
               }}
               className="w-full py-3 rounded-xl font-bold bg-purple-100 text-purple-900 active:scale-95"
             >
@@ -350,7 +274,39 @@ export default function SoundsPage() {
           </div>
         </div>
       )}
-    </div>
+    </SceneBackground>
+  );
+}
+
+function ClusterTile({
+  cluster, active, onTap,
+}: {
+  cluster: Cluster;
+  active: boolean;
+  onTap: (cluster: Cluster, e: React.MouseEvent | React.TouchEvent) => void;
+}) {
+  // Subtle translucent tile so the scene background shows through.
+  // The tile has a soft glassy look — kid sees the scene + the emoji.
+  return (
+    <button
+      onClick={(e) => onTap(cluster, e)}
+      style={{ touchAction: "manipulation" }}
+      className="relative aspect-square rounded-2xl bg-white/30 backdrop-blur-md border-2 border-white/60 shadow-md active:scale-95 select-none"
+    >
+      <div className="absolute inset-0 flex flex-col items-center justify-center p-1 pointer-events-none">
+        <div className={`text-4xl sm:text-5xl transition-transform ${active ? "scale-125 drop-shadow-lg" : "drop-shadow"}`}>
+          {cluster.emoji}
+        </div>
+        <div className="mt-0.5 text-[10px] sm:text-[11px] font-bold text-white drop-shadow-md truncate max-w-full text-center leading-tight">
+          {cluster.name}
+        </div>
+        {cluster.sounds.length > 1 && (
+          <div className="absolute top-1 right-1 bg-amber-900/80 text-white text-[8px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+            {cluster.sounds.length > 99 ? "99+" : cluster.sounds.length}
+          </div>
+        )}
+      </div>
+    </button>
   );
 }
 
