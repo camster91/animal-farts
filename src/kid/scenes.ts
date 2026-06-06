@@ -28,23 +28,23 @@ export const SCENES: Scene[] = [
     bg: '/scenes/farm.jpg',
     things: [
       // Ground animals on grass (y 60–84), well spaced left-to-right
-      { id: 'cow',     emoji: '🐄', name: 'Cow',     x: 12, y: 66, size: 14, sounds: ['/sounds/cow.mp3', '/sounds/extra/cow2.mp3', '/sounds/extra/cow_v3.mp3'] },
-      { id: 'horse',   emoji: '🐎', name: 'Horse',   x: 30, y: 63, size: 15, sounds: ['/sounds/horse.mp3', '/sounds/v1/horse.mp3', '/sounds/extra/horse2.mp3'] },
-      { id: 'pig',     emoji: '🐖', name: 'Pig',     x: 50, y: 65, size: 12, sounds: ['/sounds/pig.mp3', '/sounds/extra/pig2.mp3'] },
+      { id: 'cow',     emoji: '🐄', name: 'Cow',     x: 12, y: 66, size: 14, sounds: ['/sounds/cow.mp3', '/sounds/v1/cow.mp3'] },
+      { id: 'horse',   emoji: '🐎', name: 'Horse',   x: 30, y: 63, size: 15, sounds: ['/sounds/horse.mp3', '/sounds/v1/horse.mp3'] },
+      { id: 'pig',     emoji: '🐖', name: 'Pig',     x: 50, y: 65, size: 12, sounds: ['/sounds/pig.mp3'] },
       { id: 'goat',    emoji: '🐐', name: 'Goat',    x: 72, y: 67, size: 11, sounds: ['/sounds/extra/goat.mp3'] },
-      { id: 'sheep',   emoji: '🐑', name: 'Sheep',   x: 88, y: 68, size: 11, sounds: ['/sounds/extra/sheep.mp3', '/sounds/extra/sheep_v2.mp3'] },
+      { id: 'sheep',   emoji: '🐑', name: 'Sheep',   x: 88, y: 68, size: 11, sounds: ['/sounds/extra/sheep.mp3'] },
       // Dog moved lower-right to separate from sheep
-      { id: 'dog',     emoji: '🐕', name: 'Dog',     x: 55, y: 78, size: 10, sounds: ['/sounds/dog.mp3', '/sounds/extra/dog_v2.mp3'] },
+      { id: 'dog',     emoji: '🐕', name: 'Dog',     x: 55, y: 78, size: 10, sounds: ['/sounds/dog.mp3'] },
       // Lower ground items (duck, tractor, hay, owl)
       { id: 'duck',    emoji: '🦆', name: 'Duck',    x: 25, y: 84, size:  9, sounds: ['/sounds/duck.mp3', '/sounds/v1/duck.mp3'] },
-      { id: 'tractor', emoji: '🚜', name: 'Tractor', x: 78, y: 82, size: 12, sounds: ['/sounds/extra/bull.mp3'] },
-      { id: 'hay',     emoji: '🌾', name: 'Hay',     x: 42, y: 84, size:  9, sounds: ['/sounds/extra/monkey_v2.mp3'] },
+      { id: 'tractor', emoji: '🚜', name: 'Tractor', x: 78, y: 82, size: 12, sounds: ['/sounds/bull.mp3'] },
+      { id: 'hay',     emoji: '🌾', name: 'Hay',     x: 42, y: 84, size:  9, sounds: ['/sounds/bull.mp3'] },
       // Owl in the tree above the barn (tree is upper-left, near barn)
       { id: 'owl',     emoji: '🦉', name: 'Owl',     x: 17, y: 38, size:  9, sounds: ['/sounds/extra/owl.mp3'] },
       // Rooster on the right-side tree (not barn tree) — perched mid-branch
-      { id: 'rooster', emoji: '🐓', name: 'Rooster', x: 88, y: 46, size: 10, sounds: ['/sounds/rooster.mp3', '/sounds/v1/rooster.mp3'] },
+      { id: 'rooster', emoji: '🐓', name: 'Rooster', x: 88, y: 46, size: 10, sounds: ['/sounds/rooster.mp3'] },
       // Barn on the actual barn illustration (center-left, x~15-30, y~40-60)
-      { id: 'barn',    emoji: '🏚️', name: 'Barn',    x: 22, y: 50, size: 14, sounds: ['/sounds/extra/cat.mp3'] },
+      { id: 'barn',    emoji: '🏚️', name: 'Barn',    x: 22, y: 50, size: 14, sounds: ['/sounds/cat.mp3'] },
     ],
   },
   {
@@ -54,18 +54,18 @@ export const SCENES: Scene[] = [
     // 10 things (reduced from 12) — dense canopy leaves little room for more
     things: [
       // Upper canopy — monkey, parrot, toucan (all in upper y 15-28 band)
-      { id: 'monkey',  emoji: '🐒', name: 'Monkey',  x: 12, y: 18, size: 10, sounds: ['/sounds/monkey.mp3', '/sounds/extra/monkey_v2.mp3'] },
-      { id: 'parrot',  emoji: '🦚', name: 'Parrot',  x: 30, y: 16, size:  9, sounds: ['/sounds/extra/parrot.mp3', '/sounds/bird.mp3'] },
-      { id: 'toucan',  emoji: '🦜', name: 'Toucan',  x: 82, y: 22, size: 11, sounds: ['/sounds/extra/parrot.mp3', '/sounds/bird.mp3'] },
+      { id: 'monkey',  emoji: '🐒', name: 'Monkey',  x: 12, y: 18, size: 10, sounds: ['/sounds/monkey.mp3'] },
+      { id: 'parrot',  emoji: '🦚', name: 'Parrot',  x: 30, y: 16, size:  9, sounds: ['/sounds/bird.mp3'] },
+      { id: 'toucan',  emoji: '🦜', name: 'Toucan',  x: 82, y: 22, size: 11, sounds: ['/sounds/bird.mp3'] },
       // Giraffe in mid-upper area, well separated from monkey (right side of scene)
       { id: 'giraffe', emoji: '🦒', name: 'Giraffe', x: 68, y: 24, size: 14, sounds: ['/sounds/extra/giraffe.mp3'] },
       // Mid-level things — tiger on right vine, gorilla in center clearing
-      { id: 'gorilla', emoji: '🦍', name: 'Gorilla', x: 44, y: 42, size: 13, sounds: ['/sounds/extra/bull.mp3', '/sounds/monkey.mp3'] },
+      { id: 'gorilla', emoji: '🦍', name: 'Gorilla', x: 44, y: 42, size: 13, sounds: ['/sounds/bull.mp3', '/sounds/monkey.mp3'] },
       { id: 'tiger',   emoji: '🐯', name: 'Tiger',   x: 78, y: 42, size: 12, sounds: ['/sounds/lion.mp3'] },
       // Ground level — elephant left, lion center, snake left vine, hippo right, zebra right-center, frog bottom-center
-      { id: 'elephant',emoji: '🐘', name: 'Elephant',x: 12, y: 66, size: 16, sounds: ['/sounds/elephant.mp3', '/sounds/elephant_long.mp3'] },
-      { id: 'lion',    emoji: '🦁', name: 'Lion',    x: 42, y: 72, size: 13, sounds: ['/sounds/lion.mp3', '/sounds/lion_long.mp3'] },
-      { id: 'snake',   emoji: '🐍', name: 'Snake',   x: 22, y: 58, size:  9, sounds: ['/sounds/snake.mp3', '/sounds/snake_long.mp3'] },
+      { id: 'elephant',emoji: '🐘', name: 'Elephant',x: 12, y: 66, size: 16, sounds: ['/sounds/elephant.mp3', '/sounds/extra/elephant_long.mp3'] },
+      { id: 'lion',    emoji: '🦁', name: 'Lion',    x: 42, y: 72, size: 13, sounds: ['/sounds/lion.mp3', '/sounds/extra/lion_long.mp3'] },
+      { id: 'snake',   emoji: '🐍', name: 'Snake',   x: 22, y: 58, size:  9, sounds: ['/sounds/snake.mp3', '/sounds/extra/snake_long.mp3'] },
       { id: 'hippo',   emoji: '🦛', name: 'Hippo',   x: 74, y: 74, size: 13, sounds: ['/sounds/extra/hippo.mp3'] },
     ],
   },
