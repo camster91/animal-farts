@@ -81,8 +81,13 @@ export default function KidScreen() {
   const longPressTimerRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Recent taps for band chain detection
-  const recentTapsRef = useRef<{ time: number; sound: string; x: number; y: number }[]>([]);
+  // Recent taps for band chain detection — useState so React batches updates
+  // and the functional setState pattern prevents stale closures in the setTimeout path.
+  // React 19 strict mode double-mounts components; with useRef the taps could be
+  // pushed into a ref that then gets reset by the remount before the setTimeout fires.
+  // useState + functional update ensures taps are captured in the closure at each setState.
+  // (recentTaps is intentionally unused — we use the functional update pattern only)
+  const [, setRecentTaps] = useState<{ time: number; sound: string; x: number; y: number }[]>([]);
   const noteIdRef = useRef(0);
   const milestoneSeenRef = useRef<Set<number>>(new Set()); // track milestones already fired
 
@@ -189,6 +194,13 @@ export default function KidScreen() {
   }, [storage]);
 
   // === Band chain logic ===
+  // v30-band-fix: switched from useRef to useState for recentTaps.
+  // React 19 strict mode double-mounts; with useRef the array mutations
+  // (push/filter) happened on the same mutable object across mounts,
+  // causing the setTimeout closure to read a reset (empty) ref.
+  // useState + functional update captures the current taps reliably
+  // in the setState callback, and the [] dep of playQueuedBand no longer
+  // captures a stale ref — the taps are passed directly as args.
   const playQueuedBand = useCallback((taps: { time: number; sound: string; x: number; y: number }[]) => {
     taps.forEach((tap, i) => {
       setTimeout(() => {
@@ -215,27 +227,26 @@ export default function KidScreen() {
     // calling stopAll() here would kill the sound we just started.
     if (!skipSound) stopAll();
     const sound = thing.sounds[Math.floor(Math.random() * thing.sounds.length)];
-    const now = Date.now();
 
-    // Record this tap
-    recentTapsRef.current.push({ time: now, sound, x: tapX, y: tapY });
+    // Record this tap using functional update so the closure always sees latest
+    setRecentTaps(prev => {
+      const now = Date.now();
+      const filtered = prev.filter(t => now - t.time < BAND_CHAIN_WINDOW_MS);
+      const next = [...filtered, { time: now, sound, x: tapX, y: tapY }];
+      if (next.length >= 3) {
+        // It's a band! Queue the sounds, clear state, show banner
+        const bandTaps = [...next];
+        setBandBannerVisible(true);
+        setTimeout(() => setBandBannerVisible(false), 1800); // 3 × 300ms + music note fade
+        playQueuedBand(bandTaps);
+        // Return [] to clear after firing
+        return [];
+      }
+      return next;
+    });
 
-    // Keep only taps within the window
-    recentTapsRef.current = recentTapsRef.current.filter(t => now - t.time< BAND_CHAIN_WINDOW_MS);
-
-    const taps = recentTapsRef.current;
-
-    if (taps.length >= 3) {
-      // It's a band! Queue the sounds, clear the ref, show banner
-      const bandTaps = [...taps];
-      recentTapsRef.current = [];
-      setBandBannerVisible(true);
-      setTimeout(() => setBandBannerVisible(false), 1800); // 3 sounds × 300ms + music note fade
-      playQueuedBand(bandTaps);
-    } else {
-      // Normal single tap — skipSound means a kid recording was already played
-      if (!skipSound) playRandom(sound);
-    }
+    // Normal single tap playback — skipSound means kid recording already played
+    if (!skipSound) playRandom(sound);
 
     // Update count via functional update to always get latest state
     setHeardCount(prev => {
