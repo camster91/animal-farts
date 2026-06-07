@@ -172,6 +172,16 @@ app.post("/api/errors", (req, res) => {
   res.json({ ok: true });
 });
 
+// v30: user-facing feedback endpoint (report a problem from parent dashboard)
+app.post("/api/feedback", (req, res) => {
+  const { message, profileId, url, userAgent, ts } = req.body || {};
+  if (!message || typeof message !== "string" || !message.trim()) {
+    return res.status(400).json({ error: "message is required" });
+  }
+  console.error(`[feedback] ts=${ts} profileId=${profileId} url=${url} ua=${userAgent} msg=${message.trim()}`);
+  res.json({ ok: true });
+});
+
 // === Share codes (4-character) ===
 // Anyone can mint a code for a public recording URL. Anyone with the
 // code can fetch the audio. No accounts, no follows, no profiles.

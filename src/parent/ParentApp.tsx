@@ -11,6 +11,10 @@ import TvModeCard from './TvModeCard';
 import ShareCodeCard from './ShareCodeCard';
 import ImportCodeCard from './ImportCodeCard';
 import UploadSoundCard from './UploadSoundCard';
+import FeedbackModal from './FeedbackModal';
+import WhatsNew from './WhatsNew';
+
+const APP_VERSION = (import.meta.env as any).VITE_APP_VERSION ?? '1.0.0';
 
 type View = 'dashboard' | 'changepin';
 
@@ -34,6 +38,7 @@ export default function ParentApp() {
   const [view, setView] = useState<View>('dashboard');
   const [unlocked, setUnlocked] = useState(false);
   const pinGateRef = useRef<PinGateHandle>(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   // Check for import code in URL
   const params = new URLSearchParams(window.location.search);
@@ -189,7 +194,29 @@ export default function ParentApp() {
         <UploadSoundCard
           activeProfileId={settings.activeProfileId}
         />
+
+        {/* Footer with version + report link */}
+        <div className="pt-4 pb-2 flex items-center justify-between text-xs text-amber-600">
+          <span>v{APP_VERSION}</span>
+          <button
+            onClick={() => setFeedbackOpen(true)}
+            className="hover:text-amber-800 transition-colors"
+          >
+            Need help?
+          </button>
+        </div>
       </main>
+
+      {/* Report a problem modal */}
+      {feedbackOpen && (
+        <FeedbackModal
+          profileId={settings.activeProfileId ?? undefined}
+          onClose={() => setFeedbackOpen(false)}
+        />
+      )}
+
+      {/* What's new toast — only on version change, not first visit */}
+      <WhatsNew version={APP_VERSION} onDismiss={() => {}} />
     </div>
   );
 }
