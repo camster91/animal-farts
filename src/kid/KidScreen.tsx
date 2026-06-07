@@ -224,6 +224,7 @@ export default function KidScreen() {
     recentTapsRef.current = recentTapsRef.current.filter(t => now - t.time< BAND_CHAIN_WINDOW_MS);
 
     const taps = recentTapsRef.current;
+    console.log('[band-debug] taps.length:', taps.length, 'at t=', Date.now());
 
     if (taps.length >= 3) {
       // It's a band! Queue the sounds, clear the ref, show banner
@@ -392,13 +393,15 @@ export default function KidScreen() {
             index={i}
             wobbleOffset={i * 200}
             shakeJitter={shakeJitter}
-            onPlayKidRecording={(url, t) => {
+            onPlayKidRecording={(url, t, e) => {
               stopAll();
               playRandom(url);
               setHeardCount(c => c + 1);
-              // Get tap coordinates from the button element
-              const x = window.innerWidth / 2;
-              const y = window.innerHeight / 2;
+              // Use the tap event's actual coordinates so music notes
+              // appear at the tap point, not the center of the screen.
+              // Fall back to center if e is missing (e.g., synthetic call).
+              const x = e?.clientX ?? window.innerWidth / 2;
+              const y = e?.clientY ?? window.innerHeight / 2;
               // Pass skipSound=true so onTapThing doesn't double-play the sound
               onTapThing(t, x, y, true);
             }}

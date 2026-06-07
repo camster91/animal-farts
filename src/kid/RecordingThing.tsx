@@ -22,7 +22,7 @@ interface RecordingThingProps {
   sceneId: string;
   profileId: string;
   /** Called with (blobUrl, thing) when kid taps this thing */
-  onPlayKidRecording: (url: string, thing: Thing) => void;
+  onPlayKidRecording: (url: string, thing: Thing, e?: React.MouseEvent) => void;
   children: React.ReactNode;
   /** Stagger offset (ms) for the idle wobble */
   wobbleOffset?: number;
@@ -146,8 +146,11 @@ export function RecordingThing({
     }, 60);
   }, []);
 
-  // Tap: play kid's recording if one exists, otherwise a random default sound
-  const onTap = useCallback(async () => {
+  // Tap: play kid's recording if one exists, otherwise a random default sound.
+  // Accepts the React MouseEvent so we can forward the tap coordinates
+  // up to KidScreen for the band-chain music notes to appear at the
+  // tap point.
+  const onTap = useCallback(async (e?: React.MouseEvent) => {
     lastTapRef.current = Date.now();
     setIsWobbling(false);
 
@@ -166,7 +169,7 @@ export function RecordingThing({
     const kidRecs = await storage.getRecordingsForThing(sceneId, thing.id, profileId);
     if (kidRecs.length > 0) {
       const url = URL.createObjectURL(kidRecs[0].blob);
-      onPlayKidRecording(url, thing);
+      onPlayKidRecording(url, thing, e);
       setShowPill(true);
       setTimeout(() => setShowPill(false), 1000);
     } else {
@@ -178,7 +181,7 @@ export function RecordingThing({
         setTimeout(() => setShowPill(false), 1000);
       } else {
         const sound = thing.sounds[Math.floor(Math.random() * thing.sounds.length)];
-        onPlayKidRecording(sound, thing);
+        onPlayKidRecording(sound, thing, e);
       }
     }
   }, [thing, sceneId, profileId, onPlayKidRecording, engine, storage]);
