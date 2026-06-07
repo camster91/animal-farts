@@ -224,7 +224,6 @@ export default function KidScreen() {
     recentTapsRef.current = recentTapsRef.current.filter(t => now - t.time< BAND_CHAIN_WINDOW_MS);
 
     const taps = recentTapsRef.current;
-    console.log('[band-debug] taps.length:', taps.length, 'at t=', Date.now());
 
     if (taps.length >= 3) {
       // It's a band! Queue the sounds, clear the ref, show banner
