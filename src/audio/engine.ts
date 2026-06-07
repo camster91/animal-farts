@@ -95,6 +95,9 @@ function playDirect(src: string): Promise<void> {
 async function playWithReverb(src: string): Promise<void> {
   try {
     const ctx = getCtx();
+    if (ctx.state === "suspended") {
+      await ctx.resume();
+    }
     const resp = await fetch(src);
     const arrayBuf = await resp.arrayBuffer();
     const audioBuf = await ctx.decodeAudioData(arrayBuf);

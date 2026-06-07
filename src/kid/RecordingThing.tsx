@@ -294,7 +294,7 @@ export function RecordingThing({
           transition: isWobbling
             ? "transform 1600ms ease-in-out"
             : "transform 100ms ease-out",
-          touchAction: "manipulation",
+          touchAction: "none",
           WebkitTapHighlightColor: "transparent",
           animationDelay: `${index * 60}ms`,
         }}

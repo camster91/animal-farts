@@ -91,6 +91,29 @@ export default function KidScreen() {
   const noteIdRef = useRef(0);
   const milestoneSeenRef = useRef<Set<number>>(new Set()); // track milestones already fired
 
+  // iOS Safari: prime AudioContext on first user gesture so audio plays reliably
+  useEffect(() => {
+    const prime = () => {
+      try {
+        const C = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        const ctx = new C();
+        if (ctx.state === "suspended") ctx.resume();
+        // Warm up the audio pipeline with a silent sound
+        const a = new Audio();
+        a.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+        a.play().catch(() => {});
+      } catch {}
+      document.removeEventListener("pointerdown", prime);
+      document.removeEventListener("touchstart", prime);
+    };
+    document.addEventListener("pointerdown", prime, { once: true });
+    document.addEventListener("touchstart", prime, { once: true });
+    return () => {
+      document.removeEventListener("pointerdown", prime);
+      document.removeEventListener("touchstart", prime);
+    };
+  }, []);
+
   // Shake-to-shuffle: listen for device motion on mobile
   useEffect(() => {
     if (typeof window === 'undefined') return;
