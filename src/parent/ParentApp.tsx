@@ -195,15 +195,25 @@ export default function ParentApp() {
           activeProfileId={settings.activeProfileId}
         />
 
-        {/* Footer with version + report link */}
+        {/* Footer with version + links */}
         <div className="pt-4 pb-2 flex items-center justify-between text-xs text-amber-600">
           <span>v{APP_VERSION}</span>
-          <button
-            onClick={() => setFeedbackOpen(true)}
-            className="hover:text-amber-800 transition-colors"
-          >
-            Need help?
-          </button>
+          <div className="flex items-center gap-3">
+            <a
+              href="/privacy.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-amber-800 transition-colors"
+            >
+              Privacy policy
+            </a>
+            <button
+              onClick={() => setFeedbackOpen(true)}
+              className="hover:text-amber-800 transition-colors"
+            >
+              Need help?
+            </button>
+          </div>
         </div>
       </main>
 
