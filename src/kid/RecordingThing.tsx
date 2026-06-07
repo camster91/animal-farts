@@ -187,8 +187,15 @@ export function RecordingThing({
   }, [thing, sceneId, profileId, onPlayKidRecording, engine, storage]);
 
   // Long-press (500ms): start recording OR show delete dialog if has recording
+  // v30-tap-fix: preventDefault stops iOS Safari default long-press behavior;
+  // setPointerCapture ensures the pointer events keep routing to this element
+  // even if the finger drags slightly off the target.
   const onPointerDown = useCallback((e: React.PointerEvent) => {
-    e.stopPropagation(); // prevent event bubbling to scene container's long-press detector
+    e.stopPropagation();
+    e.preventDefault();
+    if (e.currentTarget instanceof Element && e.currentTarget.setPointerCapture) {
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+    }
     pressTimer.current = window.setTimeout(async () => {
       // If already has a recording, show delete dialog instead of recording
       const kidRecs = await storage.getRecordingsForThing(sceneId, thing.id, profileId);

@@ -111,6 +111,19 @@ export function NewProfileModal({ onCreate, onCancel }: Props) {
               e.target.style.border = "2.5px solid #e8e0d4";
             }}
           />
+          {/* v30-tap-fix: hint when no avatar selected yet */}
+          {!avatar && (
+            <p
+              style={{
+                fontSize: 11,
+                color: "#aaa",
+                margin: "6px 0 0",
+                textAlign: "center",
+              }}
+            >
+              Pick an emoji below 👆
+            </p>
+          )}
         </div>
 
         {/* Avatar picker */}
@@ -136,6 +149,8 @@ export function NewProfileModal({ onCreate, onCancel }: Props) {
               padding: 4,
               background: "#f5f0e8",
               borderRadius: 16,
+              border: avatar ? "3px solid transparent" : "3px solid #ff6b6b",
+              transition: "border 150ms",
             }}
           >
             {EMOJI_GRID.map(emoji => (
