@@ -67,9 +67,6 @@ interface PhysicsCircle extends Circle {
   pos: Vec2;
   // Velocity (px/frame at 60fps; multiplied by dt to be frame-rate independent)
   vel: Vec2;
-  // Angular position (for rotation animation when bouncing)
-  rot: number;
-  rotVel: number;
 }
 
 interface Ripple {
@@ -117,6 +114,12 @@ const WALL_BOUNCE = 0.7; // velocity retained on wall hit
 const COLLISION_BOUNCE = 0.85;
 const MIN_BOUNCE_VEL = 1.5; // below this, don't play collision sound
 const DRAG_THROW_MULTIPLIER = 1.0;
+
+// Sound cap: how many Audio elements can play at once. When a new one
+// would push us over, we stop the oldest first. This keeps the
+// audio from becoming a wall of overlapping chaos when many circles
+// bump at the same time.
+const MAX_CONCURRENT_SOUNDS = 4;
 
 function loadSettings(): Settings {
   try {
@@ -214,8 +217,6 @@ export default function PootBox() {
           y: cellH * row + cellH / 2,
         },
         vel: { x: 0, y: 0 },
-        rot: 0,
-        rotVel: 0,
       };
     });
   }, [size.w, size.h]);
@@ -244,16 +245,13 @@ export default function PootBox() {
         if (dragRef.current?.id === c.id) continue; // dragged circle follows pointer
         c.pos.x += c.vel.x * stepScale;
         c.pos.y += c.vel.y * stepScale;
-        c.rot += c.rotVel * stepScale;
         // Friction (frame-rate independent)
         const damp = Math.pow(FRICTION, stepScale);
         c.vel.x *= damp;
         c.vel.y *= damp;
-        c.rotVel *= damp;
         // Stop tiny velocities
         if (Math.abs(c.vel.x) < 0.05) c.vel.x = 0;
         if (Math.abs(c.vel.y) < 0.05) c.vel.y = 0;
-        if (Math.abs(c.rotVel) < 0.005) c.rotVel = 0;
       }
 
       // 2. Wall collisions
@@ -262,20 +260,16 @@ export default function PootBox() {
         if (c.pos.x - c.radius < 0) {
           c.pos.x = c.radius;
           c.vel.x = -c.vel.x * WALL_BOUNCE;
-          c.rotVel += (Math.random() - 0.5) * 0.1;
         } else if (c.pos.x + c.radius > w) {
           c.pos.x = w - c.radius;
           c.vel.x = -c.vel.x * WALL_BOUNCE;
-          c.rotVel += (Math.random() - 0.5) * 0.1;
         }
         if (c.pos.y - c.radius < 0) {
           c.pos.y = c.radius;
           c.vel.y = -c.vel.y * WALL_BOUNCE;
-          c.rotVel += (Math.random() - 0.5) * 0.1;
         } else if (c.pos.y + c.radius > h) {
           c.pos.y = h - c.radius;
           c.vel.y = -c.vel.y * WALL_BOUNCE;
-          c.rotVel += (Math.random() - 0.5) * 0.1;
         }
       }
 
@@ -331,12 +325,10 @@ export default function PootBox() {
             if (!aDragged2) {
               a.vel.x += impulse * nx;
               a.vel.y += impulse * ny;
-              a.rotVel += (Math.random() - 0.5) * 0.3;
             }
             if (!bDragged2) {
               b.vel.x -= impulse * nx;
               b.vel.y -= impulse * ny;
-              b.rotVel += (Math.random() - 0.5) * 0.3;
             }
             collisionsThisFrame.push({ a, b });
           }
@@ -388,14 +380,10 @@ export default function PootBox() {
   settingsRef.current = settings;
   const [, setTick] = useState(0);
 
-  // === Audio ===
-
   const playRandomFromCircle = useCallback(
     (circle: Circle) => {
       const sound = circle.sounds[Math.floor(Math.random() * circle.sounds.length)];
-      const a = new Audio(sound);
-      a.volume = settings.volume;
-      a.play().catch(() => {});
+      playWithCap(sound, settings.volume);
     },
     [settings.volume]
   );
@@ -404,9 +392,7 @@ export default function PootBox() {
   const playRandomFromCircleRef = useCallback(
     (circle: Circle, volume: number) => {
       const sound = circle.sounds[Math.floor(Math.random() * circle.sounds.length)];
-      const a = new Audio(sound);
-      a.volume = volume;
-      a.play().catch(() => {});
+      playWithCap(sound, volume);
     },
     []
   );
@@ -501,7 +487,6 @@ export default function PootBox() {
         for (const c of circlesRef.current) {
           c.vel.x += (Math.random() - 0.5) * 18;
           c.vel.y += (Math.random() - 0.5) * 18;
-          c.rotVel += (Math.random() - 0.5) * 0.4;
         }
       }
     };
@@ -609,7 +594,6 @@ export default function PootBox() {
           // Throw with velocity from drag (px/ms → px/frame at 60fps)
           circle.vel.x = drag.velocity.x * 16.67 * DRAG_THROW_MULTIPLIER;
           circle.vel.y = drag.velocity.y * 16.67 * DRAG_THROW_MULTIPLIER;
-          circle.rotVel += (Math.random() - 0.5) * 0.2;
         }
         dragRef.current = null;
       }
@@ -876,7 +860,7 @@ function CircleButton({
         boxShadow: pressed
           ? `0 2px 6px ${circle.shadow}, inset 0 2px 8px rgba(0,0,0,0.15)`
           : `0 6px 16px ${circle.shadow}, inset 0 -3px 0 rgba(0,0,0,0.08)`,
-        transform: `rotate(${circle.rot}rad) scale(${pressed ? 0.95 : hatched ? 1.15 : 1})`,
+        transform: `scale(${pressed ? 0.95 : hatched ? 1.15 : 1})`,
         transition: pressed
           ? "box-shadow 100ms ease-out, transform 100ms ease-out"
           : "box-shadow 200ms ease-out",
@@ -1058,4 +1042,45 @@ function SettingsModal({ settings, onChange, onClose }: SettingsModalProps) {
       </div>
     </div>
   );
+}
+
+
+// === Audio (with global concurrent-sound cap) ===
+//
+// Module-level LRU queue of currently playing Audio elements.
+// When a new play() would push us over MAX_CONCURRENT_SOUNDS,
+// we stop the oldest element first. This keeps the audio from
+// becoming a wall of overlapping chaos when many circles bump
+// at the same time.
+
+const activeAudioQueue: HTMLAudioElement[] = [];
+
+function playWithCap(sound: string, volume: number): void {
+  // If we'd exceed the cap, stop the oldest
+  while (activeAudioQueue.length >= MAX_CONCURRENT_SOUNDS) {
+    const oldest = activeAudioQueue.shift();
+    if (oldest) {
+      try {
+        oldest.pause();
+      } catch {
+        // ignore
+      }
+    }
+  }
+  const a = new Audio(sound);
+  a.volume = volume;
+  // Remove from queue when finished (either by 'ended' or by an error)
+  const remove = () => {
+    const idx = activeAudioQueue.indexOf(a);
+    if (idx !== -1) activeAudioQueue.splice(idx, 1);
+  };
+  a.addEventListener("ended", remove, { once: true });
+  a.addEventListener("error", remove, { once: true });
+  // Hard safety net: if 'ended' never fires (e.g. paused manually),
+  // remove after 10s
+  setTimeout(remove, 10_000);
+  activeAudioQueue.push(a);
+  a.play().catch(() => {
+    remove();
+  });
 }
