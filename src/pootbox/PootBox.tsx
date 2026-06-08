@@ -1,24 +1,23 @@
-// PootBox — minimal sound toy for kids. v36.
+// PootBox — minimal sound toy for kids. v37.
 //
-// v36: gyroscope (tilt) drift + tap-empty-to-push. More inputs, same rule:
-//      sound only on user-driven motion. Drift between idle emojis is silent.
-// v35: zero-G floating. No gravity, soft walls. Sound only on user touch.
-// v34: staggered drop-in animation.
-// v33: emojis on cream background, no circles.
+// v37: "floating in water" mode. Toned down everything.
+//      Stronger friction, smaller deadzone, gentler taps, half throws.
+// v36: gyroscope (tilt) drift + tap-empty-to-push. More inputs, same rule.
+// v35: zero-G floating.
+// v34: staggered drop-in.
+// v33: emojis on cream background.
 // v32: physics-based drag/throw/collide.
-// v31: grid layout, no physics.
+// v31: grid layout.
 //
 // 4 user inputs, all "user-driven":
 //   1. Tap emoji        → its sound
-//   2. Drag/throw emoji → it + any circle it bumps (within 600ms of release)
-//   3. Hold emoji 1.5s  → hatches a small animal, plays emoji sound
-//   4. Tilt phone       → emojis drift in tilt direction (above 8° deadzone)
-//                         collisions while tilting play sounds
-//   5. Tap empty space  → radial push from tap point (160px radius)
-//                         collisions from this push play sounds
-//   6. Shake phone      → random impulse on all + sounds
+//   2. Drag/throw emoji → it + any circle it bumps (gentler throw)
+//   3. Hold emoji 1.5s  → hatches a small animal
+//   4. Tilt phone       → emojis drift (gentle, wider deadzone)
+//   5. Tap empty space  → soft radial push from tap point
+//   6. Shake phone      → ripple (small impulse)
 //
-// Pure drift between two resting emojis is silent. No sound chaos.
+// Pure drift between two resting emojis is silent. Water-floating feel.
 //
 // Physics: requestAnimationFrame loop, 60fps. Each circle has:
 //   - x, y (px from top-left of canvas)
@@ -128,18 +127,18 @@ const DEFAULT_SETTINGS: Settings = {
 const SETTINGS_KEY = "pootbox-settings-v1";
 const HIDDEN_LONG_PRESS_MS = 5000;
 const HATCH_HOLD_MS = 1500;
-const FRICTION = 0.97; // velocity damping per frame (zero-g drift slow-down)
-const WALL_BOUNCE = 0.15; // very soft wall — they just nudge, no ricochet
-const COLLISION_BOUNCE = 0.2; // soft push on touch, no clack
-const DRAG_THROW_MULTIPLIER = 1.0;
-const TILT_DEADZONE = 8; // |beta|+|gamma| below this = no tilt (filter hand jitter)
-const TILT_MAX_DEG = 50; // tilt at this angle = max drift speed
-const TILT_DRIFT_MAX = 0.7; // px/frame at max tilt — gentle
-const TILT_RECENT_MS = 800; // collision sound if either circle tilted within this window
-const TOUCH_RECENT_MS = 600; // collision sound if either circle touched within this window
-const TAP_PUSH_RADIUS = 160; // px — tap on empty pushes emojis within this radius
-const TAP_PUSH_MAX = 6; // px/frame velocity at center of tap (radial out)
-const TAP_PUSH_RECENT_MS = 400; // collision sound if either circle was tap-pushed recently
+const FRICTION = 0.94; // stronger friction — settles faster in zero-g
+const WALL_BOUNCE = 0.05; // almost no wall bounce, just barely a nudge
+const COLLISION_BOUNCE = 0.08; // very soft push — feels like jelly, not balls
+const DRAG_THROW_MULTIPLIER = 0.5; // half-strength throws
+const TILT_DEADZONE = 12; // wider deadzone — only real tilts register
+const TILT_MAX_DEG = 60; // need a bigger tilt to max out
+const TILT_DRIFT_MAX = 0.18; // very gentle drift (was 0.7 — ~4x weaker)
+const TILT_RECENT_MS = 600; // collision sound window
+const TOUCH_RECENT_MS = 500; // collision sound window
+const TAP_PUSH_RADIUS = 130; // smaller push radius
+const TAP_PUSH_MAX = 2; // much gentler push (was 6 — ~3x weaker)
+const TAP_PUSH_RECENT_MS = 350;
 
 function loadSettings(): Settings {
   try {
@@ -239,9 +238,9 @@ export default function PootBox() {
       // Random position anywhere in the canvas (with padding so circles aren't half off-screen)
       const x = c.radius + Math.random() * (size.w - c.radius * 2);
       const y = c.radius + Math.random() * (size.h - c.radius * 2);
-      // Small outward velocity from center — just enough to feel alive
+      // Tiny initial velocity — water-floating, not darting around
       const angle = Math.random() * Math.PI * 2;
-      const speed = 0.4 + Math.random() * 0.6;
+      const speed = 0.1 + Math.random() * 0.2;
       return {
         ...c,
         pos: { x, y },
@@ -547,11 +546,12 @@ export default function PootBox() {
         lastShakeAtRef.current = now;
         setShaking(true);
         setTimeout(() => setShaking(false), 600);
-        // Apply random impulse to all circles (and mark them as touched
-        // so the resulting collisions make sound)
+        // Apply random impulse to all circles (gentle — they should ripple
+        // around like water, not explode). Marked as touched so the resulting
+        // collisions make sound.
         for (const c of circlesRef.current) {
-          c.vel.x += (Math.random() - 0.5) * 18;
-          c.vel.y += (Math.random() - 0.5) * 18;
+          c.vel.x += (Math.random() - 0.5) * 5;
+          c.vel.y += (Math.random() - 0.5) * 5;
           c.lastTouchedAt = now;
         }
       }
