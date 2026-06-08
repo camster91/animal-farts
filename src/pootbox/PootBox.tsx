@@ -1,17 +1,24 @@
-// PootBox — minimal sound toy for kids. v35.
+// PootBox — minimal sound toy for kids. v36.
 //
-// v35: zero-G floating. No gravity, soft walls, gentle drift nudge.
-//      Sound ONLY on user touch (not on drift collision).
-// v34: staggered drop-in animation. Balls fall from above, settle on floor.
-// v33: emojis float on cream background (no colored circles).
-// v32: Sago Mini Sound Box-style physics — drag, throw, bounce, collide.
+// v36: gyroscope (tilt) drift + tap-empty-to-push. More inputs, same rule:
+//      sound only on user-driven motion. Drift between idle emojis is silent.
+// v35: zero-G floating. No gravity, soft walls. Sound only on user touch.
+// v34: staggered drop-in animation.
+// v33: emojis on cream background, no circles.
+// v32: physics-based drag/throw/collide.
 // v31: grid layout, no physics.
 //
-// On mount, each emoji starts at a random canvas position with a small
-// outward velocity. Friction slows them. Walls bounce softly. Every 4s,
-// a tiny random nudge keeps the field alive. Sound plays only when the
-// user is touching an emoji (drag/tap/throw/shake within last 600ms).
-// Drift collisions are silent and spark-less — just gentle nudging.
+// 4 user inputs, all "user-driven":
+//   1. Tap emoji        → its sound
+//   2. Drag/throw emoji → it + any circle it bumps (within 600ms of release)
+//   3. Hold emoji 1.5s  → hatches a small animal, plays emoji sound
+//   4. Tilt phone       → emojis drift in tilt direction (above 8° deadzone)
+//                         collisions while tilting play sounds
+//   5. Tap empty space  → radial push from tap point (160px radius)
+//                         collisions from this push play sounds
+//   6. Shake phone      → random impulse on all + sounds
+//
+// Pure drift between two resting emojis is silent. No sound chaos.
 //
 // Physics: requestAnimationFrame loop, 60fps. Each circle has:
 //   - x, y (px from top-left of canvas)
@@ -70,10 +77,15 @@ interface PhysicsCircle extends Circle {
   pos: Vec2;
   // Velocity (px/frame at 60fps; multiplied by dt to be frame-rate independent)
   vel: Vec2;
-  // Last time (performance.now ms) this circle was touched by the user.
-  // Used to gate collision sounds: only play if either circle was touched
-  // recently (within TOUCH_RECENT_MS). -1 = never touched.
+  // Last time (performance.now ms) this circle was directly touched by the user
+  // (tap, drag, throw, hatch). -1 = never touched.
   lastTouchedAt: number;
+  // Last time the phone was tilted and this circle was affected by the tilt.
+  // Tracks whether recent collision is "user-driven" via tilt.
+  lastTiltedAt: number;
+  // Last time the user tapped empty space and this circle was within
+  // the tap-push radius.
+  lastTapPushedAt: number;
 }
 
 interface Ripple {
@@ -116,13 +128,18 @@ const DEFAULT_SETTINGS: Settings = {
 const SETTINGS_KEY = "pootbox-settings-v1";
 const HIDDEN_LONG_PRESS_MS = 5000;
 const HATCH_HOLD_MS = 1500;
-const FRICTION = 0.96; // velocity damping per frame (zero-g drift slow-down)
+const FRICTION = 0.97; // velocity damping per frame (zero-g drift slow-down)
 const WALL_BOUNCE = 0.15; // very soft wall — they just nudge, no ricochet
 const COLLISION_BOUNCE = 0.2; // soft push on touch, no clack
 const DRAG_THROW_MULTIPLIER = 1.0;
-const DRIFT_NUDGE_INTERVAL_MS = 4000; // gentle push every 4s so they keep drifting
-const DRIFT_NUDGE_MAX = 0.4; // px/frame — small
-const TOUCH_RECENT_MS = 600; // collision sound only if either circle touched within 600ms
+const TILT_DEADZONE = 8; // |beta|+|gamma| below this = no tilt (filter hand jitter)
+const TILT_MAX_DEG = 50; // tilt at this angle = max drift speed
+const TILT_DRIFT_MAX = 0.7; // px/frame at max tilt — gentle
+const TILT_RECENT_MS = 800; // collision sound if either circle tilted within this window
+const TOUCH_RECENT_MS = 600; // collision sound if either circle touched within this window
+const TAP_PUSH_RADIUS = 160; // px — tap on empty pushes emojis within this radius
+const TAP_PUSH_MAX = 6; // px/frame velocity at center of tap (radial out)
+const TAP_PUSH_RECENT_MS = 400; // collision sound if either circle was tap-pushed recently
 
 function loadSettings(): Settings {
   try {
@@ -164,8 +181,15 @@ export default function PootBox() {
   const rafRef = useRef<number | null>(null);
   const lastFrameRef = useRef<number>(0);
   const lastShakeAtRef = useRef<number>(0);
-  const lastDriftNudgeAtRef = useRef<number>(0);
   const collisionCooldownRef = useRef<Map<string, number>>(new Map());
+  // Current phone tilt (radians, from DeviceOrientationEvent).
+  // beta = front-back tilt, gamma = left-right tilt. 0 = flat.
+  // Updated by the orientation listener; read by the physics loop.
+  const tiltRef = useRef<{ beta: number; gamma: number; hasPermission: boolean }>({
+    beta: 0,
+    gamma: 0,
+    hasPermission: false,
+  });
 
   // Refs for drag
   const dragRef = useRef<{
@@ -223,6 +247,8 @@ export default function PootBox() {
         pos: { x, y },
         vel: { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed },
         lastTouchedAt: -1,
+        lastTiltedAt: -1,
+        lastTapPushedAt: -1,
       };
     });
   }, [size.w, size.h]);
@@ -260,17 +286,29 @@ export default function PootBox() {
         if (Math.abs(c.vel.y) < 0.05) c.vel.y = 0;
       }
 
-      // 1.5 Periodic gentle drift nudge — keeps the field alive when
-      // everything has settled. Only applies if vel is already near zero
-      // and the circle isn't being touched.
-      if (now - lastDriftNudgeAtRef.current > DRIFT_NUDGE_INTERVAL_MS) {
-        lastDriftNudgeAtRef.current = now;
+      // 1.5 Tilt drift — phone tilt becomes a global acceleration vector.
+      // No tilt = no force. Tilt above TILT_DEADZONE = linear ramp up to
+      // TILT_DRIFT_MAX at TILT_MAX_DEG. Below deadzone = completely silent
+      // (so a hand-held-but-level phone doesn't drift).
+      const tilt = tiltRef.current;
+      const absBeta = Math.abs(tilt.beta);
+      const absGamma = Math.abs(tilt.gamma);
+      const totalTilt = absBeta + absGamma;
+      if (totalTilt > TILT_DEADZONE) {
+        // Linear ramp: 0 at deadzone, 1 at maxDeg
+        const ramp = Math.min(
+          1,
+          (totalTilt - TILT_DEADZONE) / Math.max(1, TILT_MAX_DEG - TILT_DEADZONE)
+        );
+        // Direction: sign of gamma = x, sign of beta = y (portrait phone)
+        // Tilt right (gamma > 0) → drift right (+x). Tilt forward (beta > 0) → drift down (+y).
+        const ax = Math.sign(tilt.gamma) * TILT_DRIFT_MAX * ramp * stepScale;
+        const ay = Math.sign(tilt.beta) * TILT_DRIFT_MAX * ramp * stepScale;
         for (const c of circles) {
           if (dragRef.current?.id === c.id) continue;
-          if (Math.abs(c.vel.x) + Math.abs(c.vel.y) < 0.5) {
-            c.vel.x += (Math.random() - 0.5) * DRIFT_NUDGE_MAX;
-            c.vel.y += (Math.random() - 0.5) * DRIFT_NUDGE_MAX;
-          }
+          c.vel.x += ax;
+          c.vel.y += ay;
+          c.lastTiltedAt = now;
         }
       }
 
@@ -355,23 +393,30 @@ export default function PootBox() {
         }
       }
 
-      // 4. Play collision sounds ONLY when a user is touching at least one
-      // of the pair. Otherwise it's just two emojis drifting into each
-      // other in zero-G — silent. Also requires a per-pair cooldown so a
-      // dragged emoji through a cluster doesn't spam 12 sounds at once.
+      // 4. Play collision sounds when a user is driving the motion —
+      // either direct touch (tap/drag/throw/hatch), tilt (the user is
+      // angling the phone), or tap-push (user poked empty space).
+      // Pure drift between two resting emojis is silent and spark-less.
       if (collisionsThisFrame.length > 0) {
         for (const { a, b } of collisionsThisFrame) {
-          const aTouched = now - a.lastTouchedAt < TOUCH_RECENT_MS;
-          const bTouched = now - b.lastTouchedAt < TOUCH_RECENT_MS;
-          if (!aTouched && !bTouched) continue; // silent drift
+          const aUser =
+            now - a.lastTouchedAt < TOUCH_RECENT_MS ||
+            now - a.lastTiltedAt < TILT_RECENT_MS ||
+            now - a.lastTapPushedAt < TAP_PUSH_RECENT_MS;
+          const bUser =
+            now - b.lastTouchedAt < TOUCH_RECENT_MS ||
+            now - b.lastTiltedAt < TILT_RECENT_MS ||
+            now - b.lastTapPushedAt < TAP_PUSH_RECENT_MS;
+          if (!aUser && !bUser) continue; // silent drift
           const key = [a.id, b.id].sort().join("|");
           const last = collisionCooldownRef.current.get(key) ?? 0;
           if (now - last < 400) continue; // 400ms per-pair cooldown
           collisionCooldownRef.current.set(key, now);
-          if (aTouched) playRandomFromCircleRef(a, settingsRef.current.volume);
-          if (bTouched) playRandomFromCircleRef(b, settingsRef.current.volume);
-          // Spawn a small spark if user is touching (visual confirmation)
-          if (aTouched || bTouched) {
+          // Play sound on the user-driven circle(s) only
+          if (aUser) playRandomFromCircleRef(a, settingsRef.current.volume);
+          if (bUser) playRandomFromCircleRef(b, settingsRef.current.volume);
+          // Spark if user is driving (visual confirmation)
+          if (aUser || bUser) {
             spawnSparksAtRef.current(
               (a.pos.x + b.pos.x) / 2,
               (a.pos.y + b.pos.y) / 2,
@@ -515,6 +560,46 @@ export default function PootBox() {
     return () => window.removeEventListener("devicemotion", handler);
   }, []);
 
+  // === Tilt (deviceorientation) — drives the drift vector ===
+  //
+  // iOS Safari 13+ requires explicit user permission to read deviceorientation.
+  // We request it lazily on the first user interaction (a tap on the canvas
+  // anywhere). On Android/desktop/no-permission-needed, the listener just works.
+  //
+  // beta: front-back tilt in degrees (-180..180, 0 = flat on a table)
+  // gamma: left-right tilt in degrees (-90..90, 0 = flat)
+  // Portrait phone, held upright, screen toward user:
+  //   - tilt right (right side down) → gamma goes positive
+  //   - tilt forward (top of phone away) → beta goes positive
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = (e: DeviceOrientationEvent) => {
+      if (e.beta === null || e.gamma === null) return;
+      tiltRef.current.beta = e.beta;
+      tiltRef.current.gamma = e.gamma;
+    };
+    window.addEventListener("deviceorientation", handler);
+    return () => window.removeEventListener("deviceorientation", handler);
+  }, []);
+
+  // iOS-specific permission request. Called from a user gesture (first touch).
+  const requestOrientationPermission = useCallback(async () => {
+    const cls = (window as unknown as {
+      DeviceOrientationEvent?: { requestPermission?: () => Promise<"granted" | "denied"> };
+    }).DeviceOrientationEvent;
+    if (cls && typeof cls.requestPermission === "function") {
+      try {
+        const result = await cls.requestPermission();
+        tiltRef.current.hasPermission = result === "granted";
+      } catch {
+        tiltRef.current.hasPermission = false;
+      }
+    } else {
+      // Non-iOS or already-granted: assume permission is implicit
+      tiltRef.current.hasPermission = true;
+    }
+  }, []);
+
   // === Drag handlers ===
 
   const onCirclePointerDown = useCallback(
@@ -530,6 +615,11 @@ export default function PootBox() {
         }
       }
       setPressedId(id);
+
+      // Request iOS tilt permission on first touch (idempotent, no-op on others)
+      if (!tiltRef.current.hasPermission) {
+        void requestOrientationPermission();
+      }
 
       const circle = circlesRef.current.find((c) => c.id === id);
       if (!circle) return;
@@ -648,6 +738,35 @@ export default function PootBox() {
 
   const onBlankPointerDown = useCallback((e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest("[data-circle]")) return;
+
+    // Request iOS tilt permission on first touch (idempotent)
+    if (!tiltRef.current.hasPermission) {
+      void requestOrientationPermission();
+    }
+
+    // Radial push: any circle within TAP_PUSH_RADIUS gets pushed away
+    // from the tap point, scaled by inverse distance. Marked as
+    // tap-pushed so the resulting collisions make sound.
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const rect = canvas.getBoundingClientRect();
+      const tx = e.clientX - rect.left;
+      const ty = e.clientY - rect.top;
+      const now = performance.now();
+      for (const c of circlesRef.current) {
+        const dx = c.pos.x - tx;
+        const dy = c.pos.y - ty;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < TAP_PUSH_RADIUS && dist > 0.001) {
+          const ramp = 1 - dist / TAP_PUSH_RADIUS; // 1 at center, 0 at edge
+          const push = TAP_PUSH_MAX * ramp;
+          c.vel.x += (dx / dist) * push;
+          c.vel.y += (dy / dist) * push;
+          c.lastTapPushedAt = now;
+        }
+      }
+    }
+
     blankHoldStartPos.current = { x: e.clientX, y: e.clientY };
     blankHoldStartT.current = Date.now();
     if (blankHoldTimer.current) window.clearTimeout(blankHoldTimer.current);
@@ -655,7 +774,7 @@ export default function PootBox() {
       setShowSettings(true);
       blankHoldTimer.current = null;
     }, HIDDEN_LONG_PRESS_MS);
-  }, []);
+  }, [requestOrientationPermission]);
 
   const onBlankPointerMove = useCallback((e: React.PointerEvent) => {
     if (!blankHoldStartPos.current) return;
