@@ -1,14 +1,17 @@
-// PootBox — minimal sound toy for kids. v34.
+// PootBox — minimal sound toy for kids. v35.
 //
+// v35: zero-G floating. No gravity, soft walls, gentle drift nudge.
+//      Sound ONLY on user touch (not on drift collision).
 // v34: staggered drop-in animation. Balls fall from above, settle on floor.
 // v33: emojis float on cream background (no colored circles).
 // v32: Sago Mini Sound Box-style physics — drag, throw, bounce, collide.
 // v31: grid layout, no physics.
 //
-// On mount, each emoji is held off-screen at (-radius, -60) and becomes
-// "alive" at i * 130ms (staggered). Once alive, gravity pulls it down.
-// It bounces off the floor and other circles, then settles (vel ≈ 0).
-// Drag still works at any time. Drag/throw/collision re-activates physics.
+// On mount, each emoji starts at a random canvas position with a small
+// outward velocity. Friction slows them. Walls bounce softly. Every 4s,
+// a tiny random nudge keeps the field alive. Sound plays only when the
+// user is touching an emoji (drag/tap/throw/shake within last 600ms).
+// Drift collisions are silent and spark-less — just gentle nudging.
 //
 // Physics: requestAnimationFrame loop, 60fps. Each circle has:
 //   - x, y (px from top-left of canvas)
@@ -67,17 +70,10 @@ interface PhysicsCircle extends Circle {
   pos: Vec2;
   // Velocity (px/frame at 60fps; multiplied by dt to be frame-rate independent)
   vel: Vec2;
-  // Spawn timing: when the emoji starts falling (perf.now ms).
-  // Before this, pos is held at (-radius, -radius) (off-screen).
-  spawnAt: number;
-  // True once the circle has been "alive" long enough to be visible.
-  spawned: boolean;
-  // True once the circle has come to rest on the floor (no more physics
-  // applied to it). Set in the physics loop after vy ≈ 0 and y near floor.
-  settled: boolean;
-  // Tiny horizontal target x — the column the ball "wants" to settle in.
-  // It actually lands slightly off this so the pile doesn't look perfect.
-  targetX: number;
+  // Last time (performance.now ms) this circle was touched by the user.
+  // Used to gate collision sounds: only play if either circle was touched
+  // recently (within TOUCH_RECENT_MS). -1 = never touched.
+  lastTouchedAt: number;
 }
 
 interface Ripple {
@@ -120,16 +116,13 @@ const DEFAULT_SETTINGS: Settings = {
 const SETTINGS_KEY = "pootbox-settings-v1";
 const HIDDEN_LONG_PRESS_MS = 5000;
 const HATCH_HOLD_MS = 1500;
-const FRICTION = 0.985; // velocity damping per frame
-const WALL_BOUNCE = 0.7; // velocity retained on wall hit
-const COLLISION_BOUNCE = 0.85;
-const MIN_BOUNCE_VEL = 1.5; // below this, don't play collision sound
+const FRICTION = 0.96; // velocity damping per frame (zero-g drift slow-down)
+const WALL_BOUNCE = 0.15; // very soft wall — they just nudge, no ricochet
+const COLLISION_BOUNCE = 0.2; // soft push on touch, no clack
 const DRAG_THROW_MULTIPLIER = 1.0;
-const GRAVITY = 0.45; // px/frame² — pulls falling emojis down
-const SPAWN_STAGGER_MS = 130; // delay between each emoji dropping
-const SPAWN_HEIGHT = 60; // start this many px above the top of the canvas
-const SETTLE_VEL_THRESHOLD = 0.4; // below this + near floor = settled
-const SETTLE_FLOOR_DIST = 6; // within this many px of bottom = near floor
+const DRIFT_NUDGE_INTERVAL_MS = 4000; // gentle push every 4s so they keep drifting
+const DRIFT_NUDGE_MAX = 0.4; // px/frame — small
+const TOUCH_RECENT_MS = 600; // collision sound only if either circle touched within 600ms
 
 function loadSettings(): Settings {
   try {
@@ -171,6 +164,7 @@ export default function PootBox() {
   const rafRef = useRef<number | null>(null);
   const lastFrameRef = useRef<number>(0);
   const lastShakeAtRef = useRef<number>(0);
+  const lastDriftNudgeAtRef = useRef<number>(0);
   const collisionCooldownRef = useRef<Map<string, number>>(new Map());
 
   // Refs for drag
@@ -212,26 +206,23 @@ export default function PootBox() {
 
   useEffect(() => {
     if (size.w === 0 || size.h === 0) return;
-    // v34: staggered drop-in animation. Each emoji starts off-screen
-    // (held at -radius), then becomes "alive" at spawnAt = now + i*SPAWN_STAGGER_MS.
-    // Once alive, gravity pulls it down. The physics loop handles the rest.
-    // On respawn (already-initialized), don't reset the circles — they keep
-    // their current positions so the layout is stable across screen rotations.
+    // v35: zero-g drift. No drop, no settle. Each emoji starts somewhere
+    // on the canvas with a small random velocity, so they float and
+    // gently nudge each other out of the way.
+    // Skip if already initialized (rotation / resize shouldn't reset).
     if (circlesRef.current.length > 0) return;
-    const now = performance.now();
-    circlesRef.current = CIRCLES.map((c, i) => {
-      // Target X = spread evenly across width with small jitter
-      const colCount = 4;
-      const col = i % colCount;
-      const targetX = ((col + 0.5) / colCount) * size.w + (Math.random() - 0.5) * 20;
+    circlesRef.current = CIRCLES.map((c) => {
+      // Random position anywhere in the canvas (with padding so circles aren't half off-screen)
+      const x = c.radius + Math.random() * (size.w - c.radius * 2);
+      const y = c.radius + Math.random() * (size.h - c.radius * 2);
+      // Small outward velocity from center — just enough to feel alive
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 0.4 + Math.random() * 0.6;
       return {
         ...c,
-        pos: { x: targetX, y: -c.radius - SPAWN_HEIGHT },
-        vel: { x: 0, y: 0 },
-        spawnAt: now + i * SPAWN_STAGGER_MS,
-        spawned: false,
-        settled: false,
-        targetX,
+        pos: { x, y },
+        vel: { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed },
+        lastTouchedAt: -1,
       };
     });
   }, [size.w, size.h]);
@@ -255,26 +246,12 @@ export default function PootBox() {
       const h = size.h;
       const collisionsThisFrame: { a: PhysicsCircle; b: PhysicsCircle }[] = [];
 
-      // 1. Integrate position
+      // 1. Integrate position (zero-G: no gravity, just velocity + friction)
       for (const c of circles) {
         if (dragRef.current?.id === c.id) continue; // dragged circle follows pointer
-        // Not yet spawned — hold off-screen at the spawn point. Don't apply physics.
-        if (!c.spawned) {
-          if (now >= c.spawnAt) {
-            c.spawned = true;
-            // Tiny initial downward velocity for a satisfying start
-            c.vel.y = 1;
-          } else {
-            continue;
-          }
-        }
-        // Settled — no more physics. The circle is at rest on the floor.
-        if (c.settled) continue;
-        // Gravity (frame-rate independent)
-        c.vel.y += GRAVITY * stepScale;
         c.pos.x += c.vel.x * stepScale;
         c.pos.y += c.vel.y * stepScale;
-        // Friction (frame-rate independent)
+        // Friction (frame-rate independent) — slows them toward stillness
         const damp = Math.pow(FRICTION, stepScale);
         c.vel.x *= damp;
         c.vel.y *= damp;
@@ -283,7 +260,21 @@ export default function PootBox() {
         if (Math.abs(c.vel.y) < 0.05) c.vel.y = 0;
       }
 
-      // 2. Wall collisions
+      // 1.5 Periodic gentle drift nudge — keeps the field alive when
+      // everything has settled. Only applies if vel is already near zero
+      // and the circle isn't being touched.
+      if (now - lastDriftNudgeAtRef.current > DRIFT_NUDGE_INTERVAL_MS) {
+        lastDriftNudgeAtRef.current = now;
+        for (const c of circles) {
+          if (dragRef.current?.id === c.id) continue;
+          if (Math.abs(c.vel.x) + Math.abs(c.vel.y) < 0.5) {
+            c.vel.x += (Math.random() - 0.5) * DRIFT_NUDGE_MAX;
+            c.vel.y += (Math.random() - 0.5) * DRIFT_NUDGE_MAX;
+          }
+        }
+      }
+
+      // 2. Wall collisions — very soft, just keeps them on screen
       for (const c of circles) {
         if (dragRef.current?.id === c.id) continue;
         if (c.pos.x - c.radius < 0) {
@@ -299,27 +290,6 @@ export default function PootBox() {
         } else if (c.pos.y + c.radius > h) {
           c.pos.y = h - c.radius;
           c.vel.y = -c.vel.y * WALL_BOUNCE;
-        }
-      }
-
-      // 2.5 Settle resting circles (no more physics once they come to rest)
-      // A circle settles when:
-      //   - it's spawned
-      //   - it's near the bottom (or sitting on another circle)
-      //   - its velocity is small
-      //   - it's been at rest for ~250ms (a few frames)
-      // We use a per-circle "settle time" tracked by their lastFrameY/vel.
-      // Cheap heuristic: if vy is tiny AND y is near h-radius, settle.
-      for (const c of circles) {
-        if (!c.spawned || c.settled) continue;
-        if (dragRef.current?.id === c.id) continue;
-        const onFloor = c.pos.y + c.radius >= h - SETTLE_FLOOR_DIST;
-        const slowEnough = Math.abs(c.vel.y) < SETTLE_VEL_THRESHOLD &&
-          Math.abs(c.vel.x) < SETTLE_VEL_THRESHOLD;
-        if (onFloor && slowEnough) {
-          c.settled = true;
-          c.vel.x = 0;
-          c.vel.y = 0;
         }
       }
 
@@ -375,47 +345,39 @@ export default function PootBox() {
             if (!aDragged2) {
               a.vel.x += impulse * nx;
               a.vel.y += impulse * ny;
-              // Bumped → un-settle so the new velocity can resolve.
-              if (Math.abs(impulse * nx) > 0.5 || Math.abs(impulse * ny) > 0.5) {
-                a.settled = false;
-              }
             }
             if (!bDragged2) {
               b.vel.x -= impulse * nx;
               b.vel.y -= impulse * ny;
-              if (Math.abs(impulse * nx) > 0.5 || Math.abs(impulse * ny) > 0.5) {
-                b.settled = false;
-              }
             }
             collisionsThisFrame.push({ a, b });
           }
         }
       }
 
-      // 4. Play collision sounds (with per-pair cooldown to avoid spam)
+      // 4. Play collision sounds ONLY when a user is touching at least one
+      // of the pair. Otherwise it's just two emojis drifting into each
+      // other in zero-G — silent. Also requires a per-pair cooldown so a
+      // dragged emoji through a cluster doesn't spam 12 sounds at once.
       if (collisionsThisFrame.length > 0) {
         for (const { a, b } of collisionsThisFrame) {
+          const aTouched = now - a.lastTouchedAt < TOUCH_RECENT_MS;
+          const bTouched = now - b.lastTouchedAt < TOUCH_RECENT_MS;
+          if (!aTouched && !bTouched) continue; // silent drift
           const key = [a.id, b.id].sort().join("|");
           const last = collisionCooldownRef.current.get(key) ?? 0;
-          if (now - last < 250) continue; // 250ms per-pair cooldown
+          if (now - last < 400) continue; // 400ms per-pair cooldown
           collisionCooldownRef.current.set(key, now);
-          // Only play sound if collision is hard enough
-          const dx = b.pos.x - a.pos.x;
-          const dy = b.pos.y - a.pos.y;
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const nx = dx / dist;
-          const ny = dy / dist;
-          const relVel =
-            Math.abs((b.vel.x - a.vel.x) * nx + (b.vel.y - a.vel.y) * ny);
-          if (relVel < MIN_BOUNCE_VEL) continue;
-          playRandomFromCircleRef(a, settingsRef.current.volume);
-          playRandomFromCircleRef(b, settingsRef.current.volume);
-          // Spawn sparks
-          spawnSparksAtRef.current(
-            (a.pos.x + b.pos.x) / 2,
-            (a.pos.y + b.pos.y) / 2,
-            a.color
-          );
+          if (aTouched) playRandomFromCircleRef(a, settingsRef.current.volume);
+          if (bTouched) playRandomFromCircleRef(b, settingsRef.current.volume);
+          // Spawn a small spark if user is touching (visual confirmation)
+          if (aTouched || bTouched) {
+            spawnSparksAtRef.current(
+              (a.pos.x + b.pos.x) / 2,
+              (a.pos.y + b.pos.y) / 2,
+              a.color
+            );
+          }
         }
       }
 
@@ -540,11 +502,12 @@ export default function PootBox() {
         lastShakeAtRef.current = now;
         setShaking(true);
         setTimeout(() => setShaking(false), 600);
-        // Apply random impulse to all circles (and un-settle them so they move)
+        // Apply random impulse to all circles (and mark them as touched
+        // so the resulting collisions make sound)
         for (const c of circlesRef.current) {
           c.vel.x += (Math.random() - 0.5) * 18;
           c.vel.y += (Math.random() - 0.5) * 18;
-          c.settled = false;
+          c.lastTouchedAt = now;
         }
       }
     };
@@ -570,6 +533,9 @@ export default function PootBox() {
 
       const circle = circlesRef.current.find((c) => c.id === id);
       if (!circle) return;
+
+      // Mark touched (used to gate collision sounds — see physics loop)
+      circle.lastTouchedAt = performance.now();
 
       // Play sound on touch-down (gives iOS instant feedback)
       playRandomFromCircle(circle);
@@ -610,6 +576,8 @@ export default function PootBox() {
 
       // Track velocity (px per ms)
       const now = performance.now();
+      // Keep lastTouchedAt fresh while the user is dragging
+      circle.lastTouchedAt = now;
       const dt = now - drag.lastT;
       if (dt > 0) {
         // Smoothed velocity
@@ -652,8 +620,9 @@ export default function PootBox() {
           // Throw with velocity from drag (px/ms → px/frame at 60fps)
           circle.vel.x = drag.velocity.x * 16.67 * DRAG_THROW_MULTIPLIER;
           circle.vel.y = drag.velocity.y * 16.67 * DRAG_THROW_MULTIPLIER;
-          // Thrown → un-settle so the new velocity is honored.
-          circle.settled = false;
+          // Keep lastTouchedAt fresh on release so the throw's collisions
+          // still count as user-initiated for the TOUCH_RECENT_MS window.
+          circle.lastTouchedAt = performance.now();
         }
         dragRef.current = null;
       }
@@ -670,7 +639,7 @@ export default function PootBox() {
     }
     if (dragRef.current?.id === id) {
       const circle = circlesRef.current.find((c) => c.id === id);
-      if (circle) circle.settled = false;
+      if (circle) circle.lastTouchedAt = performance.now();
       dragRef.current = null;
     }
   }, []);
