@@ -1,17 +1,14 @@
-// PootBox — minimal sound toy for kids. v32.
+// PootBox — minimal sound toy for kids. v33.
 //
-// Sago Mini Sound Box-style physics:
-//   - 12 colored ovals, free placement on a cream background
-//   - Drag a circle to move it. Release to throw (velocity from finger motion).
-//   - Circles bounce off walls with damping.
-//   - Circles collide with each other — collision plays both sounds
-//     and produces a small spark burst.
-//   - Tap (no drag) = just plays the sound + ripple.
-//   - Hold 1.5s = grows and hatches an animal (same as v31).
-//   - Shake (devicemotion > 22 mag) = applies random impulse to all circles.
-//   - Hidden settings: tap-hold-5s on blank area opens a tiny settings modal.
+// v33: emojis float on cream background (no colored circles).
+// v32: Sago Mini Sound Box-style physics — drag, throw, bounce, collide.
+// v31: grid layout, no physics.
 //
-// Replaces v31 (grid-based, no physics). v32 adds free physics.
+// Each emoji = one physics object. radius = collision/hit size. emoji
+// renders at 1.4× radius for finger forgiveness. Tap = sound + ripple.
+// Drag = move. Release = throw. Bounce off walls. Collide with each
+// other (both sounds + spark). Hold 1.5s = grow + hatch a small animal.
+// Shake (devicemotion) = random impulse on all. Hidden 5s settings.
 //
 // Physics: requestAnimationFrame loop, 60fps. Each circle has:
 //   - x, y (px from top-left of canvas)
@@ -40,19 +37,22 @@ interface Circle {
   mass: number; // mass for collisions (proportional to radius²)
 }
 
+// v33: emojis only, no colored circles. Cream background, physics-driven
+// emojis. Each emoji = single object, radius covers physics + hit area + visual.
+// (Previous version had separate "color circle" + emoji; v33 drops the circle.)
 const CIRCLES: Circle[] = [
-  { id: "cow", emoji: "🐄", color: "#FFD66B", shadow: "rgba(255, 214, 107, 0.4)", hatchEmoji: "🐦", sounds: ["/sounds/cow.mp3", "/sounds/v1/cow.mp3"], radius: 64, mass: 1 },
-  { id: "dog", emoji: "🐕", color: "#FF9FB5", shadow: "rgba(255, 159, 181, 0.4)", hatchEmoji: "🦋", sounds: ["/sounds/dog.mp3", "/sounds/v1/dog.mp3"], radius: 60, mass: 1 },
-  { id: "cat", emoji: "🐈", color: "#A8D8FF", shadow: "rgba(168, 216, 255, 0.4)", hatchEmoji: "🐟", sounds: ["/sounds/cat.mp3", "/sounds/v1/cat.mp3"], radius: 58, mass: 1 },
-  { id: "pig", emoji: "🐖", color: "#B4E5C2", shadow: "rgba(180, 229, 194, 0.4)", hatchEmoji: "🐛", sounds: ["/sounds/pig.mp3", "/sounds/extra/pig.mp3"], radius: 62, mass: 1 },
-  { id: "duck", emoji: "🦆", color: "#D4BFFF", shadow: "rgba(212, 191, 255, 0.4)", hatchEmoji: "🐝", sounds: ["/sounds/duck.mp3", "/sounds/v1/duck.mp3"], radius: 56, mass: 1 },
-  { id: "lion", emoji: "🦁", color: "#FFB890", shadow: "rgba(255, 184, 144, 0.4)", hatchEmoji: "🐞", sounds: ["/sounds/lion.mp3", "/sounds/v1/lion.mp3", "/sounds/extra/lion_long.mp3"], radius: 64, mass: 1 },
-  { id: "frog", emoji: "🐸", color: "#FFD66B", shadow: "rgba(255, 214, 107, 0.4)", hatchEmoji: "🐜", sounds: ["/sounds/frog.mp3", "/sounds/v1/frog.mp3"], radius: 60, mass: 1 },
-  { id: "monkey", emoji: "🐒", color: "#FF9FB5", shadow: "rgba(255, 159, 181, 0.4)", hatchEmoji: "🐌", sounds: ["/sounds/monkey.mp3", "/sounds/v1/monkey.mp3"], radius: 58, mass: 1 },
-  { id: "horse", emoji: "🐎", color: "#A8D8FF", shadow: "rgba(168, 216, 255, 0.4)", hatchEmoji: "🐢", sounds: ["/sounds/horse.mp3", "/sounds/v1/horse.mp3"], radius: 64, mass: 1 },
-  { id: "elephant", emoji: "🐘", color: "#B4E5C2", shadow: "rgba(180, 229, 194, 0.4)", hatchEmoji: "🦄", sounds: ["/sounds/elephant.mp3", "/sounds/v1/elephant.mp3", "/sounds/extra/elephant_long.mp3"], radius: 66, mass: 1 },
-  { id: "rooster", emoji: "🐓", color: "#D4BFFF", shadow: "rgba(212, 191, 255, 0.4)", hatchEmoji: "🦜", sounds: ["/sounds/rooster.mp3"], radius: 60, mass: 1 },
-  { id: "bear", emoji: "🐻", color: "#FFB890", shadow: "rgba(255, 184, 144, 0.4)", hatchEmoji: "🐨", sounds: ["/sounds/bear.mp3"], radius: 62, mass: 1 },
+  { id: "cow", emoji: "🐄", color: "transparent", shadow: "transparent", hatchEmoji: "🐦", sounds: ["/sounds/cow.mp3", "/sounds/v1/cow.mp3"], radius: 36, mass: 1 },
+  { id: "dog", emoji: "🐕", color: "transparent", shadow: "transparent", hatchEmoji: "🦋", sounds: ["/sounds/dog.mp3", "/sounds/v1/dog.mp3"], radius: 34, mass: 1 },
+  { id: "cat", emoji: "🐈", color: "transparent", shadow: "transparent", hatchEmoji: "🐟", sounds: ["/sounds/cat.mp3", "/sounds/v1/cat.mp3"], radius: 34, mass: 1 },
+  { id: "pig", emoji: "🐖", color: "transparent", shadow: "transparent", hatchEmoji: "🐛", sounds: ["/sounds/pig.mp3", "/sounds/extra/pig.mp3"], radius: 36, mass: 1 },
+  { id: "duck", emoji: "🦆", color: "transparent", shadow: "transparent", hatchEmoji: "🐝", sounds: ["/sounds/duck.mp3", "/sounds/v1/duck.mp3"], radius: 32, mass: 1 },
+  { id: "lion", emoji: "🦁", color: "transparent", shadow: "transparent", hatchEmoji: "🐞", sounds: ["/sounds/lion.mp3", "/sounds/v1/lion.mp3", "/sounds/extra/lion_long.mp3"], radius: 36, mass: 1 },
+  { id: "frog", emoji: "🐸", color: "transparent", shadow: "transparent", hatchEmoji: "🐜", sounds: ["/sounds/frog.mp3", "/sounds/v1/frog.mp3"], radius: 34, mass: 1 },
+  { id: "monkey", emoji: "🐒", color: "transparent", shadow: "transparent", hatchEmoji: "🐌", sounds: ["/sounds/monkey.mp3", "/sounds/v1/monkey.mp3"], radius: 34, mass: 1 },
+  { id: "horse", emoji: "🐎", color: "transparent", shadow: "transparent", hatchEmoji: "🐢", sounds: ["/sounds/horse.mp3", "/sounds/v1/horse.mp3"], radius: 36, mass: 1 },
+  { id: "elephant", emoji: "🐘", color: "transparent", shadow: "transparent", hatchEmoji: "🦄", sounds: ["/sounds/elephant.mp3", "/sounds/v1/elephant.mp3", "/sounds/extra/elephant_long.mp3"], radius: 38, mass: 1 },
+  { id: "rooster", emoji: "🐓", color: "transparent", shadow: "transparent", hatchEmoji: "🦜", sounds: ["/sounds/rooster.mp3"], radius: 34, mass: 1 },
+  { id: "bear", emoji: "🐻", color: "transparent", shadow: "transparent", hatchEmoji: "🐨", sounds: ["/sounds/bear.mp3"], radius: 36, mass: 1 },
 ];
 
 // === Physics types ===
@@ -834,6 +834,7 @@ function CircleButton({
   onPointerUp,
   onPointerCancel,
 }: CircleButtonProps) {
+  // v33: emojis only. Emoji IS the button. radius → font size + hit area.
   const size = circle.radius * 2;
   return (
     <button
@@ -846,8 +847,7 @@ function CircleButton({
       style={{
         appearance: "none",
         border: "none",
-        background: circle.color,
-        borderRadius: "50%",
+        background: "transparent",
         cursor: "grab",
         position: "absolute",
         left: circle.pos.x - circle.radius,
@@ -857,25 +857,23 @@ function CircleButton({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        boxShadow: pressed
-          ? `0 2px 6px ${circle.shadow}, inset 0 2px 8px rgba(0,0,0,0.15)`
-          : `0 6px 16px ${circle.shadow}, inset 0 -3px 0 rgba(0,0,0,0.08)`,
-        transform: `scale(${pressed ? 0.95 : hatched ? 1.15 : 1})`,
+        transform: `scale(${pressed ? 0.88 : hatched ? 1.25 : 1})`,
         transition: pressed
-          ? "box-shadow 100ms ease-out, transform 100ms ease-out"
-          : "box-shadow 200ms ease-out",
+          ? "transform 100ms ease-out"
+          : "transform 200ms ease-out",
         touchAction: "none",
         WebkitTapHighlightColor: "transparent",
         padding: 0,
         animation: shaking && !reducedMotion ? "pootbox-jiggle 0.6s ease-in-out" : undefined,
         zIndex: pressed ? 20 : 1,
+        userSelect: "none",
       }}
     >
       <span
         style={{
-          fontSize: `${circle.radius * 0.65}px`,
+          fontSize: `${circle.radius * 1.4}px`, // emoji bigger than hit area for finger forgiveness
           lineHeight: 1,
-          filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.15))",
+          filter: "drop-shadow(0 2px 3px rgba(0,0,0,0.12))",
           pointerEvents: "none",
         }}
       >
