@@ -115,12 +115,6 @@ const COLLISION_BOUNCE = 0.85;
 const MIN_BOUNCE_VEL = 1.5; // below this, don't play collision sound
 const DRAG_THROW_MULTIPLIER = 1.0;
 
-// Sound cap: how many Audio elements can play at once. When a new one
-// would push us over, we stop the oldest first. This keeps the
-// audio from becoming a wall of overlapping chaos when many circles
-// bump at the same time.
-const MAX_CONCURRENT_SOUNDS = 4;
-
 function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
@@ -383,7 +377,7 @@ export default function PootBox() {
   const playRandomFromCircle = useCallback(
     (circle: Circle) => {
       const sound = circle.sounds[Math.floor(Math.random() * circle.sounds.length)];
-      playWithCap(sound, settings.volume);
+      playSingle(sound, settings.volume);
     },
     [settings.volume]
   );
@@ -392,7 +386,7 @@ export default function PootBox() {
   const playRandomFromCircleRef = useCallback(
     (circle: Circle, volume: number) => {
       const sound = circle.sounds[Math.floor(Math.random() * circle.sounds.length)];
-      playWithCap(sound, volume);
+      playSingle(sound, volume);
     },
     []
   );
@@ -1043,41 +1037,38 @@ function SettingsModal({ settings, onChange, onClose }: SettingsModalProps) {
 }
 
 
-// === Audio (with global concurrent-sound cap) ===
+// === Audio (single voice — stop and play) ===
 //
-// Module-level LRU queue of currently playing Audio elements.
-// When a new play() would push us over MAX_CONCURRENT_SOUNDS,
-// we stop the oldest element first. This keeps the audio from
-// becoming a wall of overlapping chaos when many circles bump
-// at the same time.
+// Sound toy for kids. To prevent the audio from becoming a wall of
+// overlapping chaos when many circles bump at the same time, we
+// enforce a single-voice policy: when a new sound wants to play,
+// we stop ALL currently-playing sounds first, then start the new
+// one. Each tap or collision is its own distinct sound — no two
+// sounds ever overlap.
 
-const activeAudioQueue: HTMLAudioElement[] = [];
+const activeAudioElements = new Set<HTMLAudioElement>();
 
-function playWithCap(sound: string, volume: number): void {
-  // If we'd exceed the cap, stop the oldest
-  while (activeAudioQueue.length >= MAX_CONCURRENT_SOUNDS) {
-    const oldest = activeAudioQueue.shift();
-    if (oldest) {
-      try {
-        oldest.pause();
-      } catch {
-        // ignore
-      }
+function playSingle(sound: string, volume: number): void {
+  // Stop any currently playing sounds
+  for (const a of activeAudioElements) {
+    try {
+      a.pause();
+    } catch {
+      // ignore
     }
   }
+  activeAudioElements.clear();
+
   const a = new Audio(sound);
   a.volume = volume;
-  // Remove from queue when finished (either by 'ended' or by an error)
   const remove = () => {
-    const idx = activeAudioQueue.indexOf(a);
-    if (idx !== -1) activeAudioQueue.splice(idx, 1);
+    activeAudioElements.delete(a);
   };
   a.addEventListener("ended", remove, { once: true });
   a.addEventListener("error", remove, { once: true });
-  // Hard safety net: if 'ended' never fires (e.g. paused manually),
-  // remove after 10s
+  // Hard safety net: if 'ended' never fires, remove after 10s
   setTimeout(remove, 10_000);
-  activeAudioQueue.push(a);
+  activeAudioElements.add(a);
   a.play().catch(() => {
     remove();
   });
