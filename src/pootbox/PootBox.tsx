@@ -1,148 +1,92 @@
-// PootBox — minimal sound toy for kids. v31.
+// PootBox — minimal sound toy for kids. v32.
 //
-// One screen. Tap colored circles to make sounds. Hold to grow
-// them and "hatch" an animal. Shake the device for bonus fun.
-// No levels, no progress, no goals. Just sounds.
+// Sago Mini Sound Box-style physics:
+//   - 12 colored ovals, free placement on a cream background
+//   - Drag a circle to move it. Release to throw (velocity from finger motion).
+//   - Circles bounce off walls with damping.
+//   - Circles collide with each other — collision plays both sounds
+//     and produces a small spark burst.
+//   - Tap (no drag) = just plays the sound + ripple.
+//   - Hold 1.5s = grows and hatches an animal (same as v31).
+//   - Shake (devicemotion > 22 mag) = applies random impulse to all circles.
+//   - Hidden settings: tap-hold-5s on blank area opens a tiny settings modal.
 //
-// Built for Sago Mini Sound Box-style minimalism:
-//   - 12 colored ovals, cream background
-//   - Tap = play random sound from the oval's pool + ripple animation
-//   - Hold = oval grows from scale 1.0 to 2.0 over ~1.5s while cycling sounds
-//   - At max size, oval "hatches" — splits into 8 small circles + a small
-//     bouncing animal appears in the middle
-//   - Shake (devicemotion) = all ovals jiggle briefly
-//   - Hidden settings: tap-hold-5s on blank area opens a tiny settings modal
+// Replaces v31 (grid-based, no physics). v32 adds free physics.
 //
-// Replaces the old Poot Party scene-loop app. This is the v31 rewrite.
+// Physics: requestAnimationFrame loop, 60fps. Each circle has:
+//   - x, y (px from top-left of canvas)
+//   - vx, vy (px per frame)
+//   - radius (px)
+//   - mass (proportional to radius²)
+//   - color, emoji, sounds[]
+//
+// Collisions: O(n²) circle-circle check (n=12, fine). Walls: clamp + reflect.
+// Drag: pointer down = grab, pointer move = move, pointer up = release with
+// velocity computed from recent pointer positions.
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
 
 // === Sound definitions ===
-//
-// Each circle has 2-3 sounds. Tap picks one at random.
-// The pool is small on purpose — kids tap fast and need variety,
-// but not so much they never know which one they're hearing.
-//
-// 12 circles: 8 animals + 4 surprise (mix of animals + silly sounds).
-// Sounds come from /public/sounds/ — already on disk.
 
 interface Circle {
   id: string;
   emoji: string;
   color: string;
   shadow: string;
-  sounds: string[];
   hatchEmoji: string;
+  sounds: string[];
+  // Per-circle config
+  radius: number; // base radius in px
+  mass: number; // mass for collisions (proportional to radius²)
 }
 
 const CIRCLES: Circle[] = [
-  {
-    id: "cow",
-    emoji: "🐄",
-    color: "#FFD66B",
-    shadow: "rgba(255, 214, 107, 0.4)",
-    sounds: ["/sounds/cow.mp3", "/sounds/v1/cow.mp3"],
-    hatchEmoji: "🐦",
-  },
-  {
-    id: "dog",
-    emoji: "🐕",
-    color: "#FF9FB5",
-    shadow: "rgba(255, 159, 181, 0.4)",
-    sounds: ["/sounds/dog.mp3", "/sounds/v1/dog.mp3"],
-    hatchEmoji: "🦋",
-  },
-  {
-    id: "cat",
-    emoji: "🐈",
-    color: "#A8D8FF",
-    shadow: "rgba(168, 216, 255, 0.4)",
-    sounds: ["/sounds/cat.mp3", "/sounds/v1/cat.mp3"],
-    hatchEmoji: "🐟",
-  },
-  {
-    id: "pig",
-    emoji: "🐖",
-    color: "#B4E5C2",
-    shadow: "rgba(180, 229, 194, 0.4)",
-    sounds: ["/sounds/pig.mp3", "/sounds/extra/pig.mp3"],
-    hatchEmoji: "🐛",
-  },
-  {
-    id: "duck",
-    emoji: "🦆",
-    color: "#D4BFFF",
-    shadow: "rgba(212, 191, 255, 0.4)",
-    sounds: ["/sounds/duck.mp3", "/sounds/v1/duck.mp3"],
-    hatchEmoji: "🐝",
-  },
-  {
-    id: "lion",
-    emoji: "🦁",
-    color: "#FFB890",
-    shadow: "rgba(255, 184, 144, 0.4)",
-    sounds: ["/sounds/lion.mp3", "/sounds/v1/lion.mp3", "/sounds/extra/lion_long.mp3"],
-    hatchEmoji: "🐞",
-  },
-  {
-    id: "frog",
-    emoji: "🐸",
-    color: "#FFD66B",
-    shadow: "rgba(255, 214, 107, 0.4)",
-    sounds: ["/sounds/frog.mp3", "/sounds/v1/frog.mp3"],
-    hatchEmoji: "🐜",
-  },
-  {
-    id: "monkey",
-    emoji: "🐒",
-    color: "#FF9FB5",
-    shadow: "rgba(255, 159, 181, 0.4)",
-    sounds: ["/sounds/monkey.mp3", "/sounds/v1/monkey.mp3"],
-    hatchEmoji: "🐌",
-  },
-  {
-    id: "horse",
-    emoji: "🐎",
-    color: "#A8D8FF",
-    shadow: "rgba(168, 216, 255, 0.4)",
-    sounds: ["/sounds/horse.mp3", "/sounds/v1/horse.mp3"],
-    hatchEmoji: "🐢",
-  },
-  {
-    id: "elephant",
-    emoji: "🐘",
-    color: "#B4E5C2",
-    shadow: "rgba(180, 229, 194, 0.4)",
-    sounds: ["/sounds/elephant.mp3", "/sounds/v1/elephant.mp3", "/sounds/extra/elephant_long.mp3"],
-    hatchEmoji: "🦄",
-  },
-  {
-    id: "rooster",
-    emoji: "🐓",
-    color: "#D4BFFF",
-    shadow: "rgba(212, 191, 255, 0.4)",
-    sounds: ["/sounds/rooster.mp3"],
-    hatchEmoji: "🦜",
-  },
-  {
-    id: "bear",
-    emoji: "🐻",
-    color: "#FFB890",
-    shadow: "rgba(255, 184, 144, 0.4)",
-    sounds: ["/sounds/bear.mp3"],
-    hatchEmoji: "🐨",
-  },
+  { id: "cow", emoji: "🐄", color: "#FFD66B", shadow: "rgba(255, 214, 107, 0.4)", hatchEmoji: "🐦", sounds: ["/sounds/cow.mp3", "/sounds/v1/cow.mp3"], radius: 64, mass: 1 },
+  { id: "dog", emoji: "🐕", color: "#FF9FB5", shadow: "rgba(255, 159, 181, 0.4)", hatchEmoji: "🦋", sounds: ["/sounds/dog.mp3", "/sounds/v1/dog.mp3"], radius: 60, mass: 1 },
+  { id: "cat", emoji: "🐈", color: "#A8D8FF", shadow: "rgba(168, 216, 255, 0.4)", hatchEmoji: "🐟", sounds: ["/sounds/cat.mp3", "/sounds/v1/cat.mp3"], radius: 58, mass: 1 },
+  { id: "pig", emoji: "🐖", color: "#B4E5C2", shadow: "rgba(180, 229, 194, 0.4)", hatchEmoji: "🐛", sounds: ["/sounds/pig.mp3", "/sounds/extra/pig.mp3"], radius: 62, mass: 1 },
+  { id: "duck", emoji: "🦆", color: "#D4BFFF", shadow: "rgba(212, 191, 255, 0.4)", hatchEmoji: "🐝", sounds: ["/sounds/duck.mp3", "/sounds/v1/duck.mp3"], radius: 56, mass: 1 },
+  { id: "lion", emoji: "🦁", color: "#FFB890", shadow: "rgba(255, 184, 144, 0.4)", hatchEmoji: "🐞", sounds: ["/sounds/lion.mp3", "/sounds/v1/lion.mp3", "/sounds/extra/lion_long.mp3"], radius: 64, mass: 1 },
+  { id: "frog", emoji: "🐸", color: "#FFD66B", shadow: "rgba(255, 214, 107, 0.4)", hatchEmoji: "🐜", sounds: ["/sounds/frog.mp3", "/sounds/v1/frog.mp3"], radius: 60, mass: 1 },
+  { id: "monkey", emoji: "🐒", color: "#FF9FB5", shadow: "rgba(255, 159, 181, 0.4)", hatchEmoji: "🐌", sounds: ["/sounds/monkey.mp3", "/sounds/v1/monkey.mp3"], radius: 58, mass: 1 },
+  { id: "horse", emoji: "🐎", color: "#A8D8FF", shadow: "rgba(168, 216, 255, 0.4)", hatchEmoji: "🐢", sounds: ["/sounds/horse.mp3", "/sounds/v1/horse.mp3"], radius: 64, mass: 1 },
+  { id: "elephant", emoji: "🐘", color: "#B4E5C2", shadow: "rgba(180, 229, 194, 0.4)", hatchEmoji: "🦄", sounds: ["/sounds/elephant.mp3", "/sounds/v1/elephant.mp3", "/sounds/extra/elephant_long.mp3"], radius: 66, mass: 1 },
+  { id: "rooster", emoji: "🐓", color: "#D4BFFF", shadow: "rgba(212, 191, 255, 0.4)", hatchEmoji: "🦜", sounds: ["/sounds/rooster.mp3"], radius: 60, mass: 1 },
+  { id: "bear", emoji: "🐻", color: "#FFB890", shadow: "rgba(255, 184, 144, 0.4)", hatchEmoji: "🐨", sounds: ["/sounds/bear.mp3"], radius: 62, mass: 1 },
 ];
 
-// === Hatch burst (8 small circles that fly out) ===
+// === Physics types ===
 
-interface Burst {
+interface Vec2 {
+  x: number;
+  y: number;
+}
+
+interface PhysicsCircle extends Circle {
+  // Position (px, top-left of viewport)
+  pos: Vec2;
+  // Velocity (px/frame at 60fps; multiplied by dt to be frame-rate independent)
+  vel: Vec2;
+  // Angular position (for rotation animation when bouncing)
+  rot: number;
+  rotVel: number;
+}
+
+interface Ripple {
+  id: number;
+  x: number;
+  y: number;
+  color: string;
+}
+
+interface Spark {
   id: number;
   x: number;
   y: number;
   dx: number;
   dy: number;
   color: string;
+  life: number;
 }
 
 interface HatchAnimal {
@@ -153,10 +97,10 @@ interface HatchAnimal {
   bornAt: number;
 }
 
-// === Settings backdoor ===
+// === Settings ===
 
 interface Settings {
-  volume: number; // 0..1
+  volume: number;
   reducedMotion: boolean;
 }
 
@@ -167,6 +111,12 @@ const DEFAULT_SETTINGS: Settings = {
 
 const SETTINGS_KEY = "pootbox-settings-v1";
 const HIDDEN_LONG_PRESS_MS = 5000;
+const HATCH_HOLD_MS = 1500;
+const FRICTION = 0.985; // velocity damping per frame
+const WALL_BOUNCE = 0.7; // velocity retained on wall hit
+const COLLISION_BOUNCE = 0.85;
+const MIN_BOUNCE_VEL = 1.5; // below this, don't play collision sound
+const DRAG_THROW_MULTIPLIER = 1.0;
 
 function loadSettings(): Settings {
   try {
@@ -192,93 +142,338 @@ function saveSettings(s: Settings): void {
 // === Component ===
 
 export default function PootBox() {
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const [size, setSize] = useState({ w: 0, h: 0 });
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [showSettings, setShowSettings] = useState(false);
   const [shaking, setShaking] = useState(false);
-  const [ripples, setRipples] = useState<{ id: number; x: number; y: number; color: string }[]>([]);
+  const [ripples, setRipples] = useState<Ripple[]>([]);
+  const [sparks, setSparks] = useState<Spark[]>([]);
   const [hatchAnimals, setHatchAnimals] = useState<HatchAnimal[]>([]);
-  const [bursts, setBursts] = useState<Burst[]>([]);
+  const [pressedId, setPressedId] = useState<string | null>(null);
+  const [hatchedId, setHatchedId] = useState<string | null>(null);
+
+  // Refs for animation loop
+  const circlesRef = useRef<PhysicsCircle[]>([]);
+  const rafRef = useRef<number | null>(null);
+  const lastFrameRef = useRef<number>(0);
+  const lastShakeAtRef = useRef<number>(0);
+  const collisionCooldownRef = useRef<Map<string, number>>(new Map());
+
+  // Refs for drag
+  const dragRef = useRef<{
+    id: string;
+    lastX: number;
+    lastY: number;
+    lastT: number;
+    velocity: Vec2; // px per ms
+  } | null>(null);
   const holdTimers = useRef<Map<string, number>>(new Map());
-  const holdStartRef = useRef<number | null>(null);
-  const holdStartPos = useRef<{ x: number; y: number } | null>(null);
-  const longPressTimer = useRef<number | null>(null);
+
+  // Refs for blank-area long-press (settings backdoor)
+  const blankHoldTimer = useRef<number | null>(null);
+  const blankHoldStartPos = useRef<Vec2 | null>(null);
+  const blankHoldStartT = useRef<number | null>(null);
+
+  // ID generators
   const rippleIdRef = useRef(0);
+  const sparkIdRef = useRef(0);
   const hatchIdRef = useRef(0);
-  const burstIdRef = useRef(0);
-  const hatchedCirclesRef = useRef<Set<string>>(new Set());
 
-  // Apply volume on mount + when changed
-  useEffect(() => {
-    // engine doesn't have setVolume; we set it per-play. See playRandom below.
-  }, [settings.volume]);
+  // === Measure canvas ===
 
-  // Shake-to-jiggle
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handler = (e: DeviceMotionEvent) => {
-      const acc = e.acceleration;
-      if (!acc || acc.x === null || acc.y === null || acc.z === null) return;
-      const mag = Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
-      if (mag > 22) {
-        setShaking(true);
-        setTimeout(() => setShaking(false), 600);
-      }
+  useLayoutEffect(() => {
+    if (!canvasRef.current) return;
+    const el = canvasRef.current;
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      setSize({ w: r.width, h: r.height });
     };
-    window.addEventListener("devicemotion", handler);
-    return () => window.removeEventListener("devicemotion", handler);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
+
+  // === Initialize circle positions ===
+
+  useEffect(() => {
+    if (size.w === 0 || size.h === 0) return;
+    // 4x3 grid initial layout, each circle in its cell
+    const cols = 4;
+    const rows = 3;
+    const cellW = size.w / cols;
+    const cellH = size.h / rows;
+    circlesRef.current = CIRCLES.map((c, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      return {
+        ...c,
+        pos: {
+          x: cellW * col + cellW / 2,
+          y: cellH * row + cellH / 2,
+        },
+        vel: { x: 0, y: 0 },
+        rot: 0,
+        rotVel: 0,
+      };
+    });
+  }, [size.w, size.h]);
+
+  // === Physics loop ===
+
+  useEffect(() => {
+    if (size.w === 0 || size.h === 0) return;
+    let mounted = true;
+
+    const tick = (now: number) => {
+      if (!mounted) return;
+      const dt = lastFrameRef.current === 0 ? 16.67 : now - lastFrameRef.current;
+      lastFrameRef.current = now;
+      // Cap dt to avoid huge jumps when tab is backgrounded
+      const clampedDt = Math.min(dt, 50);
+      const stepScale = clampedDt / 16.67; // 1.0 = 60fps baseline
+
+      const circles = circlesRef.current;
+      const w = size.w;
+      const h = size.h;
+      const collisionsThisFrame: { a: PhysicsCircle; b: PhysicsCircle }[] = [];
+
+      // 1. Integrate position
+      for (const c of circles) {
+        if (dragRef.current?.id === c.id) continue; // dragged circle follows pointer
+        c.pos.x += c.vel.x * stepScale;
+        c.pos.y += c.vel.y * stepScale;
+        c.rot += c.rotVel * stepScale;
+        // Friction (frame-rate independent)
+        const damp = Math.pow(FRICTION, stepScale);
+        c.vel.x *= damp;
+        c.vel.y *= damp;
+        c.rotVel *= damp;
+        // Stop tiny velocities
+        if (Math.abs(c.vel.x) < 0.05) c.vel.x = 0;
+        if (Math.abs(c.vel.y) < 0.05) c.vel.y = 0;
+        if (Math.abs(c.rotVel) < 0.005) c.rotVel = 0;
+      }
+
+      // 2. Wall collisions
+      for (const c of circles) {
+        if (dragRef.current?.id === c.id) continue;
+        if (c.pos.x - c.radius < 0) {
+          c.pos.x = c.radius;
+          c.vel.x = -c.vel.x * WALL_BOUNCE;
+          c.rotVel += (Math.random() - 0.5) * 0.1;
+        } else if (c.pos.x + c.radius > w) {
+          c.pos.x = w - c.radius;
+          c.vel.x = -c.vel.x * WALL_BOUNCE;
+          c.rotVel += (Math.random() - 0.5) * 0.1;
+        }
+        if (c.pos.y - c.radius < 0) {
+          c.pos.y = c.radius;
+          c.vel.y = -c.vel.y * WALL_BOUNCE;
+          c.rotVel += (Math.random() - 0.5) * 0.1;
+        } else if (c.pos.y + c.radius > h) {
+          c.pos.y = h - c.radius;
+          c.vel.y = -c.vel.y * WALL_BOUNCE;
+          c.rotVel += (Math.random() - 0.5) * 0.1;
+        }
+      }
+
+      // 3. Circle-circle collisions
+      for (let i = 0; i < circles.length; i++) {
+        for (let j = i + 1; j < circles.length; j++) {
+          const a = circles[i];
+          const b = circles[j];
+          const dx = b.pos.x - a.pos.x;
+          const dy = b.pos.y - a.pos.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const minDist = a.radius + b.radius;
+          if (dist < minDist && dist > 0.001) {
+            // Normal vector
+            const nx = dx / dist;
+            const ny = dy / dist;
+            // Push apart (positional correction)
+            const overlap = (minDist - dist) / 2;
+            // If either is being dragged, only push the other
+            const aDragged = dragRef.current?.id === a.id;
+            const bDragged = dragRef.current?.id === b.id;
+            if (!aDragged && !bDragged) {
+              a.pos.x -= nx * overlap;
+              a.pos.y -= ny * overlap;
+              b.pos.x += nx * overlap;
+              b.pos.y += ny * overlap;
+            } else if (aDragged && !bDragged) {
+              b.pos.x += nx * overlap;
+              b.pos.y += ny * overlap;
+            } else if (bDragged && !aDragged) {
+              a.pos.x -= nx * overlap;
+              a.pos.y -= ny * overlap;
+            }
+            // Velocity exchange (elastic with damping)
+            const aDragged2 = dragRef.current?.id === a.id;
+            const bDragged2 = dragRef.current?.id === b.id;
+            // If either is dragged, that circle's velocity is treated as zero
+            const vaX = aDragged2 ? 0 : a.vel.x;
+            const vaY = aDragged2 ? 0 : a.vel.y;
+            const vbX = bDragged2 ? 0 : b.vel.x;
+            const vbY = bDragged2 ? 0 : b.vel.y;
+            // Relative velocity along normal
+            const rvx = vbX - vaX;
+            const rvy = vbY - vaY;
+            const velAlongNormal = rvx * nx + rvy * ny;
+            if (velAlongNormal < 0) {
+              // Already separating, skip
+              continue;
+            }
+            const restitution = COLLISION_BOUNCE;
+            // Equal mass (1) so impulse is just velAlongNormal * (1 + restitution) / 2
+            const impulse = (velAlongNormal * (1 + restitution)) / 2;
+            if (!aDragged2) {
+              a.vel.x += impulse * nx;
+              a.vel.y += impulse * ny;
+              a.rotVel += (Math.random() - 0.5) * 0.3;
+            }
+            if (!bDragged2) {
+              b.vel.x -= impulse * nx;
+              b.vel.y -= impulse * ny;
+              b.rotVel += (Math.random() - 0.5) * 0.3;
+            }
+            collisionsThisFrame.push({ a, b });
+          }
+        }
+      }
+
+      // 4. Play collision sounds (with per-pair cooldown to avoid spam)
+      if (collisionsThisFrame.length > 0) {
+        for (const { a, b } of collisionsThisFrame) {
+          const key = [a.id, b.id].sort().join("|");
+          const last = collisionCooldownRef.current.get(key) ?? 0;
+          if (now - last < 250) continue; // 250ms per-pair cooldown
+          collisionCooldownRef.current.set(key, now);
+          // Only play sound if collision is hard enough
+          const dx = b.pos.x - a.pos.x;
+          const dy = b.pos.y - a.pos.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const nx = dx / dist;
+          const ny = dy / dist;
+          const relVel =
+            Math.abs((b.vel.x - a.vel.x) * nx + (b.vel.y - a.vel.y) * ny);
+          if (relVel < MIN_BOUNCE_VEL) continue;
+          playRandomFromCircleRef(a, settingsRef.current.volume);
+          playRandomFromCircleRef(b, settingsRef.current.volume);
+          // Spawn sparks
+          spawnSparksAtRef.current(
+            (a.pos.x + b.pos.x) / 2,
+            (a.pos.y + b.pos.y) / 2,
+            a.color
+          );
+        }
+      }
+
+      // 5. Force a re-render by bumping a tick counter
+      setTick((t) => (t + 1) % 1000000);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      mounted = false;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [size.w, size.h]);
+
+  // Track settings in a ref for the physics loop
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const [, setTick] = useState(0);
+
+  // === Audio ===
 
   const playRandomFromCircle = useCallback(
     (circle: Circle) => {
       const sound = circle.sounds[Math.floor(Math.random() * circle.sounds.length)];
       const a = new Audio(sound);
       a.volume = settings.volume;
-      a.play().catch(() => {
-        // Best-effort: if the play is rejected, the error reporter will catch it
-      });
+      a.play().catch(() => {});
     },
     [settings.volume]
   );
 
-  const spawnRipple = useCallback((circle: Circle, e: React.PointerEvent) => {
-    const target = e.currentTarget as HTMLElement;
-    const rect = target.getBoundingClientRect();
+  // Use ref-stable version for the physics loop
+  const playRandomFromCircleRef = useCallback(
+    (circle: Circle, volume: number) => {
+      const sound = circle.sounds[Math.floor(Math.random() * circle.sounds.length)];
+      const a = new Audio(sound);
+      a.volume = volume;
+      a.play().catch(() => {});
+    },
+    []
+  );
+
+  const spawnSparksAt = useCallback((x: number, y: number, color: string) => {
+    const newSparks: Spark[] = [];
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2 + Math.random() * 0.5;
+      const speed = 2 + Math.random() * 3;
+      newSparks.push({
+        id: ++sparkIdRef.current,
+        x,
+        y,
+        dx: Math.cos(angle) * speed,
+        dy: Math.sin(angle) * speed,
+        color,
+        life: 600,
+      });
+    }
+    setSparks((prev) => [...prev, ...newSparks]);
+    setTimeout(() => {
+      setSparks((prev) => prev.filter((s) => !newSparks.find((ns) => ns.id === s.id)));
+    }, 600);
+  }, []);
+
+  const spawnSparksAtRef = useRef(spawnSparksAt);
+  spawnSparksAtRef.current = spawnSparksAt;
+
+  // === Ripple ===
+
+  const spawnRipple = useCallback((circle: Circle, x: number, y: number) => {
     const id = ++rippleIdRef.current;
-    setRipples((prev) => [
-      ...prev,
-      { id, x: e.clientX - rect.left, y: e.clientY - rect.top, color: circle.color },
-    ]);
+    setRipples((prev) => [...prev, { id, x, y, color: circle.color }]);
     setTimeout(() => {
       setRipples((prev) => prev.filter((r) => r.id !== id));
     }, 700);
   }, []);
 
-  const spawnBurst = useCallback((circle: Circle, rect: DOMRect) => {
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const newBursts: Burst[] = [];
+  // === Hatch ===
+
+  const spawnHatch = useCallback((circle: Circle, x: number, y: number) => {
+    setHatchedId(circle.id);
+    setTimeout(() => setHatchedId(null), 800);
+    // 8 burst particles
+    const newSparks: Spark[] = [];
     for (let i = 0; i < 8; i++) {
       const angle = (i / 8) * Math.PI * 2;
-      const dist = 60 + Math.random() * 40;
-      newBursts.push({
-        id: ++burstIdRef.current,
-        x: cx,
-        y: cy,
+      const dist = 6 + Math.random() * 4;
+      newSparks.push({
+        id: ++sparkIdRef.current,
+        x,
+        y,
         dx: Math.cos(angle) * dist,
         dy: Math.sin(angle) * dist,
         color: circle.color,
+        life: 800,
       });
     }
-    setBursts((prev) => [...prev, ...newBursts]);
+    setSparks((prev) => [...prev, ...newSparks]);
     setTimeout(() => {
-      setBursts((prev) => prev.filter((b) => !newBursts.find((nb) => nb.id === b.id)));
+      setSparks((prev) => prev.filter((s) => !newSparks.find((ns) => ns.id === s.id)));
     }, 800);
-
-    // Spawn the hatched animal
+    // Hatched animal
     const hatch: HatchAnimal = {
       id: ++hatchIdRef.current,
-      x: cx,
-      y: cy,
+      x,
+      y,
       emoji: circle.hatchEmoji,
       bornAt: Date.now(),
     };
@@ -288,11 +483,38 @@ export default function PootBox() {
     }, 3000);
   }, []);
 
-  // === Tap / hold handlers per circle ===
+  // === Shake detection ===
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = (e: DeviceMotionEvent) => {
+      const acc = e.acceleration;
+      if (!acc || acc.x === null || acc.y === null || acc.z === null) return;
+      const mag = Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
+      if (mag > 22) {
+        const now = Date.now();
+        if (now - lastShakeAtRef.current < 1000) return;
+        lastShakeAtRef.current = now;
+        setShaking(true);
+        setTimeout(() => setShaking(false), 600);
+        // Apply random impulse to all circles
+        for (const c of circlesRef.current) {
+          c.vel.x += (Math.random() - 0.5) * 18;
+          c.vel.y += (Math.random() - 0.5) * 18;
+          c.rotVel += (Math.random() - 0.5) * 0.4;
+        }
+      }
+    };
+    window.addEventListener("devicemotion", handler);
+    return () => window.removeEventListener("devicemotion", handler);
+  }, []);
+
+  // === Drag handlers ===
 
   const onCirclePointerDown = useCallback(
-    (circle: Circle, e: React.PointerEvent) => {
+    (id: string, e: React.PointerEvent) => {
       e.preventDefault();
+      e.stopPropagation();
       const target = e.currentTarget as HTMLElement;
       if (target.setPointerCapture && e.pointerId !== undefined) {
         try {
@@ -301,104 +523,158 @@ export default function PootBox() {
           // ignore
         }
       }
-      // Cancel any previous hold timer for this circle
-      const existing = holdTimers.current.get(circle.id);
-      if (existing) window.clearTimeout(existing);
+      setPressedId(id);
 
-      // Play sound immediately on tap-down (better iOS feel)
+      const circle = circlesRef.current.find((c) => c.id === id);
+      if (!circle) return;
+
+      // Play sound on touch-down (gives iOS instant feedback)
       playRandomFromCircle(circle);
-      spawnRipple(circle, e);
+      spawnRipple(circle, e.clientX, e.clientY);
 
-      // Schedule hold-to-hatch
+      // Set up drag
+      dragRef.current = {
+        id,
+        lastX: e.clientX,
+        lastY: e.clientY,
+        lastT: performance.now(),
+        velocity: { x: 0, y: 0 },
+      };
+      // Stop the circle's existing motion while held
+      circle.vel.x = 0;
+      circle.vel.y = 0;
+
+      // Set up hold-to-hatch timer
+      const existing = holdTimers.current.get(id);
+      if (existing) window.clearTimeout(existing);
       const timerId = window.setTimeout(() => {
-        // Hatched! Spawn burst + animal, mark this circle as just-hatched
-        const rect = target.getBoundingClientRect();
-        spawnBurst(circle, rect);
-        hatchedCirclesRef.current.add(circle.id);
-        // Allow re-hatching after 1 second
-        setTimeout(() => {
-          hatchedCirclesRef.current.delete(circle.id);
-        }, 1000);
-        // Play one more sound on hatch
+        // Hatched
+        spawnHatch(circle, circle.pos.x, circle.pos.y);
         playRandomFromCircle(circle);
-        // Clear timer
-        holdTimers.current.delete(circle.id);
-      }, 1500);
-
-      holdTimers.current.set(circle.id, timerId);
+        holdTimers.current.delete(id);
+      }, HATCH_HOLD_MS);
+      holdTimers.current.set(id, timerId);
     },
-    [playRandomFromCircle, spawnRipple, spawnBurst]
+    [playRandomFromCircle, spawnRipple, spawnHatch]
+  );
+
+  const onCirclePointerMove = useCallback(
+    (id: string, e: React.PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag || drag.id !== id) return;
+      const circle = circlesRef.current.find((c) => c.id === id);
+      if (!circle) return;
+
+      // Track velocity (px per ms)
+      const now = performance.now();
+      const dt = now - drag.lastT;
+      if (dt > 0) {
+        // Smoothed velocity
+        const instVx = (e.clientX - drag.lastX) / dt;
+        const instVy = (e.clientY - drag.lastY) / dt;
+        drag.velocity.x = drag.velocity.x * 0.6 + instVx * 0.4;
+        drag.velocity.y = drag.velocity.y * 0.6 + instVy * 0.4;
+      }
+      drag.lastX = e.clientX;
+      drag.lastY = e.clientY;
+      drag.lastT = now;
+
+      // Move circle to follow pointer (convert client coords to canvas coords)
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      circle.pos.x = e.clientX - rect.left;
+      circle.pos.y = e.clientY - rect.top;
+    },
+    []
   );
 
   const onCirclePointerUp = useCallback(
-    (circle: Circle, e: React.PointerEvent) => {
+    (id: string, e: React.PointerEvent) => {
       e.preventDefault();
-      const timer = holdTimers.current.get(circle.id);
+      e.stopPropagation();
+      setPressedId(null);
+
+      // Cancel hold timer
+      const timer = holdTimers.current.get(id);
       if (timer) {
         window.clearTimeout(timer);
-        holdTimers.current.delete(circle.id);
+        holdTimers.current.delete(id);
+      }
+
+      const drag = dragRef.current;
+      if (drag && drag.id === id) {
+        const circle = circlesRef.current.find((c) => c.id === id);
+        if (circle) {
+          // Throw with velocity from drag (px/ms → px/frame at 60fps)
+          circle.vel.x = drag.velocity.x * 16.67 * DRAG_THROW_MULTIPLIER;
+          circle.vel.y = drag.velocity.y * 16.67 * DRAG_THROW_MULTIPLIER;
+          circle.rotVel += (Math.random() - 0.5) * 0.2;
+        }
+        dragRef.current = null;
       }
     },
     []
   );
 
-  const onCirclePointerCancel = useCallback((circle: Circle) => {
-    const timer = holdTimers.current.get(circle.id);
+  const onCirclePointerCancel = useCallback((id: string) => {
+    setPressedId(null);
+    const timer = holdTimers.current.get(id);
     if (timer) {
       window.clearTimeout(timer);
-      holdTimers.current.delete(circle.id);
+      holdTimers.current.delete(id);
+    }
+    if (dragRef.current?.id === id) {
+      dragRef.current = null;
     }
   }, []);
 
-  // === Hidden settings: tap-hold-5s on blank area ===
+  // === Blank-area long-press for settings ===
 
   const onBlankPointerDown = useCallback((e: React.PointerEvent) => {
-    // Don't trigger on circle taps
     if ((e.target as HTMLElement).closest("[data-circle]")) return;
-    holdStartRef.current = Date.now();
-    holdStartPos.current = { x: e.clientX, y: e.clientY };
-    if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
-    longPressTimer.current = window.setTimeout(() => {
+    blankHoldStartPos.current = { x: e.clientX, y: e.clientY };
+    blankHoldStartT.current = Date.now();
+    if (blankHoldTimer.current) window.clearTimeout(blankHoldTimer.current);
+    blankHoldTimer.current = window.setTimeout(() => {
       setShowSettings(true);
-      longPressTimer.current = null;
+      blankHoldTimer.current = null;
     }, HIDDEN_LONG_PRESS_MS);
   }, []);
 
-  const onBlankPointerUp = useCallback(() => {
-    if (longPressTimer.current) {
-      window.clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
+  const onBlankPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!blankHoldStartPos.current) return;
+    const dx = Math.abs(e.clientX - blankHoldStartPos.current.x);
+    const dy = Math.abs(e.clientY - blankHoldStartPos.current.y);
+    if (dx > 25 || dy > 25) {
+      if (blankHoldTimer.current) {
+        window.clearTimeout(blankHoldTimer.current);
+        blankHoldTimer.current = null;
+      }
+      blankHoldStartPos.current = null;
     }
-    holdStartRef.current = null;
-    holdStartPos.current = null;
   }, []);
 
-  const onBlankPointerMove = useCallback((e: React.PointerEvent) => {
-    // Cancel if finger moves more than 20px (scrolling, etc.)
-    if (!holdStartPos.current) return;
-    const dx = Math.abs(e.clientX - holdStartPos.current.x);
-    const dy = Math.abs(e.clientY - holdStartPos.current.y);
-    if (dx > 20 || dy > 20) {
-      if (longPressTimer.current) {
-        window.clearTimeout(longPressTimer.current);
-        longPressTimer.current = null;
-      }
-      holdStartPos.current = null;
+  const onBlankPointerUp = useCallback(() => {
+    if (blankHoldTimer.current) {
+      window.clearTimeout(blankHoldTimer.current);
+      blankHoldTimer.current = null;
     }
+    blankHoldStartPos.current = null;
   }, []);
 
   // === Cleanup ===
 
   useEffect(() => {
     return () => {
-      // Clear all hold timers on unmount
       for (const timer of holdTimers.current.values()) {
         window.clearTimeout(timer);
       }
       holdTimers.current.clear();
-      if (longPressTimer.current) {
-        window.clearTimeout(longPressTimer.current);
+      if (blankHoldTimer.current) {
+        window.clearTimeout(blankHoldTimer.current);
       }
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
   }, []);
 
@@ -406,6 +682,7 @@ export default function PootBox() {
 
   return (
     <div
+      ref={canvasRef}
       style={{
         position: "fixed",
         inset: 0,
@@ -417,34 +694,25 @@ export default function PootBox() {
         fontFamily: 'Fredoka, system-ui, sans-serif',
       }}
       onPointerDown={onBlankPointerDown}
-      onPointerUp={onBlankPointerUp}
       onPointerMove={onBlankPointerMove}
+      onPointerUp={onBlankPointerUp}
       onPointerCancel={onBlankPointerUp}
     >
-      {/* 12 circles in 4x3 grid */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
-          gridTemplateRows: "repeat(3, 1fr)",
-          gap: "clamp(8px, 2vw, 16px)",
-          padding: "clamp(12px, 3vw, 24px)",
-        }}
-      >
-        {CIRCLES.map((circle) => (
-          <CircleButton
-            key={circle.id}
-            circle={circle}
-            shaking={shaking}
-            reducedMotion={settings.reducedMotion}
-            onPointerDown={onCirclePointerDown}
-            onPointerUp={onCirclePointerUp}
-            onPointerCancel={onCirclePointerCancel}
-          />
-        ))}
-      </div>
+      {/* Render circles */}
+      {circlesRef.current.map((c) => (
+        <CircleButton
+          key={c.id}
+          circle={c}
+          pressed={pressedId === c.id}
+          hatched={hatchedId === c.id}
+          shaking={shaking}
+          reducedMotion={settings.reducedMotion}
+          onPointerDown={onCirclePointerDown}
+          onPointerMove={onCirclePointerMove}
+          onPointerUp={onCirclePointerUp}
+          onPointerCancel={onCirclePointerCancel}
+        />
+      ))}
 
       {/* Ripples */}
       {ripples.map((r) => (
@@ -466,25 +734,25 @@ export default function PootBox() {
         />
       ))}
 
-      {/* Hatch bursts */}
-      {bursts.map((b) => (
+      {/* Sparks (collision + hatch) */}
+      {sparks.map((s) => (
         <div
-          key={b.id}
+          key={s.id}
           style={{
-            position: "fixed",
-            left: b.x,
-            top: b.y,
-            width: 16,
-            height: 16,
+            position: "absolute",
+            left: s.x,
+            top: s.y,
+            width: 10,
+            height: 10,
             borderRadius: "50%",
-            background: b.color,
+            background: s.color,
             transform: "translate(-50%, -50%)",
-            animation: `pootbox-burst 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards`,
-            // CSS variables consumed by keyframes
-            ["--dx" as string]: `${b.dx}px`,
-            ["--dy" as string]: `${b.dy}px`,
+            animation: "pootbox-spark 0.6s ease-out forwards",
+            ["--dx" as string]: `${s.dx * 12}px`,
+            ["--dy" as string]: `${s.dy * 12}px`,
             pointerEvents: "none",
             zIndex: 11,
+            boxShadow: `0 0 8px ${s.color}`,
           }}
         />
       ))}
@@ -494,7 +762,7 @@ export default function PootBox() {
         <div
           key={h.id}
           style={{
-            position: "fixed",
+            position: "absolute",
             left: h.x,
             top: h.y,
             fontSize: "2.4rem",
@@ -523,7 +791,7 @@ export default function PootBox() {
         💨
       </div>
 
-      {/* Settings modal (backdoor) */}
+      {/* Settings modal */}
       {showSettings && (
         <SettingsModal
           settings={settings}
@@ -535,13 +803,13 @@ export default function PootBox() {
         />
       )}
 
-      {/* Inline keyframes (we don't have a CSS file to add these to) */}
+      {/* Inline keyframes */}
       <style>{`
         @keyframes pootbox-ripple {
           0% { width: 0; height: 0; opacity: 0.8; }
           100% { width: 200px; height: 200px; opacity: 0; }
         }
-        @keyframes pootbox-burst {
+        @keyframes pootbox-spark {
           0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
           100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.3); opacity: 0; }
         }
@@ -552,17 +820,6 @@ export default function PootBox() {
           75% { transform: translate(calc(-50% + 40px), calc(-50% - 60px)) scale(1) rotate(15deg); }
           100% { transform: translate(calc(-50% + 60px), calc(-50% - 30px)) scale(0.6) rotate(-10deg); opacity: 0.5; }
         }
-        @keyframes pootbox-jiggle {
-          0%, 100% { transform: scale(1) rotate(0deg); }
-          25% { transform: scale(1.08) rotate(-3deg); }
-          50% { transform: scale(1.05) rotate(3deg); }
-          75% { transform: scale(1.1) rotate(-2deg); }
-        }
-        @keyframes pootbox-pop {
-          0% { transform: scale(1); }
-          40% { transform: scale(0.92); }
-          100% { transform: scale(1); }
-        }
       `}</style>
     </div>
   );
@@ -571,70 +828,68 @@ export default function PootBox() {
 // === Single circle button ===
 
 interface CircleButtonProps {
-  circle: Circle;
+  circle: PhysicsCircle;
+  pressed: boolean;
+  hatched: boolean;
   shaking: boolean;
   reducedMotion: boolean;
-  onPointerDown: (c: Circle, e: React.PointerEvent) => void;
-  onPointerUp: (c: Circle, e: React.PointerEvent) => void;
-  onPointerCancel: (c: Circle) => void;
+  onPointerDown: (id: string, e: React.PointerEvent) => void;
+  onPointerMove: (id: string, e: React.PointerEvent) => void;
+  onPointerUp: (id: string, e: React.PointerEvent) => void;
+  onPointerCancel: (id: string) => void;
 }
 
 function CircleButton({
   circle,
+  pressed,
+  hatched,
   shaking,
   reducedMotion,
   onPointerDown,
+  onPointerMove,
   onPointerUp,
   onPointerCancel,
 }: CircleButtonProps) {
-  const [pressed, setPressed] = useState(false);
-
+  const size = circle.radius * 2;
   return (
     <button
       data-circle={circle.id}
-      onPointerDown={(e) => {
-        setPressed(true);
-        onPointerDown(circle, e);
-      }}
-      onPointerUp={(e) => {
-        setPressed(false);
-        onPointerUp(circle, e);
-      }}
-      onPointerLeave={() => setPressed(false)}
-      onPointerCancel={() => {
-        setPressed(false);
-        onPointerCancel(circle);
-      }}
+      onPointerDown={(e) => onPointerDown(circle.id, e)}
+      onPointerMove={(e) => onPointerMove(circle.id, e)}
+      onPointerUp={(e) => onPointerUp(circle.id, e)}
+      onPointerCancel={() => onPointerCancel(circle.id)}
       aria-label={`${circle.id} sound`}
       style={{
         appearance: "none",
         border: "none",
         background: circle.color,
-        borderRadius: "32%",
-        cursor: "pointer",
+        borderRadius: "50%",
+        cursor: "grab",
+        position: "absolute",
+        left: circle.pos.x - circle.radius,
+        top: circle.pos.y - circle.radius,
+        width: size,
+        height: size,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         boxShadow: pressed
-          ? `0 2px 8px ${circle.shadow}, inset 0 2px 8px rgba(0,0,0,0.1)`
-          : `0 8px 24px ${circle.shadow}, inset 0 -4px 0 rgba(0,0,0,0.08)`,
-        transform: pressed
-          ? "scale(0.94) translateY(2px)"
-          : shaking
-            ? undefined
-            : "scale(1)",
-        transition: "transform 120ms ease-out, box-shadow 120ms ease-out",
+          ? `0 2px 6px ${circle.shadow}, inset 0 2px 8px rgba(0,0,0,0.15)`
+          : `0 6px 16px ${circle.shadow}, inset 0 -3px 0 rgba(0,0,0,0.08)`,
+        transform: `rotate(${circle.rot}rad) scale(${pressed ? 0.95 : hatched ? 1.15 : 1})`,
+        transition: pressed
+          ? "box-shadow 100ms ease-out, transform 100ms ease-out"
+          : "box-shadow 200ms ease-out",
         touchAction: "none",
         WebkitTapHighlightColor: "transparent",
         padding: 0,
         animation: shaking && !reducedMotion ? "pootbox-jiggle 0.6s ease-in-out" : undefined,
-        minHeight: 0,
-        minWidth: 0,
+        zIndex: pressed ? 20 : 1,
       }}
     >
       <span
         style={{
-          fontSize: "clamp(2.5rem, 10vw, 4.5rem)",
+          fontSize: `${circle.radius * 0.65}px`,
           lineHeight: 1,
           filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.15))",
           pointerEvents: "none",
@@ -702,13 +957,7 @@ function SettingsModal({ settings, onChange, onClose }: SettingsModalProps) {
           Parent settings (hidden)
         </p>
 
-        {/* Volume slider */}
-        <label
-          style={{
-            display: "block",
-            marginBottom: 16,
-          }}
-        >
+        <label style={{ display: "block", marginBottom: 16 }}>
           <div
             style={{
               display: "flex",
@@ -732,14 +981,10 @@ function SettingsModal({ settings, onChange, onClose }: SettingsModalProps) {
             onChange={(e) =>
               onChange({ ...settings, volume: parseFloat(e.target.value) })
             }
-            style={{
-              width: "100%",
-              accentColor: "#F59E0B",
-            }}
+            style={{ width: "100%", accentColor: "#F59E0B" }}
           />
         </label>
 
-        {/* Reduced motion toggle */}
         <label
           style={{
             display: "flex",
@@ -749,13 +994,9 @@ function SettingsModal({ settings, onChange, onClose }: SettingsModalProps) {
             padding: "8px 0",
           }}
         >
-          <span style={{ fontSize: "0.9rem", color: "#3D2C1E" }}>
-            Reduce motion
-          </span>
+          <span style={{ fontSize: "0.9rem", color: "#3D2C1E" }}>Reduce motion</span>
           <button
-            onClick={() =>
-              onChange({ ...settings, reducedMotion: !settings.reducedMotion })
-            }
+            onClick={() => onChange({ ...settings, reducedMotion: !settings.reducedMotion })}
             style={{
               appearance: "none",
               border: "none",
@@ -813,7 +1054,6 @@ function SettingsModal({ settings, onChange, onClose }: SettingsModalProps) {
           }}
         >
           This menu only appears after holding the background for 5 seconds.
-          Kids can't find it.
         </p>
       </div>
     </div>
