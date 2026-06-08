@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Poot Party — Sound Toy</title>
+  <style>
+    /* ── Reset & Root ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #FEF3C7;
+      --yellow: #FDE68A;
+      --pink:   #F9A8D4;
+      --blue:   #7DD3FC;
+      --mint:   #6EE7B7;
+      --lavender: #C4B5FD;
+      --coral:  #FCA5A5;
+      --shadow: rgba(0,0,0,0.12);
+      --font:   system-ui, -apple-system, sans-serif;
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      background: var(--bg);
+      font-family: var(--font);
+      position: relative;
+    }
+
+    /* ── Canvas ── */
+    #canvas {
+      position: fixed; inset: 0;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      gap: 0;
+      padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
+    }
+
+    /* ── Circles ── */
+    .circle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      position: relative;
+      border-radius: 50%;
+      box-shadow: 0 6px 20px var(--shadow), 0 2px 6px var(--shadow);
+      transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+      will-change: transform;
+    }
+
+    .circle::before {
+      content: '';
+      position: absolute; inset: -4px;
+      border-radius: 50%;
+      background: inherit;
+      opacity: 0;
+      transform: scale(1);
+      transition: opacity 0.3s, transform 0.3s;
+    }
+
+    .circle .emoji {
+      font-size: clamp(2.8rem, 10vw, 4rem);
+      line-height: 1;
+      pointer-events: none;
+      transition: transform 0.15s;
+    }
+
+    /* Pop animation */
+    @keyframes pop {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.18); }
+      70%  { transform: scale(0.95); }
+      100% { transform: scale(1); }
+    }
+    @keyframes wiggle {
+      0%,100% { transform: rotate(0deg); }
+      25%  { transform: rotate(-12deg); }
+      75%  { transform: rotate(12deg); }
+    }
+    .circle.pop { animation: pop 0.4s cubic-bezier(0.34,1.56,0.64,1); }
+    .circle.pop .emoji { animation: wiggle 0.35s ease-in-out; }
+
+    /* Tap ripple */
+    @keyframes ripple {
+      0%   { opacity: 0.6; transform: scale(1); }
+      100% { opacity: 0; transform: scale(2.2); }
+    }
+    .circle .ripple {
+      position: absolute; inset: 0;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.5);
+      pointer-events: none;
+      animation: ripple 0.5s ease-out forwards;
+    }
+
+    /* ── Hold-grow animation ── */
+    @keyframes hold-grow {
+      0%   { transform: scale(1); filter: brightness(1); }
+      50%  { transform: scale(1.5); filter: brightness(1.1); }
+      100% { transform: scale(2); filter: brightness(1.2); }
+    }
+    .circle.holding {
+      animation: hold-grow 2s ease-in-out forwards;
+      z-index: 10;
+    }
+    .circle.holding .emoji {
+      animation: wiggle 0.5s ease-in-out infinite;
+    }
+
+    /* Hatch */
+    @keyframes hatch-out {
+      0%   { transform: scale(2) translate(0,0); opacity: 1; }
+      100% { transform: scale(0) translate(var(--tx),var(--ty)); opacity: 0; }
+    }
+    @keyframes hatch-bird {
+      0%   { transform: scale(0) translate(-50%,-50%); opacity: 0; }
+      60%  { transform: scale(1.2) translate(-50%,-50%); opacity: 1; }
+      100% { transform: scale(1) translate(-50%,-50%); opacity: 1; }
+    }
+    @keyframes bird-bob {
+      0%,100% { transform: translate(-50%,-50%) translateY(0); }
+      50%     { transform: translate(-50%,-50%) translateY(-12px); }
+    }
+
+    .hatch-particle {
+      position: absolute;
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      pointer-events: none;
+      animation: hatch-out 0.6s ease-in forwards;
+    }
+    .hatch-bird {
+      position: absolute;
+      font-size: 2.2rem;
+      pointer-events: none;
+      animation: hatch-bird 0.4s ease-out forwards, bird-bob 1.2s 0.4s ease-in-out infinite;
+      z-index: 20;
+    }
+
+    /* ── Shake jiggle ── */
+    @keyframes jiggle {
+      0%,100% { transform: translate(0,0) rotate(0deg); }
+      20%  { transform: translate(-4px, 2px) rotate(-3deg); }
+      40%  { transform: translate(4px, -2px) rotate(3deg); }
+      60%  { transform: translate(-3px, 3px) rotate(-2deg); }
+      80%  { transform: translate(3px, -1px) rotate(2deg); }
+    }
+    .jiggle { animation: jiggle 0.5s ease-in-out; }
+
+    /* ── Burst particles (stars/fart) ── */
+    @keyframes burst {
+      0%   { opacity: 1; transform: translate(-50%,-50%) scale(0) rotate(0deg); }
+      50%  { opacity: 1; transform: translate(var(--bx),var(--by)) scale(1.2) rotate(180deg); }
+      100% { opacity: 0; transform: translate(var(--bx2),var(--by2)) rotate(360deg); }
+    }
+    .burst {
+      position: absolute;
+      font-size: 1.4rem;
+      pointer-events: none;
+      animation: burst 0.7s ease-out forwards;
+      z-index: 30;
+    }
+
+    /* ── Hidden watermark ── */
+    #watermark {
+      position: fixed;
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+      right: 16px;
+      font-size: 1.4rem;
+      opacity: 0.18;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    /* ── Hidden Settings Modal ── */
+    #settings-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.35);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.3s;
+    }
+    #settings-overlay.open {
+      opacity: 1; pointer-events: all;
+    }
+    #settings-panel {
+      background: #fff;
+      border-radius: 20px;
+      padding: 24px 28px;
+      width: min(320px, 85vw);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+      transform: scale(0.9);
+      transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    #settings-overlay.open #settings-panel {
+      transform: scale(1);
+    }
+    #settings-panel h2 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+      color: #1a1a1a;
+      letter-spacing: -0.01em;
+    }
+    .setting-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .setting-row label {
+      font-size: 0.9rem;
+      color: #444;
+    }
+    .toggle {
+      width: 44px; height: 26px;
+      background: #ddd;
+      border-radius: 13px;
+      position: relative;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .toggle.on { background: #6EE7B7; }
+    .toggle::after {
+      content: '';
+      position: absolute;
+      width: 20px; height: 20px;
+      background: #fff;
+      border-radius: 50%;
+      top: 3px; left: 3px;
+      transition: transform 0.2s;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+    }
+    .toggle.on::after { transform: translateX(18px); }
+    #close-settings {
+      display: block;
+      width: 100%; padding: 10px;
+      background: var(--lavender);
+      color: #fff;
+      border: none; border-radius: 12px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+
+    /* ── Audio elements (hidden) ── */
+    audio { display: none; }
+  </style>
+</head>
+<body>
+
+<div id="canvas"></div>
+<div id="watermark">💨</div>
+
+<!-- Hidden settings -->
+<div id="settings-overlay">
+  <div id="settings-panel">
+    <h2>⚙️ Settings</h2>
+    <div class="setting-row">
+      <label>Max Volume</label>
+      <div class="toggle on" data-setting="volume"></div>
+    </div>
+    <div class="setting-row">
+      <label>Default Skin</label>
+      <div class="toggle" data-setting="skin"></div>
+    </div>
+    <button id="close-settings">Done</button>
+  </div>
+</div>
+
+<script>
+  /* ── Sound map (uses existing asset files) ── */
+  const SOUNDS = [
+    'cow.mp3','dog.mp3','cat.mp3','pig.mp3','duck.mp3',
+    'bird.mp3','frog.mp3','bull.mp3','bear.mp3','horse.mp3',
+    'lion.mp3','monkey.mp3'
+  ];
+
+  const EMOJIS = [
+    '🐄','🐕','🐈','🐷','🦆',
+    '🐦','🐸','🐂','🐻','🐴',
+    '🦁','🐒'
+  ];
+
+  const COLORS = [
+    '#FDE68A','#F9A8D4','#7DD3FC','#6EE7B7','#C4B5FD','#FCA5A5'
+  ];
+
+  /* ── Audio pool ── */
+  const audioPool = SOUNDS.map(s => {
+    const a = new Audio('sounds/' + s);
+    a.preload = 'auto';
+    return a;
+  });
+
+  /* ── Build 12 circles ── */
+  const canvas = document.getElementById('canvas');
+  const circleData = [];
+
+  EMOJIS.forEach((emoji, i) => {
+    const color = COLORS[i % COLORS.length];
+    const el = document.createElement('div');
+    el.className = 'circle';
+    el.style.background = color;
+    el.innerHTML = `<span class="emoji">${emoji}</span>`;
+    el.dataset.i = i;
+
+    // Touch / click
+    el.addEventListener('pointerdown', onPointerDown);
+    el.addEventListener('pointerup', onPointerUp);
+    el.addEventListener('pointerleave', onPointerUp);
+
+    canvas.appendChild(el);
+    circleData.push({ el, color, emoji, audio: audioPool[i] });
+  });
+
+  /* ── Pointer tracking ── */
+  let holdTimer = null;
+  let heldCircle = null;
+  let isHolding = false;
+  let heldFired = false;
+  const HOLD_MS = 2000; // 2s for hold-grow
+  const SETTINGS_HOLD_MS = 5000;
+
+  function onPointerDown(e) {
+    e.preventDefault();
+    const circle = e.currentTarget;
+    const data = circleData[circle.dataset.i];
+    isHolding = true;
+    heldCircle = circle;
+    heldFired = false;
+
+    // Tap start
+    circle.classList.remove('pop');
+    void circle.offsetWidth; // reflow
+    circle.classList.add('pop');
+
+    // Ripple
+    const ripple = document.createElement('div');
+    ripple.className = 'ripple';
+    circle.appendChild(ripple);
+    setTimeout(() => ripple.remove(), 500);
+
+    // Burst
+    spawnBurst(circle, data.emoji);
+
+    // Play sound
+    data.audio.currentTime = 0;
+    data.audio.play().catch(() => {});
+
+    // Hold-grow start
+    holdTimer = setTimeout(() => {
+      if (isHolding && heldCircle === circle) {
+        heldFired = true;
+        circle.classList.add('holding');
+      }
+    }, HOLD_MS);
+  }
+
+  function onPointerUp(e) {
+    clearTimeout(holdTimer);
+    isHolding = false;
+    if (heldCircle) {
+      if (!heldFired) {
+        // Short tap — already handled
+      } else {
+        // Was holding — hatch!
+        const circle = heldCircle;
+        circle.classList.remove('holding');
+        hatchCircle(circle, circleData[circle.dataset.i]);
+      }
+      heldCircle.classList.remove('pop');
+    }
+    heldCircle = null;
+    heldFired = false;
+  }
+
+  /* ── Burst ── */
+  function spawnBurst(circle, emoji) {
+    const rect = circle.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const particles = ['💨', '✨', '⭐', '💫'];
+
+    for (let i = 0; i < 5; i++) {
+      const p = document.createElement('div');
+      p.className = 'burst';
+      p.textContent = particles[i % particles.length];
+      const angle = (i / 5) * Math.PI * 2 - Math.PI / 2;
+      const dist = 50 + Math.random() * 30;
+      p.style.setProperty('--bx', `${Math.cos(angle) * dist}px`);
+      p.style.setProperty('--by', `${Math.sin(angle) * dist}px`);
+      p.style.setProperty('--bx2', `${Math.cos(angle) * (dist + 25)}px`);
+      p.style.setProperty('--by2', `${Math.sin(angle) * (dist + 25)}px`);
+      p.style.left = cx + 'px';
+      p.style.top = cy + 'px';
+      p.style.animationDelay = (i * 0.05) + 's';
+      document.body.appendChild(p);
+      setTimeout(() => p.remove(), 800);
+    }
+  }
+
+  /* ── Hatch ── */
+  function hatchCircle(circle, data) {
+    const rect = circle.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+
+    // 8 particles
+    const colors2 = ['#FDE68A','#F9A8D4','#7DD3FC','#6EE7B7','#C4B5FD','#FCA5A5','#FDE68A','#F9A8D4'];
+    for (let i = 0; i < 8; i++) {
+      const p = document.createElement('div');
+      p.className = 'hatch-particle';
+      p.style.background = colors2[i];
+      p.style.left = cx + 'px';
+      p.style.top = cy + 'px';
+      const angle = (i / 8) * Math.PI * 2;
+      const dist = 90;
+      p.style.setProperty('--tx', `${Math.cos(angle) * dist}px`);
+      p.style.setProperty('--ty', `${Math.sin(angle) * dist}px`);
+      document.body.appendChild(p);
+      setTimeout(() => p.remove(), 700);
+    }
+
+    // Bird
+    const birds = ['🐦','🐤','🐥','🦆','🐸'];
+    const bird = document.createElement('div');
+    bird.className = 'hatch-bird';
+    bird.textContent = birds[Math.floor(Math.random() * birds.length)];
+    bird.style.left = cx + 'px';
+    bird.style.top = cy + 'px';
+    document.body.appendChild(bird);
+    setTimeout(() => bird.remove(), 5000);
+  }
+
+  /* ── Shake ── */
+  let shakeActive = false;
+  function onShake() {
+    if (shakeActive) return;
+    shakeActive = true;
+    circleData.forEach(d => {
+      d.el.classList.remove('jiggle');
+      void d.el.offsetWidth;
+      d.el.classList.add('jiggle');
+      d.el.addEventListener('animationend', () => d.el.classList.remove('jiggle'), { once: true });
+    });
+    // Bonus sound: rooster
+    new Audio('sounds/rooster.mp3').play().catch(() => {});
+    setTimeout(() => { shakeActive = false; }, 1000);
+  }
+
+  window.addEventListener('devicemotion', e => {
+    const a = e.accelerationIncludingGravity;
+    if (!a) return;
+    const mag = Math.sqrt(a.x*a.x + a.y*a.y + a.z*a.z);
+    if (mag > 25) onShake();
+  });
+
+  // Desktop shake simulation (double-tap with movement)
+  let lastTap = 0;
+  document.addEventListener('pointerdown', e => {
+    const now = Date.now();
+    if (now - lastTap < 300) onShake();
+    lastTap = now;
+  });
+
+  /* ── Hidden settings backdoor ── */
+  let settingsHoldTimer = null;
+  document.addEventListener('pointerdown', e => {
+    // Only on background (not circles)
+    if (e.target.closest('.circle')) return;
+    settingsHoldTimer = setTimeout(() => {
+      document.getElementById('settings-overlay').classList.add('open');
+    }, SETTINGS_HOLD_MS);
+  });
+  document.addEventListener('pointerup', () => clearTimeout(settingsHoldTimer));
+
+  document.getElementById('close-settings').addEventListener('click', () => {
+    document.getElementById('settings-overlay').classList.remove('open');
+  });
+
+  // Toggle switches
+  document.querySelectorAll('.toggle').forEach(t => {
+    t.addEventListener('click', () => t.classList.toggle('on'));
+  });
+</script>
+</body>
+</html>
