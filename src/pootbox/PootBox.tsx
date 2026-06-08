@@ -1,5 +1,9 @@
-// PootBox — minimal sound toy for kids. v38.
+// PootBox — minimal sound toy for kids. v39.
 //
+// v39: add your own sound + emoji. Hold the + button → mic overlay →
+//      speak/sing/whatever → pick an emoji → it drops onto the canvas.
+//      Recordings persist in IndexedDB. Tap a custom circle to show
+//      a red × to delete it. Cap at 12 custom circles.
 // v38: removed gyroscope. Drift is now a small random nudge every 2.2s.
 //      Added iOS audio-unlocker (silent WAV on first user tap) so the
 //      first sound actually plays.
@@ -11,12 +15,13 @@
 // v32: physics-based drag/throw/collide.
 // v31: grid layout.
 //
-// 3 user inputs, all "user-driven":
+// 4 user inputs, all "user-driven":
 //   1. Tap emoji        → its sound
-//   2. Drag/throw emoji → it + any circle it bumps (gentler throw)
+//   2. Drag/throw emoji → it + any circle it bumps
 //   3. Hold emoji 1.5s  → hatches a small animal
 //   4. Tap empty space  → soft radial push from tap point
 //   5. Shake phone      → ripple (small impulse)
+//   6. Tap + button     → record your own sound, pick an emoji
 //
 // Plus a passive random drift tick every 2.2s that nudges every circle.
 // Collision sounds play if the colliding pair was touched/tap-pushed/
@@ -47,6 +52,18 @@ interface Circle {
   // Per-circle config
   radius: number; // base radius in px
   mass: number; // mass for collisions (proportional to radius²)
+}
+
+// A user-created circle. The audio lives at blobUrl (an object URL
+// created from the recorded Blob). hatchEmoji/color/shadow are unused
+// for custom circles (we don't show a settings row for them).
+interface CustomCircle {
+  id: string; // "c-<timestamp>"
+  emoji: string;
+  blobUrl: string; // object URL for the recorded audio
+  radius: number;
+  mass: number;
+  createdAt: number;
 }
 
 // v33: emojis only, no colored circles. Cream background, physics-driven
@@ -131,6 +148,91 @@ const DEFAULT_SETTINGS: Settings = {
 const SETTINGS_KEY = "pootbox-settings-v1";
 const HIDDEN_LONG_PRESS_MS = 5000;
 const HATCH_HOLD_MS = 1500;
+const MAX_CUSTOM_CIRCLES = 12;
+const MAX_RECORDING_MS = 6000;
+
+// IndexedDB helpers for persisting user recordings.
+// We use a single object store with key=id (custom circle id) and value=Blob.
+// On app load, all stored recordings are read back and re-attached as
+// blob URLs to the custom circles (so playback works after refresh).
+const DB_NAME = "pootbox";
+const STORE_NAME = "recordings";
+const DB_VERSION = 1;
+
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveRecording(id: string, blob: Blob): Promise<void> {
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      tx.objectStore(STORE_NAME).put(blob, id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // Best-effort persistence. If IDB fails, the recording still works
+    // for the current session.
+  }
+}
+
+async function loadAllRecordings(): Promise<Map<string, Blob>> {
+  const out = new Map<string, Blob>();
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const req = tx.objectStore(STORE_NAME).getAll();
+      req.onsuccess = () => {
+        // getAll() returns values only — we need keys too. Use openCursor.
+        const curReq = tx.objectStore(STORE_NAME).openCursor();
+        curReq.onsuccess = () => {
+          const cursor = curReq.result;
+          if (cursor) {
+            out.set(String(cursor.key), cursor.value as Blob);
+            cursor.continue();
+          }
+        };
+      };
+      req.onerror = () => reject(req.error);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // Best-effort.
+  }
+  return out;
+}
+
+async function deleteRecording(id: string): Promise<void> {
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      tx.objectStore(STORE_NAME).delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // Best-effort.
+  }
+}
+
 const FRICTION = 0.92; // stronger friction — settles to slow drift
 const WALL_BOUNCE = 0.05; // almost no wall bounce, just barely a nudge
 const COLLISION_BOUNCE = 0.08; // very soft push — feels like jelly, not balls
@@ -176,6 +278,17 @@ export default function PootBox() {
   const [hatchAnimals, setHatchAnimals] = useState<HatchAnimal[]>([]);
   const [pressedId, setPressedId] = useState<string | null>(null);
   const [hatchedId, setHatchedId] = useState<string | null>(null);
+
+  // Recording + custom circles
+  // Phase: 'idle' = show + button. 'recording' = big mic, hold to capture.
+  // 'picking' = show emoji picker. 'previewing' = play back the recording.
+  const [recPhase, setRecPhase] = useState<"idle" | "recording" | "picking" | "previewing">("idle");
+  const [pendingBlob, setPendingBlob] = useState<Blob | null>(null);
+  const [pendingUrl, setPendingUrl] = useState<string | null>(null);
+  const [recordingMs, setRecordingMs] = useState(0);
+  const [customCircles, setCustomCircles] = useState<CustomCircle[]>([]);
+  // ID of the custom circle whose delete-X is currently shown (tap to delete)
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   // Refs for animation loop
   const circlesRef = useRef<PhysicsCircle[]>([]);
@@ -572,6 +685,189 @@ export default function PootBox() {
     }
   }, []);
 
+  // === Recording: MediaRecorder setup ===
+  // Held in refs (not state) because they're mutable objects we don't
+  // want React to re-render on. The UI listens to recPhase state instead.
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaChunksRef = useRef<Blob[]>([]);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recordingTimerRef = useRef<number | null>(null);
+  const recordingStartRef = useRef<number>(0);
+
+  const startRecording = useCallback(async () => {
+    if (mediaRecorderRef.current) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      // iOS Safari produces audio/mp4. Other browsers default to webm.
+      // Pick whatever MediaRecorder supports.
+      const mimeType = MediaRecorder.isTypeSupported("audio/mp4")
+        ? "audio/mp4"
+        : MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : "";
+      const rec = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      mediaChunksRef.current = [];
+      rec.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) mediaChunksRef.current.push(e.data);
+      };
+      rec.onstop = () => {
+        // Build the blob + object URL
+        const blob = new Blob(mediaChunksRef.current, {
+          type: rec.mimeType || "audio/webm",
+        });
+        const url = URL.createObjectURL(blob);
+        setPendingBlob(blob);
+        setPendingUrl(url);
+        setRecPhase("picking");
+        // Stop the mic stream
+        if (mediaStreamRef.current) {
+          for (const t of mediaStreamRef.current.getTracks()) t.stop();
+          mediaStreamRef.current = null;
+        }
+        mediaRecorderRef.current = null;
+      };
+      rec.start();
+      mediaRecorderRef.current = rec;
+      recordingStartRef.current = performance.now();
+      setRecordingMs(0);
+      setRecPhase("recording");
+      // Tick the recording timer so the UI shows the live duration
+      recordingTimerRef.current = window.setInterval(() => {
+        const ms = performance.now() - recordingStartRef.current;
+        setRecordingMs(ms);
+        // Auto-stop at max
+        if (ms >= MAX_RECORDING_MS) {
+          if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+            mediaRecorderRef.current.stop();
+          }
+          if (recordingTimerRef.current) {
+            window.clearInterval(recordingTimerRef.current);
+            recordingTimerRef.current = null;
+          }
+        }
+      }, 50);
+    } catch (err) {
+      // User denied mic permission, or browser doesn't support getUserMedia
+      setRecPhase("idle");
+    }
+  }, []);
+
+  const stopRecording = useCallback(() => {
+    if (recordingTimerRef.current) {
+      window.clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+  }, []);
+
+  const cancelRecording = useCallback(() => {
+    if (recordingTimerRef.current) {
+      window.clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      // Stop but don't save the result
+      mediaRecorderRef.current.ondataavailable = null;
+      mediaRecorderRef.current.onstop = null;
+      mediaRecorderRef.current.stop();
+    }
+    if (mediaStreamRef.current) {
+      for (const t of mediaStreamRef.current.getTracks()) t.stop();
+      mediaStreamRef.current = null;
+    }
+    mediaRecorderRef.current = null;
+    setPendingBlob(null);
+    if (pendingUrl) URL.revokeObjectURL(pendingUrl);
+    setPendingUrl(null);
+    setRecordingMs(0);
+    setRecPhase("idle");
+  }, [pendingUrl]);
+
+  // Pick an emoji for the pending recording → drops a new circle onto the canvas
+  const completeRecordingWithEmoji = useCallback(
+    (emoji: string) => {
+      if (!pendingBlob || !pendingUrl) return;
+      const id = `c-${Date.now()}`;
+      const newCircle: CustomCircle = {
+        id,
+        emoji,
+        blobUrl: pendingUrl,
+        radius: 36,
+        mass: 1,
+        createdAt: Date.now(),
+      };
+      // Persist the recording to IndexedDB
+      void saveRecording(id, pendingBlob);
+      setCustomCircles((prev) => [...prev, newCircle]);
+      // Spawn the new circle with a small drop-in velocity
+      if (size.w > 0 && size.h > 0) {
+        const x = newCircle.radius + Math.random() * (size.w - newCircle.radius * 2);
+        const y = newCircle.radius + Math.random() * (size.h - newCircle.radius * 2);
+        const ang = Math.random() * Math.PI * 2;
+        const speed = 0.1 + Math.random() * 0.2;
+        circlesRef.current.push({
+          ...newCircle,
+          color: "transparent",
+          shadow: "transparent",
+          hatchEmoji: "✨",
+          sounds: [pendingUrl],
+          pos: { x, y },
+          vel: { x: Math.cos(ang) * speed, y: Math.sin(ang) * speed },
+          lastTouchedAt: -1,
+          lastTapPushedAt: -1,
+          lastDriftedAt: -1,
+        });
+        setTick((t) => (t + 1) % 1000000);
+      }
+      setPendingBlob(null);
+      setPendingUrl(null);
+      setRecordingMs(0);
+      setRecPhase("idle");
+    },
+    [pendingBlob, pendingUrl, size.w, size.h]
+  );
+
+  // Delete a custom circle
+  const deleteCustomCircle = useCallback(
+    (id: string) => {
+      const c = customCircles.find((x) => x.id === id);
+      if (c) {
+        URL.revokeObjectURL(c.blobUrl);
+        void deleteRecording(id);
+      }
+      setCustomCircles((prev) => prev.filter((x) => x.id !== id));
+      circlesRef.current = circlesRef.current.filter((c) => c.id !== id);
+      if (deleteTarget === id) setDeleteTarget(null);
+      setTick((t) => (t + 1) % 1000000);
+    },
+    [customCircles, deleteTarget]
+  );
+
+  // On mount, restore any saved custom circles from IndexedDB
+  useEffect(() => {
+    void loadAllRecordings().then((map) => {
+      if (map.size === 0) return;
+      // We don't have emoji metadata stored (only Blobs), so we use a
+      // generic 🎤 placeholder. Future improvement: store emoji too.
+      const restored: CustomCircle[] = [];
+      for (const [id, blob] of map.entries()) {
+        const url = URL.createObjectURL(blob);
+        restored.push({
+          id,
+          emoji: "🎤",
+          blobUrl: url,
+          radius: 36,
+          mass: 1,
+          createdAt: 0,
+        });
+      }
+      setCustomCircles(restored);
+    });
+  }, []);
+
   // === Drag handlers ===
 
   const onCirclePointerDown = useCallback(
@@ -677,6 +973,17 @@ export default function PootBox() {
       if (drag && drag.id === id) {
         const circle = circlesRef.current.find((c) => c.id === id);
         if (circle) {
+          // If the user didn't drag (or barely moved), this counts as a tap
+          // on a custom circle → show the delete-X badge.
+          const totalDist = Math.sqrt(
+            (e.clientX - drag.lastX) ** 2 + (e.clientY - drag.lastY) ** 2
+          );
+          // For drag, the lastX/Y is updated every move, so totalDist
+          // is the distance from the last move to the up point. A tap
+          // has small totalDist.
+          if (totalDist < 8 && circle.id.startsWith("c-")) {
+            setDeleteTarget(circle.id);
+          }
           // Throw with velocity from drag (px/ms → px/frame at 60fps)
           circle.vel.x = drag.velocity.x * 16.67 * DRAG_THROW_MULTIPLIER;
           circle.vel.y = drag.velocity.y * 16.67 * DRAG_THROW_MULTIPLIER;
@@ -712,6 +1019,9 @@ export default function PootBox() {
     // iOS audio unlock on first touch (idempotent)
     unlockAudio();
 
+    // Tap on empty space clears any lingering delete-X badge
+    if (deleteTarget) setDeleteTarget(null);
+
     // Radial push: any circle within TAP_PUSH_RADIUS gets pushed away
     // from the tap point, scaled by inverse distance. Marked as
     // tap-pushed so the resulting collisions make sound.
@@ -742,7 +1052,7 @@ export default function PootBox() {
       setShowSettings(true);
       blankHoldTimer.current = null;
     }, HIDDEN_LONG_PRESS_MS);
-  }, [unlockAudio]);
+  }, [unlockAudio, deleteTarget]);
 
   const onBlankPointerMove = useCallback((e: React.PointerEvent) => {
     if (!blankHoldStartPos.current) return;
@@ -892,6 +1202,290 @@ export default function PootBox() {
       >
         💨
       </div>
+
+      {/* Add button — only when idle and we have room for more */}
+      {recPhase === "idle" && customCircles.length < MAX_CUSTOM_CIRCLES && (
+        <button
+          data-add-button
+          onClick={() => {
+            unlockAudio();
+            void startRecording();
+          }}
+          aria-label="Add your own sound"
+          style={{
+            position: "fixed",
+            bottom: `calc(20px + env(safe-area-inset-bottom))`,
+            right: 20,
+            width: 56,
+            height: 56,
+            borderRadius: "50%",
+            background: "rgba(255,255,255,0.9)",
+            border: "1px solid rgba(0,0,0,0.06)",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+            fontSize: "1.8rem",
+            lineHeight: 1,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 0,
+            color: "#3D2C1E",
+            zIndex: 50,
+            WebkitTapHighlightColor: "transparent",
+          }}
+        >
+          ＋
+        </button>
+      )}
+
+      {/* Delete-X badge on a tapped custom circle */}
+      {deleteTarget && (() => {
+        const target = circlesRef.current.find((c) => c.id === deleteTarget);
+        if (!target) return null;
+        return (
+          <button
+            data-delete-target
+            onClick={(e) => {
+              e.stopPropagation();
+              deleteCustomCircle(deleteTarget);
+            }}
+            aria-label="Delete this sound"
+            style={{
+              position: "absolute",
+              left: target.pos.x + target.radius * 0.7,
+              top: target.pos.y - target.radius * 0.7,
+              width: 26,
+              height: 26,
+              borderRadius: "50%",
+              background: "#FF5252",
+              color: "white",
+              border: "2px solid white",
+              fontSize: "0.85rem",
+              lineHeight: 1,
+              fontWeight: 700,
+              cursor: "pointer",
+              zIndex: 30,
+              padding: 0,
+              boxShadow: "0 2px 6px rgba(0,0,0,0.25)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            ×
+          </button>
+        );
+      })()}
+
+      {/* Recording UI */}
+      {recPhase === "recording" && (
+        <div
+          data-rec-overlay
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 24,
+            zIndex: 100,
+            padding: 24,
+          }}
+        >
+          <div
+            style={{
+              color: "white",
+              fontSize: "1.1rem",
+              fontWeight: 600,
+              opacity: 0.9,
+            }}
+          >
+            {recordingMs > 0 ? "Recording…" : "Get ready…"}
+          </div>
+          <div
+            data-mic-button
+            aria-label="Recording"
+            style={{
+              width: 180,
+              height: 180,
+              borderRadius: "50%",
+              background: recordingMs > 0 ? "#FF5252" : "white",
+              border: "none",
+              fontSize: "4.5rem",
+              lineHeight: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 0,
+              boxShadow:
+                recordingMs > 0
+                  ? "0 0 0 16px rgba(255,82,82,0.25), 0 8px 32px rgba(0,0,0,0.3)"
+                  : "0 8px 32px rgba(0,0,0,0.3)",
+              transform: recordingMs > 0 ? "scale(1.08)" : "scale(1)",
+              transition: "transform 100ms ease-out, box-shadow 100ms ease-out",
+              touchAction: "none",
+              userSelect: "none",
+            }}
+          >
+            🎙
+          </div>
+          <div
+            style={{
+              color: "white",
+              fontSize: "0.95rem",
+              fontFamily: "monospace",
+              opacity: 0.7,
+            }}
+          >
+            {(recordingMs / 1000).toFixed(1)}s / 6.0s
+          </div>
+          <button
+            data-stop-rec
+            onClick={stopRecording}
+            disabled={recordingMs === 0}
+            style={{
+              appearance: "none",
+              border: "1px solid rgba(255,255,255,0.3)",
+              background: "transparent",
+              color: "white",
+              fontSize: "0.95rem",
+              padding: "10px 20px",
+              borderRadius: 14,
+              cursor: recordingMs > 0 ? "pointer" : "not-allowed",
+              opacity: recordingMs > 0 ? 1 : 0.4,
+              fontFamily: "inherit",
+            }}
+          >
+            ✓ Done
+          </button>
+          <button
+            data-cancel-rec
+            onClick={cancelRecording}
+            style={{
+              appearance: "none",
+              border: "none",
+              background: "transparent",
+              color: "rgba(255,255,255,0.6)",
+              fontSize: "0.85rem",
+              padding: "6px 12px",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Emoji picker (after recording finishes) */}
+      {recPhase === "picking" && (
+        <div
+          data-emoji-picker
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 16,
+            zIndex: 100,
+            padding: 24,
+          }}
+        >
+          <div
+            style={{
+              color: "white",
+              fontSize: "1.1rem",
+              fontWeight: 600,
+              opacity: 0.9,
+            }}
+          >
+            Pick an emoji
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(6, 1fr)",
+              gap: 8,
+              maxWidth: 320,
+            }}
+          >
+            {[
+              "🎤", "🎸", "🥁", "🎺", "🎹", "🎷",
+              "🐶", "🐱", "🐰", "🦊", "🐻", "🐼",
+              "🦁", "🐯", "🐸", "🐵", "🐔", "🦆",
+              "🐮", "🐷", "🐭", "🐹", "🐨", "🦄",
+              "⭐", "🌈", "🔥", "💧", "🌸", "🍕",
+            ].map((em) => (
+              <button
+                key={em}
+                data-emoji-option={em}
+                onClick={() => completeRecordingWithEmoji(em)}
+                style={{
+                  appearance: "none",
+                  border: "none",
+                  background: "rgba(255,255,255,0.95)",
+                  borderRadius: 12,
+                  fontSize: "1.7rem",
+                  lineHeight: 1,
+                  padding: "10px 0",
+                  cursor: "pointer",
+                  WebkitTapHighlightColor: "transparent",
+                }}
+              >
+                {em}
+              </button>
+            ))}
+          </div>
+          <button
+            data-redo-rec
+            onClick={() => {
+              if (pendingUrl) URL.revokeObjectURL(pendingUrl);
+              setPendingUrl(null);
+              setPendingBlob(null);
+              setRecordingMs(0);
+              void startRecording();
+            }}
+            style={{
+              appearance: "none",
+              border: "1px solid rgba(255,255,255,0.3)",
+              background: "transparent",
+              color: "white",
+              fontSize: "0.95rem",
+              padding: "10px 20px",
+              borderRadius: 14,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            ↺ Re-record
+          </button>
+          <button
+            data-cancel-pick
+            onClick={cancelRecording}
+            style={{
+              appearance: "none",
+              border: "none",
+              background: "transparent",
+              color: "rgba(255,255,255,0.6)",
+              fontSize: "0.85rem",
+              padding: "6px 12px",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {/* Settings modal */}
       {showSettings && (
