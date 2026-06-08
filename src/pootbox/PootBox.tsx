@@ -1,23 +1,26 @@
-// PootBox — minimal sound toy for kids. v37.
+// PootBox — minimal sound toy for kids. v38.
 //
-// v37: "floating in water" mode. Toned down everything.
-//      Stronger friction, smaller deadzone, gentler taps, half throws.
-// v36: gyroscope (tilt) drift + tap-empty-to-push. More inputs, same rule.
+// v38: removed gyroscope. Drift is now a small random nudge every 2.2s.
+//      Added iOS audio-unlocker (silent WAV on first user tap) so the
+//      first sound actually plays.
+// v37: floating-in-water mode. Toned down everything.
+// v36: gyroscope (tilt) drift + tap-empty-to-push.
 // v35: zero-G floating.
 // v34: staggered drop-in.
 // v33: emojis on cream background.
 // v32: physics-based drag/throw/collide.
 // v31: grid layout.
 //
-// 4 user inputs, all "user-driven":
+// 3 user inputs, all "user-driven":
 //   1. Tap emoji        → its sound
 //   2. Drag/throw emoji → it + any circle it bumps (gentler throw)
 //   3. Hold emoji 1.5s  → hatches a small animal
-//   4. Tilt phone       → emojis drift (gentle, wider deadzone)
-//   5. Tap empty space  → soft radial push from tap point
-//   6. Shake phone      → ripple (small impulse)
+//   4. Tap empty space  → soft radial push from tap point
+//   5. Shake phone      → ripple (small impulse)
 //
-// Pure drift between two resting emojis is silent. Water-floating feel.
+// Plus a passive random drift tick every 2.2s that nudges every circle.
+// Collision sounds play if the colliding pair was touched/tap-pushed/
+// drift-nudged in the last ~500ms. Idle field is silent.
 //
 // Physics: requestAnimationFrame loop, 60fps. Each circle has:
 //   - x, y (px from top-left of canvas)
@@ -79,12 +82,13 @@ interface PhysicsCircle extends Circle {
   // Last time (performance.now ms) this circle was directly touched by the user
   // (tap, drag, throw, hatch). -1 = never touched.
   lastTouchedAt: number;
-  // Last time the phone was tilted and this circle was affected by the tilt.
-  // Tracks whether recent collision is "user-driven" via tilt.
-  lastTiltedAt: number;
   // Last time the user tapped empty space and this circle was within
   // the tap-push radius.
   lastTapPushedAt: number;
+  // Last time this circle was nudged by the random drift tick. Used to
+  // make recent drift-driven collisions play sound (so when an emoji is
+  // gently floating and bumps another, the kid hears it).
+  lastDriftedAt: number;
 }
 
 interface Ripple {
@@ -127,15 +131,13 @@ const DEFAULT_SETTINGS: Settings = {
 const SETTINGS_KEY = "pootbox-settings-v1";
 const HIDDEN_LONG_PRESS_MS = 5000;
 const HATCH_HOLD_MS = 1500;
-const FRICTION = 0.94; // stronger friction — settles faster in zero-g
+const FRICTION = 0.92; // stronger friction — settles to slow drift
 const WALL_BOUNCE = 0.05; // almost no wall bounce, just barely a nudge
 const COLLISION_BOUNCE = 0.08; // very soft push — feels like jelly, not balls
 const DRAG_THROW_MULTIPLIER = 0.5; // half-strength throws
-const TILT_DEADZONE = 12; // wider deadzone — only real tilts register
-const TILT_MAX_DEG = 60; // need a bigger tilt to max out
-const TILT_DRIFT_MAX = 0.18; // very gentle drift (was 0.7 — ~4x weaker)
-const TILT_RECENT_MS = 600; // collision sound window
-const TOUCH_RECENT_MS = 500; // collision sound window
+const DRIFT_INTERVAL_MS = 2200; // random nudge interval — keeps field alive
+const DRIFT_MAX = 0.15; // px/frame — small, calm
+const TOUCH_RECENT_MS = 500; // collision sound if either circle touched within this window
 const TAP_PUSH_RADIUS = 130; // smaller push radius
 const TAP_PUSH_MAX = 2; // much gentler push (was 6 — ~3x weaker)
 const TAP_PUSH_RECENT_MS = 350;
@@ -180,15 +182,8 @@ export default function PootBox() {
   const rafRef = useRef<number | null>(null);
   const lastFrameRef = useRef<number>(0);
   const lastShakeAtRef = useRef<number>(0);
+  const lastDriftNudgeAtRef = useRef<number>(0);
   const collisionCooldownRef = useRef<Map<string, number>>(new Map());
-  // Current phone tilt (radians, from DeviceOrientationEvent).
-  // beta = front-back tilt, gamma = left-right tilt. 0 = flat.
-  // Updated by the orientation listener; read by the physics loop.
-  const tiltRef = useRef<{ beta: number; gamma: number; hasPermission: boolean }>({
-    beta: 0,
-    gamma: 0,
-    hasPermission: false,
-  });
 
   // Refs for drag
   const dragRef = useRef<{
@@ -246,8 +241,8 @@ export default function PootBox() {
         pos: { x, y },
         vel: { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed },
         lastTouchedAt: -1,
-        lastTiltedAt: -1,
         lastTapPushedAt: -1,
+        lastDriftedAt: -1,
       };
     });
   }, [size.w, size.h]);
@@ -285,29 +280,18 @@ export default function PootBox() {
         if (Math.abs(c.vel.y) < 0.05) c.vel.y = 0;
       }
 
-      // 1.5 Tilt drift — phone tilt becomes a global acceleration vector.
-      // No tilt = no force. Tilt above TILT_DEADZONE = linear ramp up to
-      // TILT_DRIFT_MAX at TILT_MAX_DEG. Below deadzone = completely silent
-      // (so a hand-held-but-level phone doesn't drift).
-      const tilt = tiltRef.current;
-      const absBeta = Math.abs(tilt.beta);
-      const absGamma = Math.abs(tilt.gamma);
-      const totalTilt = absBeta + absGamma;
-      if (totalTilt > TILT_DEADZONE) {
-        // Linear ramp: 0 at deadzone, 1 at maxDeg
-        const ramp = Math.min(
-          1,
-          (totalTilt - TILT_DEADZONE) / Math.max(1, TILT_MAX_DEG - TILT_DEADZONE)
-        );
-        // Direction: sign of gamma = x, sign of beta = y (portrait phone)
-        // Tilt right (gamma > 0) → drift right (+x). Tilt forward (beta > 0) → drift down (+y).
-        const ax = Math.sign(tilt.gamma) * TILT_DRIFT_MAX * ramp * stepScale;
-        const ay = Math.sign(tilt.beta) * TILT_DRIFT_MAX * ramp * stepScale;
+      // 1.5 Periodic random drift nudge — keeps the field alive when
+      // everything has settled. Tiny push on every circle every 2.2s.
+      if (now - lastDriftNudgeAtRef.current > DRIFT_INTERVAL_MS) {
+        lastDriftNudgeAtRef.current = now;
         for (const c of circles) {
           if (dragRef.current?.id === c.id) continue;
-          c.vel.x += ax;
-          c.vel.y += ay;
-          c.lastTiltedAt = now;
+          // Direction: random angle. Magnitude: small but random.
+          const ang = Math.random() * Math.PI * 2;
+          const mag = Math.random() * DRIFT_MAX;
+          c.vel.x += Math.cos(ang) * mag;
+          c.vel.y += Math.sin(ang) * mag;
+          c.lastDriftedAt = now;
         }
       }
 
@@ -393,18 +377,18 @@ export default function PootBox() {
       }
 
       // 4. Play collision sounds when a user is driving the motion —
-      // either direct touch (tap/drag/throw/hatch), tilt (the user is
-      // angling the phone), or tap-push (user poked empty space).
-      // Pure drift between two resting emojis is silent and spark-less.
+      // direct touch (tap/drag/throw/hatch), recent drift nudge, or
+      // tap-push (user poked empty space). Pure drift between two
+      // settled emojis is silent and spark-less.
       if (collisionsThisFrame.length > 0) {
         for (const { a, b } of collisionsThisFrame) {
           const aUser =
             now - a.lastTouchedAt < TOUCH_RECENT_MS ||
-            now - a.lastTiltedAt < TILT_RECENT_MS ||
+            now - a.lastDriftedAt < TOUCH_RECENT_MS ||
             now - a.lastTapPushedAt < TAP_PUSH_RECENT_MS;
           const bUser =
             now - b.lastTouchedAt < TOUCH_RECENT_MS ||
-            now - b.lastTiltedAt < TILT_RECENT_MS ||
+            now - b.lastDriftedAt < TOUCH_RECENT_MS ||
             now - b.lastTapPushedAt < TAP_PUSH_RECENT_MS;
           if (!aUser && !bUser) continue; // silent drift
           const key = [a.id, b.id].sort().join("|");
@@ -560,43 +544,31 @@ export default function PootBox() {
     return () => window.removeEventListener("devicemotion", handler);
   }, []);
 
-  // === Tilt (deviceorientation) — drives the drift vector ===
+  // === iOS audio unlock ===
   //
-  // iOS Safari 13+ requires explicit user permission to read deviceorientation.
-  // We request it lazily on the first user interaction (a tap on the canvas
-  // anywhere). On Android/desktop/no-permission-needed, the listener just works.
-  //
-  // beta: front-back tilt in degrees (-180..180, 0 = flat on a table)
-  // gamma: left-right tilt in degrees (-90..90, 0 = flat)
-  // Portrait phone, held upright, screen toward user:
-  //   - tilt right (right side down) → gamma goes positive
-  //   - tilt forward (top of phone away) → beta goes positive
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handler = (e: DeviceOrientationEvent) => {
-      if (e.beta === null || e.gamma === null) return;
-      tiltRef.current.beta = e.beta;
-      tiltRef.current.gamma = e.gamma;
-    };
-    window.addEventListener("deviceorientation", handler);
-    return () => window.removeEventListener("deviceorientation", handler);
-  }, []);
-
-  // iOS-specific permission request. Called from a user gesture (first touch).
-  const requestOrientationPermission = useCallback(async () => {
-    const cls = (window as unknown as {
-      DeviceOrientationEvent?: { requestPermission?: () => Promise<"granted" | "denied"> };
-    }).DeviceOrientationEvent;
-    if (cls && typeof cls.requestPermission === "function") {
-      try {
-        const result = await cls.requestPermission();
-        tiltRef.current.hasPermission = result === "granted";
-      } catch {
-        tiltRef.current.hasPermission = false;
-      }
-    } else {
-      // Non-iOS or already-granted: assume permission is implicit
-      tiltRef.current.hasPermission = true;
+  // iOS Safari blocks `new Audio().play()` until a user gesture has
+  // "unlocked" the audio context. The first user tap is the gesture,
+  // but the first `play()` call on that gesture can still fail silently
+  // if the audio context isn't fully unlocked. The standard fix is to
+  // play a silent (or near-silent) buffer on the first user tap, before
+  // any real sound needs to play. This runs once and then becomes a no-op.
+  const audioUnlockedRef = useRef(false);
+  const unlockAudio = useCallback(() => {
+    if (audioUnlockedRef.current) return;
+    audioUnlockedRef.current = true;
+    try {
+      // Create a 0.01s silent WAV. play() with volume 0.0 still
+      // triggers the iOS audio context unlock.
+      const silent = new Audio(
+        "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA="
+      );
+      silent.volume = 0.0;
+      void silent.play().catch(() => {
+        // If even the silent buffer fails, try again on the next gesture
+        audioUnlockedRef.current = false;
+      });
+    } catch {
+      audioUnlockedRef.current = false;
     }
   }, []);
 
@@ -616,10 +588,8 @@ export default function PootBox() {
       }
       setPressedId(id);
 
-      // Request iOS tilt permission on first touch (idempotent, no-op on others)
-      if (!tiltRef.current.hasPermission) {
-        void requestOrientationPermission();
-      }
+      // iOS audio unlock on first touch (idempotent, no-op on others)
+      unlockAudio();
 
       const circle = circlesRef.current.find((c) => c.id === id);
       if (!circle) return;
@@ -739,10 +709,8 @@ export default function PootBox() {
   const onBlankPointerDown = useCallback((e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest("[data-circle]")) return;
 
-    // Request iOS tilt permission on first touch (idempotent)
-    if (!tiltRef.current.hasPermission) {
-      void requestOrientationPermission();
-    }
+    // iOS audio unlock on first touch (idempotent)
+    unlockAudio();
 
     // Radial push: any circle within TAP_PUSH_RADIUS gets pushed away
     // from the tap point, scaled by inverse distance. Marked as
@@ -774,7 +742,7 @@ export default function PootBox() {
       setShowSettings(true);
       blankHoldTimer.current = null;
     }, HIDDEN_LONG_PRESS_MS);
-  }, [requestOrientationPermission]);
+  }, [unlockAudio]);
 
   const onBlankPointerMove = useCallback((e: React.PointerEvent) => {
     if (!blankHoldStartPos.current) return;
