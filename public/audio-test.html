@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Poot Party — Audio Test</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        background: #FEF3C7;
+        color: #3D2C1E;
+        margin: 0;
+        padding: 20px;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+      h1 { font-size: 1.5rem; margin: 0 0 8px; }
+      .emoji { font-size: 6rem; margin: 20px 0; }
+      button {
+        background: #F59E0B;
+        color: white;
+        font-size: 1.2rem;
+        font-weight: 700;
+        border: none;
+        border-radius: 16px;
+        padding: 16px 32px;
+        margin: 8px;
+        min-width: 200px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+        -webkit-tap-highlight-color: transparent;
+      }
+      button:active { transform: scale(0.97); }
+      .ok { background: #10B981; }
+      .err { background: #EF4444; }
+      .log {
+        background: rgba(0,0,0,0.05);
+        border-radius: 8px;
+        padding: 12px;
+        font-family: ui-monospace, SFMono-Regular, monospace;
+        font-size: 0.8rem;
+        text-align: left;
+        max-width: 500px;
+        width: 100%;
+        max-height: 300px;
+        overflow: auto;
+        margin-top: 20px;
+      }
+      .log p { margin: 4px 0; }
+      .ok-text { color: #065F46; }
+      .err-text { color: #991B1B; }
+    </style>
+  </head>
+  <body>
+    <h1>🔊 Poot Party Audio Test</h1>
+    <div class="emoji">🐄</div>
+    <button id="prime">1. Prime audio (tap once)</button>
+    <button id="play">2. Play cow sound</button>
+    <button id="go">← Go to Poot Party</button>
+    <div class="log" id="log"></div>
+    <script>
+      const log = document.getElementById('log');
+      function out(msg, ok = true) {
+        const p = document.createElement('p');
+        p.className = ok ? 'ok-text' : 'err-text';
+        p.textContent = msg;
+        log.appendChild(p);
+      }
+      function clearLog() { log.innerHTML = ''; }
+      function info(msg) { out('ℹ️ ' + msg, true); }
+      function err(msg) { out('❌ ' + msg, false); }
+
+      // Check browser support
+      info('AudioContext: ' + (window.AudioContext || window.webkitAudioContext ? 'yes' : 'no'));
+      info('HTMLAudioElement: yes');
+      info('User agent: ' + navigator.userAgent.slice(0, 80));
+
+      let ctx = null;
+      document.getElementById('prime').addEventListener('click', async () => {
+        clearLog();
+        info('Tapped prime button');
+        try {
+          const Ctor = window.AudioContext || window.webkitAudioContext;
+          ctx = new Ctor();
+          info('Created AudioContext, state=' + ctx.state);
+          if (ctx.state === 'suspended') {
+            await ctx.resume();
+            info('Resumed, state=' + ctx.state);
+          }
+          // Play silent audio
+          const a = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=');
+          a.volume = 0.01;
+          await a.play();
+          info('Silent audio played OK — audio pipeline is primed');
+          out('✅ If you see this with no ❌, audio is unblocked', true);
+        } catch (e) {
+          err('Prime failed: ' + e.name + ': ' + e.message);
+        }
+      });
+
+      document.getElementById('play').addEventListener('click', async () => {
+        clearLog();
+        info('Tap 2: trying cow.mp3');
+        try {
+          const a = new Audio('https://animals.ashbi.ca/sounds/cow.mp3');
+          a.volume = 0.9;
+          await a.play();
+          info('cow.mp3 playing');
+          out('✅ If you heard a moo, audio works on this iPhone!', true);
+        } catch (e) {
+          err('Play failed: ' + e.name + ': ' + e.message);
+          if (e.name === 'NotAllowedError') {
+            out('💡 This means iOS needs a real user gesture first. ' +
+                'Did you tap button 1 (Prime) first? If yes, try tapping Play again.', false);
+          }
+        }
+      });
+
+      document.getElementById('go').addEventListener('click', () => {
+        window.location.href = '/';
+      });
+    </script>
+  </body>
+</html>
