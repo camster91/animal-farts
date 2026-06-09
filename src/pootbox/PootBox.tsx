@@ -91,6 +91,22 @@ export default function PootBox() {
   // Tap feedback: Record<circleId, timestamp>
   const [tappedRecently, setTappedRecently] = useState<Record<string, number>>({});
 
+  // v43: tap combo — count rapid taps within 800ms. At thresholds
+  // (5+, 10+), the whole canvas gets a "combo glow" and sparkles
+  // spawn. Combo resets when no tap happens within the window.
+  const [comboCount, setComboCount] = useState(0);
+  const comboCountRef = useRef(0); // ref mirror of comboCount for read inside click handler
+  const [comboBurst, setComboBurst] = useState<{ x: number; y: number; n: number } | null>(null);
+  const lastTapAtRef = useRef(0);
+  const comboResetTimerRef = useRef<number | null>(null);
+
+  // v43: tap total — fires confetti on every 10th tap (cumulative
+  // session counter, not per-circle). Just visual delight, no game state.
+  // We keep a ref (not state) for the tap handler; the confetti counter
+  // (state) is what triggers the actual UI render.
+  const lifetimeTapsRef = useRef(0);
+  const [confettiBurst, setConfettiBurst] = useState(0); // increments to trigger a new burst
+
   // Onboarding: first-time users see a full-screen overlay
   const [onboarded, setOnboarded] = useState(() => {
     try {
@@ -775,6 +791,42 @@ export default function PootBox() {
         });
       }, 300);
 
+      // v43: combo system. Rapid taps (within 800ms) build a combo.
+      // At 5+ a sutil gold tint kicks in; at 10+ a burst of stars
+      // + the tapped circle does a 1.4x scale pulse. Combo decays after
+      // 800ms of no taps.
+      const now = performance.now();
+      let newCombo: number;
+      if (now - lastTapAtRef.current < 800) {
+        newCombo = comboCountRef.current + 1;
+        setComboCount(newCombo);
+      } else {
+        newCombo = 1;
+        setComboCount(1);
+      }
+      comboCountRef.current = newCombo;
+      lastTapAtRef.current = now;
+      if (comboResetTimerRef.current) {
+        window.clearTimeout(comboResetTimerRef.current);
+      }
+      comboResetTimerRef.current = window.setTimeout(() => {
+        setComboCount(0);
+        comboCountRef.current = 0;
+        comboResetTimerRef.current = null;
+      }, 800);
+      // Burst on combo milestones (5, 10, 15...)
+      if (newCombo > 0 && newCombo % 5 === 0) {
+        setComboBurst({ x: e.clientX, y: e.clientY, n: newCombo });
+        setTimeout(() => setComboBurst(null), 700);
+      }
+
+      // v43: confetti on every 10th tap. Pure visual delight.
+      const newLifetime = lifetimeTapsRef.current + 1;
+      lifetimeTapsRef.current = newLifetime;
+      if (newLifetime % 10 === 0) {
+        setConfettiBurst((c) => c + 1);
+      }
+
       dragRef.current = {
         id,
         lastX: e.clientX,
@@ -1142,6 +1194,105 @@ export default function PootBox() {
           {h.emoji}
         </div>
       ))}
+
+      {/* v43: Combo glow — subtle gold tint when comboCount >= 5 */}
+      {comboCount >= 5 && (
+        <div
+          aria-hidden
+          style={{
+            position: "fixed",
+            inset: 0,
+            pointerEvents: "none",
+            background: "radial-gradient(circle at center, rgba(255, 215, 0, 0.15) 0%, transparent 70%)",
+            zIndex: 3,
+          }}
+        />
+      )}
+
+      {/* v43: Combo burst — extra stars when reaching 5, 10, 15... */}
+      {comboBurst && Array.from({ length: 8 }, (_, i) => {
+        const angle = (i / 8) * Math.PI * 2;
+        const dist = 50 + Math.random() * 30;
+        const dx = Math.cos(angle) * dist;
+        const dy = Math.sin(angle) * dist;
+        return (
+          <div
+            key={`combo-${comboBurst.n}-${i}`}
+            aria-hidden
+            style={{
+              position: "fixed",
+              left: comboBurst.x,
+              top: comboBurst.y,
+              fontSize: "1.5rem",
+              pointerEvents: "none",
+              zIndex: 13,
+              animation: `pootbox-combo-star 0.7s ease-out forwards`,
+              ["--dx" as string]: `${dx}px`,
+              ["--dy" as string]: `${dy}px`,
+            }}
+          >
+            {i % 2 === 0 ? "⭐" : "✨"}
+          </div>
+        );
+      })}
+
+      {/* v43: Confetti burst on every 10th tap. Pure delight. */}
+      {confettiBurst > 0 && Array.from({ length: 24 }, (_, i) => {
+        const angle = (i / 24) * Math.PI * 2;
+        const speed = 80 + Math.random() * 60;
+        const dx = Math.cos(angle) * speed;
+        const dy = Math.sin(angle) * speed - 30; // bias upward
+        const colors = ["#FF6B6B", "#FFD93D", "#6BCB77", "#4D96FF", "#FF9F1C"];
+        const color = colors[i % colors.length];
+        return (
+          <div
+            key={`confetti-${confettiBurst}-${i}`}
+            aria-hidden
+            style={{
+              position: "fixed",
+              left: "50%",
+              top: "50%",
+              width: 10,
+              height: 14,
+              borderRadius: 2,
+              background: color,
+              pointerEvents: "none",
+              zIndex: 14,
+              animation: `pootbox-confetti 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards`,
+              ["--dx" as string]: `${dx}px`,
+              ["--dy" as string]: `${dy}px`,
+            }}
+          />
+        );
+      })}
+
+      {/* v43: Combo count badge — shows current combo number when >= 2 */}
+      {comboCount >= 2 && (
+        <div
+          aria-hidden
+          style={{
+            position: "fixed",
+            top: "calc(20px + env(safe-area-inset-top, 0px))",
+            right: 20,
+            background: "rgba(0,0,0,0.65)",
+            color: comboCount >= 5 ? "#FFD700" : "white",
+            padding: "8px 16px",
+            borderRadius: 20,
+            fontSize: "1.4rem",
+            fontWeight: 800,
+            fontFamily: "Fredoka, system-ui, sans-serif",
+            pointerEvents: "none",
+            zIndex: 11,
+            transform: comboCount >= 5 ? "scale(1.15)" : "scale(1)",
+            transition: "transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), color 200ms",
+            boxShadow: comboCount >= 5
+              ? "0 0 24px rgba(255, 215, 0, 0.6)"
+              : "0 2px 8px rgba(0,0,0,0.2)",
+          }}
+        >
+          ×{comboCount}
+        </div>
+      )}
 
       {/* Mic denied banner (Task 6.2) */}
       {micDenied && (
@@ -1636,6 +1787,20 @@ export default function PootBox() {
           0% { opacity: 0; }
           20% { opacity: 0.3; }
           100% { opacity: 0; }
+        }
+        @keyframes pootbox-combo-star {
+          0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
+          100% {
+            transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1.4) rotate(360deg);
+            opacity: 0;
+          }
+        }
+        @keyframes pootbox-confetti {
+          0% { transform: translate(-50%, -50%) scale(1) rotate(0); opacity: 1; }
+          100% {
+            transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy) + 200px)) scale(0.6) rotate(720deg);
+            opacity: 0;
+          }
         }
       `}</style>
     </div>
