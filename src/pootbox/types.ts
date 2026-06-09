@@ -25,7 +25,6 @@ export interface PhysicsCircle extends Circle {
   vel: Vec2;
   lastTouchedAt: number;
   lastReleasedAt: number;
-  lastTapPushedAt: number;
   lastDriftedAt: number;
   isHero: boolean;
 }
@@ -52,14 +51,6 @@ export interface Spark {
   life: number;
 }
 
-export interface HatchAnimal {
-  id: number;
-  x: number;
-  y: number;
-  emoji: string;
-  bornAt: number;
-}
-
 export interface Settings {
   volume: number;
   reducedMotion: boolean;
@@ -70,7 +61,6 @@ export interface Settings {
 export interface CircleButtonProps {
   circle: PhysicsCircle;
   pressed: boolean;
-  hatched: boolean;
   shaking: boolean;
   reducedMotion: boolean;
   showHeroPulse: boolean;

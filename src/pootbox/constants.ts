@@ -18,7 +18,6 @@ export const CIRCLES: Circle[] = [
 export const DEFAULT_SETTINGS = { volume: 0.9, reducedMotion: false };
 export const SETTINGS_KEY = "pootbox-settings-v1";
 export const HIDDEN_LONG_PRESS_MS = 5000;
-export const HATCH_HOLD_MS = 1500;
 export const MAX_CUSTOM_CIRCLES = 12;
 export const MAX_RECORDING_MS = 6000;
 
@@ -27,8 +26,6 @@ export const FRICTION = 0.995;
 export const WALL_BOUNCE = 0.7;
 export const COLLISION_BOUNCE = 0.85;
 export const DRAG_THROW_MULTIPLIER = 1.0;
-export const TAP_PUSH_RADIUS = 130;
-export const TAP_PUSH_MAX = 2;
 export const COLLISION_AUDIO_WINDOW_MS = 800;
 
 export function loadSettings(): { volume: number; reducedMotion: boolean } {

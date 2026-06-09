@@ -31,22 +31,18 @@ import type {
   Vec2,
   Ripple,
   Spark,
-  HatchAnimal,
   Settings,
   CircleButtonProps,
 } from "./types";
 import {
   CIRCLES,
   HIDDEN_LONG_PRESS_MS,
-  HATCH_HOLD_MS,
   MAX_CUSTOM_CIRCLES,
   MAX_RECORDING_MS,
   FRICTION,
   WALL_BOUNCE,
   COLLISION_BOUNCE,
   DRAG_THROW_MULTIPLIER,
-  TAP_PUSH_RADIUS,
-  TAP_PUSH_MAX,
   COLLISION_AUDIO_WINDOW_MS,
   loadSettings,
   saveSettings,
@@ -71,9 +67,7 @@ export default function PootBox() {
   const [shaking, setShaking] = useState(false);
   const [ripples, setRipples] = useState<Ripple[]>([]);
   const [sparks, setSparks] = useState<Spark[]>([]);
-  const [hatchAnimals, setHatchAnimals] = useState<HatchAnimal[]>([]);
   const [pressedId, setPressedId] = useState<string | null>(null);
-  const [hatchedId, setHatchedId] = useState<string | null>(null);
   // v40: hero circle pulses gently until the kid has tapped any circle.
   const [heroTapped, setHeroTapped] = useState(false);
   // v40: track if any sound is currently playing.
@@ -87,9 +81,6 @@ export default function PootBox() {
   const [customCircles, setCustomCircles] = useState<CustomCircle[]>([]);
   // ID of the custom circle whose delete-X is currently shown
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-
-  // Tap feedback: Record<circleId, timestamp>
-  const [tappedRecently, setTappedRecently] = useState<Record<string, number>>({});
 
   // v43: tap combo — count rapid taps within 800ms. At thresholds
   // (5+, 10+), the whole canvas gets a "combo glow" and sparkles
@@ -116,10 +107,7 @@ export default function PootBox() {
     }
   });
 
-  // Triple-tap watermark counter
-  const watermarkTapCount = useRef(0);
-  const watermarkTapTimer = useRef<number | null>(null);
-  // Long-press for footer
+  // Long-press for footer (opens settings)
   const footerHoldTimer = useRef<number | null>(null);
 
   // Refs for animation loop
@@ -138,7 +126,6 @@ export default function PootBox() {
     lastT: number;
     velocity: Vec2;
   } | null>(null);
-  const holdTimers = useRef<Map<string, number>>(new Map());
 
   // Refs for blank-area long-press (settings backdoor)
   const blankHoldTimer = useRef<number | null>(null);
@@ -148,7 +135,6 @@ export default function PootBox() {
   // ID generators
   const rippleIdRef = useRef(0);
   const sparkIdRef = useRef(0);
-  const hatchIdRef = useRef(0);
 
   // Track settings in a ref for the physics loop
   const settingsRef = useRef(settings);
@@ -202,7 +188,6 @@ export default function PootBox() {
         vel: { x: 0, y: 0 },
         lastTouchedAt: -1,
         lastReleasedAt: -1,
-        lastTapPushedAt: -1,
         lastDriftedAt: -1,
         isHero,
       };
@@ -408,42 +393,6 @@ export default function PootBox() {
     setTimeout(() => {
       setRipples((prev) => prev.filter((r) => r.id !== id));
     }, 700);
-  }, []);
-
-  // === Hatch ===
-
-  const spawnHatch = useCallback((circle: Circle, x: number, y: number) => {
-    setHatchedId(circle.id);
-    setTimeout(() => setHatchedId(null), 800);
-    const newSparks: Spark[] = [];
-    for (let i = 0; i < 8; i++) {
-      const angle = (i / 8) * Math.PI * 2;
-      const dist = 6 + Math.random() * 4;
-      newSparks.push({
-        id: ++sparkIdRef.current,
-        x,
-        y,
-        dx: Math.cos(angle) * dist,
-        dy: Math.sin(angle) * dist,
-        color: circle.color,
-        life: 800,
-      });
-    }
-    setSparks((prev) => [...prev, ...newSparks]);
-    setTimeout(() => {
-      setSparks((prev) => prev.filter((s) => !newSparks.find((ns) => ns.id === s.id)));
-    }, 800);
-    const hatch: HatchAnimal = {
-      id: ++hatchIdRef.current,
-      x,
-      y,
-      emoji: circle.hatchEmoji,
-      bornAt: Date.now(),
-    };
-    setHatchAnimals((prev) => [...prev, hatch]);
-    setTimeout(() => {
-      setHatchAnimals((prev) => prev.filter((h) => h.id !== hatch.id));
-    }, 3000);
   }, []);
 
   // === Shake detection ===
@@ -703,7 +652,6 @@ export default function PootBox() {
           vel: { x: Math.cos(ang) * speed, y: Math.sin(ang) * speed },
           lastTouchedAt: -1,
           lastReleasedAt: -1,
-          lastTapPushedAt: -1,
           lastDriftedAt: -1,
           isHero: false,
         });
@@ -781,16 +729,6 @@ export default function PootBox() {
       playRandomFromCircle(circle);
       spawnRipple(circle, e.clientX, e.clientY);
 
-      // Task 2: tap feedback
-      setTappedRecently((prev) => ({ ...prev, [id]: performance.now() }));
-      setTimeout(() => {
-        setTappedRecently((prev) => {
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-      }, 300);
-
       // v43: combo system. Rapid taps (within 800ms) build a combo.
       // At 5+ a sutil gold tint kicks in; at 10+ a burst of stars
       // + the tapped circle does a 1.4x scale pulse. Combo decays after
@@ -836,17 +774,8 @@ export default function PootBox() {
       };
       circle.vel.x = 0;
       circle.vel.y = 0;
-
-      const existing = holdTimers.current.get(id);
-      if (existing) window.clearTimeout(existing);
-      const timerId = window.setTimeout(() => {
-        spawnHatch(circle, circle.pos.x, circle.pos.y);
-        playRandomFromCircle(circle);
-        holdTimers.current.delete(id);
-      }, HATCH_HOLD_MS);
-      holdTimers.current.set(id, timerId);
     },
-    [playRandomFromCircle, spawnRipple, spawnHatch, heroTapped, unlockAudio]
+    [playRandomFromCircle, spawnRipple, heroTapped, unlockAudio]
   );
 
   const onCirclePointerMove = useCallback(
@@ -884,12 +813,6 @@ export default function PootBox() {
       e.stopPropagation();
       setPressedId(null);
 
-      const timer = holdTimers.current.get(id);
-      if (timer) {
-        window.clearTimeout(timer);
-        holdTimers.current.delete(id);
-      }
-
       const drag = dragRef.current;
       if (drag && drag.id === id) {
         const circle = circlesRef.current.find((c) => c.id === id);
@@ -913,11 +836,6 @@ export default function PootBox() {
 
   const onCirclePointerCancel = useCallback((id: string) => {
     setPressedId(null);
-    const timer = holdTimers.current.get(id);
-    if (timer) {
-      window.clearTimeout(timer);
-      holdTimers.current.delete(id);
-    }
     if (dragRef.current?.id === id) {
       const circle = circlesRef.current.find((c) => c.id === id);
       if (circle) circle.lastTouchedAt = performance.now();
@@ -932,26 +850,6 @@ export default function PootBox() {
 
     unlockAudio();
     if (deleteTarget) setDeleteTarget(null);
-
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const rect = canvas.getBoundingClientRect();
-      const tx = e.clientX - rect.left;
-      const ty = e.clientY - rect.top;
-      const now = performance.now();
-      for (const c of circlesRef.current) {
-        const dx = c.pos.x - tx;
-        const dy = c.pos.y - ty;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < TAP_PUSH_RADIUS && dist > 0.001) {
-          const ramp = 1 - dist / TAP_PUSH_RADIUS;
-          const push = TAP_PUSH_MAX * ramp;
-          c.vel.x += (dx / dist) * push;
-          c.vel.y += (dy / dist) * push;
-          c.lastTapPushedAt = now;
-        }
-      }
-    }
 
     blankHoldStartPos.current = { x: e.clientX, y: e.clientY };
     blankHoldStartT.current = Date.now();
@@ -986,17 +884,9 @@ export default function PootBox() {
   // === Cleanup ===
 
   useEffect(() => {
-    // Capture the current ref values at effect-setup time so the
-    // cleanup uses the right Map/Set instances even if React swaps them
-    // out by the time unmount fires.
-    const holdTimersMap = holdTimers.current;
     const blankTimerRef = blankHoldTimer;
     const rafRefLocal = rafRef;
     return () => {
-      for (const timer of holdTimersMap.values()) {
-        window.clearTimeout(timer);
-      }
-      holdTimersMap.clear();
       if (blankTimerRef.current) {
         window.clearTimeout(blankTimerRef.current);
       }
@@ -1004,26 +894,9 @@ export default function PootBox() {
     };
   }, []);
 
-  // === Watermark triple-tap handler (Task 4) ===
+  // === Footer long-press handler (opens settings) ===
 
-  const handleWatermarkTap = useCallback(() => {
-    if (watermarkTapTimer.current) window.clearTimeout(watermarkTapTimer.current);
-    watermarkTapCount.current += 1;
-    watermarkTapTimer.current = window.setTimeout(() => {
-      watermarkTapCount.current = 0;
-      watermarkTapTimer.current = null;
-    }, 1000);
-    if (watermarkTapCount.current >= 3) {
-      watermarkTapCount.current = 0;
-      if (watermarkTapTimer.current) {
-        window.clearTimeout(watermarkTapTimer.current);
-        watermarkTapTimer.current = null;
-      }
-      setShowSettings(true);
-    }
-  }, []);
-
-  const handleWatermarkPointerDown = useCallback((e: React.PointerEvent) => {
+  const handleFooterPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
     const target = e.currentTarget as HTMLElement;
@@ -1032,16 +905,14 @@ export default function PootBox() {
         target.setPointerCapture(e.pointerId);
       } catch { /* ignore */ }
     }
-    // Start long-press timer for footer (1.5s)
     if (footerHoldTimer.current) window.clearTimeout(footerHoldTimer.current);
     footerHoldTimer.current = window.setTimeout(() => {
       setShowSettings(true);
       footerHoldTimer.current = null;
     }, 1500);
-    handleWatermarkTap();
-  }, [handleWatermarkTap]);
+  }, []);
 
-  const handleWatermarkPointerUp = useCallback(() => {
+  const handleFooterPointerUp = useCallback(() => {
     if (footerHoldTimer.current) {
       window.clearTimeout(footerHoldTimer.current);
       footerHoldTimer.current = null;
@@ -1112,26 +983,20 @@ export default function PootBox() {
       )}
 
       {/* Render circles */}
-      {circlesRef.current.map((c) => {
-        const tappedAt = tappedRecently[c.id];
-        const isTapped = tappedAt !== undefined && performance.now() - tappedAt < 300;
-        return (
+      {circlesRef.current.map((c) => (
           <CircleButton
             key={c.id}
             circle={c}
             pressed={pressedId === c.id}
-            hatched={hatchedId === c.id}
             shaking={shaking}
             reducedMotion={settings.reducedMotion}
             showHeroPulse={c.isHero && !heroTapped}
-            tapped={isTapped}
             onPointerDown={onCirclePointerDown}
             onPointerMove={onCirclePointerMove}
             onPointerUp={onCirclePointerUp}
             onPointerCancel={onCirclePointerCancel}
           />
-        );
-      })}
+      ))}
 
       {/* Ripples */}
       {ripples.map((r) => (
@@ -1174,25 +1039,6 @@ export default function PootBox() {
             boxShadow: `0 0 8px ${s.color}`,
           }}
         />
-      ))}
-
-      {/* Hatched animals */}
-      {hatchAnimals.map((h) => (
-        <div
-          key={h.id}
-          style={{
-            position: "absolute",
-            left: h.x,
-            top: h.y,
-            fontSize: "2.4rem",
-            transform: "translate(-50%, -50%)",
-            animation: "pootbox-bob 3s ease-in-out forwards",
-            pointerEvents: "none",
-            zIndex: 12,
-          }}
-        >
-          {h.emoji}
-        </div>
       ))}
 
       {/* v43: Combo glow — subtle gold tint when comboCount >= 5 */}
@@ -1724,12 +1570,12 @@ export default function PootBox() {
         />
       )}
 
-      {/* Footer with watermark (Task 8) */}
+      {/* Footer with watermark */}
       <div
         data-footer
-        onPointerDown={handleWatermarkPointerDown}
-        onPointerUp={handleWatermarkPointerUp}
-        onPointerCancel={handleWatermarkPointerUp}
+        onPointerDown={handleFooterPointerDown}
+        onPointerUp={handleFooterPointerUp}
+        onPointerCancel={handleFooterPointerUp}
         style={{
           position: "fixed",
           bottom: "max(4px, env(safe-area-inset-bottom))",
@@ -1763,13 +1609,6 @@ export default function PootBox() {
         @keyframes pootbox-spark {
           0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
           100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.3); opacity: 0; }
-        }
-        @keyframes pootbox-bob {
-          0% { transform: translate(-50%, -50%) scale(0); }
-          15% { transform: translate(-50%, -50%) scale(1.3); }
-          25% { transform: translate(-50%, -50%) scale(1); }
-          75% { transform: translate(calc(-50% + 40px), calc(-50% - 60px)) scale(1) rotate(15deg); }
-          100% { transform: translate(calc(-50% + 60px), calc(-50% - 30px)) scale(0.6) rotate(-10deg); opacity: 0.5; }
         }
         @keyframes pootbox-pulse-stop {
           0%, 100% { transform: scale(1); }
@@ -1809,18 +1648,14 @@ export default function PootBox() {
 
 // === Single circle button ===
 
-interface CircleButtonComponentProps extends Omit<CircleButtonProps, ""> {
-  tapped: boolean;
-}
+type CircleButtonComponentProps = CircleButtonProps;
 
 function CircleButton({
   circle,
   pressed,
-  hatched,
   shaking,
   reducedMotion,
   showHeroPulse,
-  tapped,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -1828,9 +1663,6 @@ function CircleButton({
 }: CircleButtonComponentProps) {
   const size = circle.radius * 2;
   const heroScale = showHeroPulse ? 1.15 : 1;
-
-  // Task 2: tap scale pulse 1.0 → 1.25 → 1.0 over 200ms
-  const tapScale = tapped ? 1.25 : 1;
 
   return (
     <button
@@ -1853,11 +1685,9 @@ function CircleButton({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        transform: `scale(${pressed ? 0.88 : hatched ? 1.25 : heroScale * tapScale})`,
+        transform: `scale(${pressed ? 0.88 : heroScale})`,
         transition: pressed
           ? "transform 100ms ease-out"
-          : tapped
-          ? "transform 200ms ease-out"
           : "transform 200ms ease-out",
         touchAction: "none",
         WebkitTapHighlightColor: "transparent",
@@ -1882,20 +1712,6 @@ function CircleButton({
             border: "2px dashed rgba(245, 158, 11, 0.55)",
             pointerEvents: "none",
             animation: "pootbox-hero-ring 1.6s ease-in-out infinite",
-          }}
-        />
-      )}
-      {/* Tap color flash overlay */}
-      {tapped && (
-        <span
-          aria-hidden
-          style={{
-            position: "absolute",
-            inset: -4,
-            borderRadius: "50%",
-            background: "rgba(245,158,11,0.25)",
-            pointerEvents: "none",
-            animation: "pootbox-tap-flash 300ms ease-out forwards",
           }}
         />
       )}
