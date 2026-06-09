@@ -309,6 +309,10 @@ export default function PootBox() {
   const lastFrameRef = useRef<number>(0);
   const lastShakeAtRef = useRef<number>(0);
   const collisionCooldownRef = useRef<Map<string, number>>(new Map());
+  // Per-circle last-played timestamp. Prevents one tap from triggering
+  // multiple sounds on the same circle (e.g. tap → sound, then 50ms later
+  // a drift-induced collision fires the same sound again).
+  const lastCirclePlayRef = useRef<Map<string, number>>(new Map());
 
   // Refs for drag
   const dragRef = useRef<{
@@ -558,8 +562,18 @@ export default function PootBox() {
   settingsRef.current = settings;
   const [, setTick] = useState(0);
 
+  // Per-circle sound cooldown. After a circle plays, it can't play again
+  // for ~250ms. This is what stops "tap one emoji → 10 sounds" — the
+  // collision step would otherwise keep firing the same sound for as
+  // long as the touch window (600ms) is open.
+  const PER_CIRCLE_SOUND_COOLDOWN_MS = 250;
+
   const playRandomFromCircle = useCallback(
     (circle: Circle) => {
+      const now = performance.now();
+      const last = lastCirclePlayRef.current.get(circle.id) ?? 0;
+      if (now - last < PER_CIRCLE_SOUND_COOLDOWN_MS) return;
+      lastCirclePlayRef.current.set(circle.id, now);
       const sound = circle.sounds[Math.floor(Math.random() * circle.sounds.length)];
       playSingle(sound, settings.volume);
     },
@@ -569,6 +583,10 @@ export default function PootBox() {
   // Use ref-stable version for the physics loop
   const playRandomFromCircleRef = useCallback(
     (circle: Circle, volume: number) => {
+      const now = performance.now();
+      const last = lastCirclePlayRef.current.get(circle.id) ?? 0;
+      if (now - last < PER_CIRCLE_SOUND_COOLDOWN_MS) return;
+      lastCirclePlayRef.current.set(circle.id, now);
       const sound = circle.sounds[Math.floor(Math.random() * circle.sounds.length)];
       playSingle(sound, volume);
     },
@@ -1306,6 +1324,41 @@ export default function PootBox() {
         </button>
       )}
 
+      {/* Stop button — appears when any sound is currently playing.
+          Tapping it silences all audio without leaving the app. */}
+      {isAnySoundPlaying() && (
+        <button
+          data-stop-sound
+          onClick={stopAllSounds}
+          aria-label="Stop all sounds"
+          style={{
+            position: "fixed",
+            bottom: `calc(20px + env(safe-area-inset-bottom))`,
+            right: customCircles.length < MAX_CUSTOM_CIRCLES ? 88 : 20,
+            width: 56,
+            height: 56,
+            borderRadius: "50%",
+            background: "rgba(255,82,82,0.95)",
+            border: "1px solid rgba(0,0,0,0.06)",
+            boxShadow: "0 4px 16px rgba(255,82,82,0.35)",
+            fontSize: "1.4rem",
+            lineHeight: 1,
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 0,
+            color: "white",
+            zIndex: 50,
+            WebkitTapHighlightColor: "transparent",
+            animation: "pootbox-pulse-stop 1s ease-in-out infinite",
+          }}
+        >
+          ⏹
+        </button>
+      )}
+
       {/* Delete-X badge on a tapped custom circle */}
       {deleteTarget && (() => {
         const target = circlesRef.current.find((c) => c.id === deleteTarget);
@@ -1583,6 +1636,10 @@ export default function PootBox() {
           25% { transform: translate(-50%, -50%) scale(1); }
           75% { transform: translate(calc(-50% + 40px), calc(-50% - 60px)) scale(1) rotate(15deg); }
           100% { transform: translate(calc(-50% + 60px), calc(-50% - 30px)) scale(0.6) rotate(-10deg); opacity: 0.5; }
+        }
+        @keyframes pootbox-pulse-stop {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.1); }
         }
       `}</style>
     </div>
