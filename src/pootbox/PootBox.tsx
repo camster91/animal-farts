@@ -1293,7 +1293,10 @@ export default function PootBox() {
           <div
             data-mic-button
             aria-label="Tap to stop recording"
-            onClick={recordingMs > 0 ? stopRecording : undefined}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (recordingMs > 0) stopRecording();
+            }}
             style={{
               width: 180,
               height: 180,
@@ -1331,7 +1334,10 @@ export default function PootBox() {
           </div>
           <button
             data-stop-rec
-            onClick={stopRecording}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (recordingMs > 0) stopRecording();
+            }}
             disabled={recordingMs === 0}
             style={{
               appearance: "none",
@@ -1350,7 +1356,10 @@ export default function PootBox() {
           </button>
           <button
             data-cancel-rec
-            onClick={cancelRecording}
+            onClick={(e) => {
+              e.stopPropagation();
+              cancelRecording();
+            }}
             style={{
               appearance: "none",
               border: "none",
@@ -1426,7 +1435,10 @@ export default function PootBox() {
                 <button
                   key={em}
                   data-emoji-option={em}
-                  onClick={() => completeRecordingWithEmoji(em)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    completeRecordingWithEmoji(em);
+                  }}
                   style={{
                     appearance: "none",
                     border: "none",
@@ -1445,7 +1457,8 @@ export default function PootBox() {
             </div>
             <button
               data-redo-rec
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 if (pendingUrl) URL.revokeObjectURL(pendingUrl);
                 setPendingUrl(null);
                 setPendingBlob(null);
