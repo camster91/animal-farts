@@ -487,66 +487,80 @@ export default function PootBox() {
 
   const startRecording = useCallback(async () => {
     if (mediaRecorderRef.current) return;
+    // IMPORTANT: getUserMedia must be called synchronously in a user
+    // gesture. Do NOT call anything else that might "consume" the
+    // gesture (like new Audio().play()) before this.
+    let stream: MediaStream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = stream;
-      setMicDenied(false);
-      const mimeType = MediaRecorder.isTypeSupported("audio/mp4")
-        ? "audio/mp4"
-        : MediaRecorder.isTypeSupported("audio/webm")
-        ? "audio/webm"
-        : "";
-      const rec = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      mediaChunksRef.current = [];
-      rec.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) mediaChunksRef.current.push(e.data);
-      };
-      rec.onstop = () => {
-        // Task 6.4: check for empty recording
-        const blob = new Blob(mediaChunksRef.current, {
-          type: rec.mimeType || "audio/webm",
-        });
-        if (mediaChunksRef.current.length === 0 || blob.size === 0) {
-          setRecPhase("idle");
-          return;
-        }
-        const url = URL.createObjectURL(blob);
-        setPendingBlob(blob);
-        setPendingUrl(url);
-        setRecPhase("picking");
-        if (mediaStreamRef.current) {
-          for (const t of mediaStreamRef.current.getTracks()) t.stop();
-          mediaStreamRef.current = null;
-        }
-        mediaRecorderRef.current = null;
-      };
-      rec.start();
-      mediaRecorderRef.current = rec;
-      recordingStartRef.current = performance.now();
-      setRecordingMs(0);
-      setRecPhase("recording");
-      recordingTimerRef.current = window.setInterval(() => {
-        const ms = performance.now() - recordingStartRef.current;
-        setRecordingMs(ms);
-        if (ms >= MAX_RECORDING_MS) {
-          if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-            mediaRecorderRef.current.stop();
-          }
-          if (recordingTimerRef.current) {
-            window.clearInterval(recordingTimerRef.current);
-            recordingTimerRef.current = null;
-          }
-        }
-      }, 50);
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (err) {
-      // Task 6.2: detect NotAllowedError
       if (err instanceof DOMException && err.name === "NotAllowedError") {
+        setMicDenied(true);
+      } else if (err instanceof DOMException && err.name === "NotFoundError") {
+        // No microphone found
+        setMicDenied(true);
+      } else {
+        // Other error (security, hardware, etc.)
+        console.error("Recording error:", err);
         setMicDenied(true);
       }
       setRecPhase("idle");
+      return;
     }
-  }, []);
-
+    mediaStreamRef.current = stream;
+    setMicDenied(false);
+    // Now (after getUserMedia) is safe to call unlockAudio and
+    // initialize MediaRecorder.
+    unlockAudio();
+    const mimeType = MediaRecorder.isTypeSupported("audio/mp4")
+      ? "audio/mp4"
+      : MediaRecorder.isTypeSupported("audio/webm")
+      ? "audio/webm"
+      : "";
+    const rec = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    mediaChunksRef.current = [];
+    rec.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) mediaChunksRef.current.push(e.data);
+    };
+    rec.onstop = () => {
+      // Task 6.4: check for empty recording
+      const blob = new Blob(mediaChunksRef.current, {
+        type: rec.mimeType || "audio/webm",
+      });
+      if (mediaChunksRef.current.length === 0 || blob.size === 0) {
+        setRecPhase("idle");
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      setPendingBlob(blob);
+      setPendingUrl(url);
+      setRecPhase("picking");
+      if (mediaStreamRef.current) {
+        for (const t of mediaStreamRef.current.getTracks()) t.stop();
+        mediaStreamRef.current = null;
+      }
+      mediaRecorderRef.current = null;
+    };
+    rec.start();
+    mediaRecorderRef.current = rec;
+    recordingStartRef.current = performance.now();
+    setRecordingMs(0);
+    setRecPhase("recording");
+    recordingTimerRef.current = window.setInterval(() => {
+      const ms = performance.now() - recordingStartRef.current;
+      setRecordingMs(ms);
+      // Auto-stop at max
+      if (ms >= MAX_RECORDING_MS) {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+          mediaRecorderRef.current.stop();
+        }
+        if (recordingTimerRef.current) {
+          window.clearInterval(recordingTimerRef.current);
+          recordingTimerRef.current = null;
+        }
+      }
+    }, 50);
+  }, [unlockAudio]);
   const stopRecording = useCallback(() => {
     if (recordingTimerRef.current) {
       window.clearInterval(recordingTimerRef.current);
@@ -1162,7 +1176,10 @@ export default function PootBox() {
         <button
           data-add-button
           onClick={() => {
-            unlockAudio();
+            // startRecording handles unlockAudio internally AFTER
+            // getUserMedia resolves. Don't call unlockAudio here — that
+            // would happen before getUserMedia in some browsers and
+            // consume the user gesture.
             void startRecording();
           }}
           aria-label="Add your own sound"
