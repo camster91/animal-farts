@@ -287,6 +287,10 @@ export default function PootBox() {
   const [hatchAnimals, setHatchAnimals] = useState<HatchAnimal[]>([]);
   const [pressedId, setPressedId] = useState<string | null>(null);
   const [hatchedId, setHatchedId] = useState<string | null>(null);
+  // v40: hero circle pulses gently until the kid has tapped any circle.
+  // After the first tap, the pulse stops. (Hero is the center circle of
+  // the 4x3 grid; set in the init useEffect.)
+  const [heroTapped, setHeroTapped] = useState(false);
   // v40: track if any sound is currently playing. Polled every 100ms
   // via the audio manager — used to show a "stop" button only when
   // there's something to stop.
@@ -932,6 +936,10 @@ export default function PootBox() {
       }
       setPressedId(id);
 
+      // v40: first tap dismisses the hero pulse — kid has discovered
+      // the app, no more hand-holding.
+      if (!heroTapped) setHeroTapped(true);
+
       // iOS audio unlock on first touch (idempotent, no-op on others)
       unlockAudio();
 
@@ -1167,6 +1175,7 @@ export default function PootBox() {
           hatched={hatchedId === c.id}
           shaking={shaking}
           reducedMotion={settings.reducedMotion}
+          showHeroPulse={c.isHero && !heroTapped}
           onPointerDown={onCirclePointerDown}
           onPointerMove={onCirclePointerMove}
           onPointerUp={onCirclePointerUp}
@@ -1641,6 +1650,14 @@ export default function PootBox() {
           0%, 100% { transform: scale(1); }
           50% { transform: scale(1.1); }
         }
+        @keyframes pootbox-hero-pulse {
+          0%, 100% { transform: scale(1.05); }
+          50% { transform: scale(1.18); }
+        }
+        @keyframes pootbox-hero-ring {
+          0%, 100% { transform: scale(1); opacity: 0.55; }
+          50% { transform: scale(1.25); opacity: 0.2; }
+        }
       `}</style>
     </div>
   );
@@ -1654,6 +1671,9 @@ interface CircleButtonProps {
   hatched: boolean;
   shaking: boolean;
   reducedMotion: boolean;
+  /** True when this is the "hero" circle that the kid hasn't tapped yet
+   *  on the first screen — pulses gently to draw the eye. */
+  showHeroPulse: boolean;
   onPointerDown: (id: string, e: React.PointerEvent) => void;
   onPointerMove: (id: string, e: React.PointerEvent) => void;
   onPointerUp: (id: string, e: React.PointerEvent) => void;
@@ -1666,6 +1686,7 @@ function CircleButton({
   hatched,
   shaking,
   reducedMotion,
+  showHeroPulse,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -1673,6 +1694,10 @@ function CircleButton({
 }: CircleButtonProps) {
   // v33: emojis only. Emoji IS the button. radius → font size + hit area.
   const size = circle.radius * 2;
+  // Hero circle: tap target slightly larger + subtle pulse animation.
+  // Once tapped, hero flag is cleared by parent (showHeroPulse=false)
+  // and the pulse stops. This is the "self-teaching" trick.
+  const heroScale = showHeroPulse ? 1.15 : 1;
   return (
     <button
       data-circle={circle.id}
@@ -1694,18 +1719,36 @@ function CircleButton({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        transform: `scale(${pressed ? 0.88 : hatched ? 1.25 : 1})`,
+        transform: `scale(${pressed ? 0.88 : hatched ? 1.25 : heroScale})`,
         transition: pressed
           ? "transform 100ms ease-out"
           : "transform 200ms ease-out",
         touchAction: "none",
         WebkitTapHighlightColor: "transparent",
         padding: 0,
-        animation: shaking && !reducedMotion ? "pootbox-jiggle 0.6s ease-in-out" : undefined,
-        zIndex: pressed ? 20 : 1,
+        animation: showHeroPulse && !reducedMotion
+          ? "pootbox-hero-pulse 1.6s ease-in-out infinite"
+          : shaking && !reducedMotion
+          ? "pootbox-jiggle 0.6s ease-in-out"
+          : undefined,
+        zIndex: pressed ? 20 : showHeroPulse ? 5 : 1,
         userSelect: "none",
       }}
     >
+      {/* Soft glow ring around the hero circle, only when not yet tapped */}
+      {showHeroPulse && (
+        <span
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: -6,
+            borderRadius: "50%",
+            border: "2px dashed rgba(245, 158, 11, 0.55)",
+            pointerEvents: "none",
+            animation: "pootbox-hero-ring 1.6s ease-in-out infinite",
+          }}
+        />
+      )}
       <span
         style={{
           fontSize: `${circle.radius * 1.4}px`, // emoji bigger than hit area for finger forgiveness
