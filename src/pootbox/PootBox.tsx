@@ -1293,38 +1293,38 @@ export default function PootBox() {
         💨
       </div>
 
-      {/* v40: Stop button — visible only when a sound is currently
-          playing. Tapping it silences everything immediately. */}
+      {/* Stop button — appears when any sound is currently playing.
+          Tapping it silences all audio without leaving the app. */}
       {soundPlaying && (
         <button
-          data-stop-button
+          data-stop-sound
           onClick={() => {
             stopAllSounds();
             setSoundPlaying(false);
           }}
-          aria-label="Stop sound"
+          aria-label="Stop all sounds"
           style={{
             position: "fixed",
-            top: `calc(16px + env(safe-area-inset-top))`,
-            left: 16,
-            width: 44,
-            height: 44,
+            bottom: `calc(20px + env(safe-area-inset-bottom))`,
+            right: customCircles.length < MAX_CUSTOM_CIRCLES ? 88 : 20,
+            width: 56,
+            height: 56,
             borderRadius: "50%",
-            background: "rgba(0,0,0,0.55)",
-            backdropFilter: "blur(4px)",
-            WebkitBackdropFilter: "blur(4px)",
-            color: "white",
-            border: "1px solid rgba(255,255,255,0.2)",
-            fontSize: "1.1rem",
+            background: "rgba(255,82,82,0.95)",
+            border: "1px solid rgba(0,0,0,0.06)",
+            boxShadow: "0 4px 16px rgba(255,82,82,0.35)",
+            fontSize: "1.4rem",
             lineHeight: 1,
+            fontWeight: 700,
             cursor: "pointer",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             padding: 0,
-            zIndex: 60,
+            color: "white",
+            zIndex: 50,
             WebkitTapHighlightColor: "transparent",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+            animation: "pootbox-pulse-stop 1s ease-in-out infinite",
           }}
         >
           ⏹
@@ -1363,41 +1363,6 @@ export default function PootBox() {
           }}
         >
           ＋
-        </button>
-      )}
-
-      {/* Stop button — appears when any sound is currently playing.
-          Tapping it silences all audio without leaving the app. */}
-      {isAnySoundPlaying() && (
-        <button
-          data-stop-sound
-          onClick={stopAllSounds}
-          aria-label="Stop all sounds"
-          style={{
-            position: "fixed",
-            bottom: `calc(20px + env(safe-area-inset-bottom))`,
-            right: customCircles.length < MAX_CUSTOM_CIRCLES ? 88 : 20,
-            width: 56,
-            height: 56,
-            borderRadius: "50%",
-            background: "rgba(255,82,82,0.95)",
-            border: "1px solid rgba(0,0,0,0.06)",
-            boxShadow: "0 4px 16px rgba(255,82,82,0.35)",
-            fontSize: "1.4rem",
-            lineHeight: 1,
-            fontWeight: 700,
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 0,
-            color: "white",
-            zIndex: 50,
-            WebkitTapHighlightColor: "transparent",
-            animation: "pootbox-pulse-stop 1s ease-in-out infinite",
-          }}
-        >
-          ⏹
         </button>
       )}
 
