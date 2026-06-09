@@ -252,6 +252,13 @@ const COLLISION_BOUNCE = 0.85; // satisfying circle-circle bounce
 const DRAG_THROW_MULTIPLIER = 1.0;
 const TAP_PUSH_RADIUS = 130; // smaller push radius
 const TAP_PUSH_MAX = 2; // much gentler push (was 6 — ~3x weaker)
+// v40 fix: collision sound only fires if the user DIRECTLY touched
+// one of the colliding circles in the last 800ms. This stops the
+// "ton of random farts" chain reaction that happens when a kid
+// throws one circle into a pile and the chain bounces 5-6 times.
+// The user-caused collision plays its sound; the chain after that
+// is silent (still has visible sparks, but no audio).
+const COLLISION_AUDIO_WINDOW_MS = 800;
 
 function loadSettings(): Settings {
   try {
@@ -523,28 +530,33 @@ export default function PootBox() {
         }
       }
 
-      // 4. Play collision sounds + sparks for every user-driven collision.
-      // v40: with drift removed, every collision is user-driven (either
-      // a tap, drag, throw, or tap-push). No need to gate on a "recent
-      // user activity" window — if circles are moving, the kid did it.
+      // 4. Play collision sounds + sparks for user-driven collisions.
+      // v40 fix: ONLY play sound if the user directly touched one of
+      // the colliding circles in the last 800ms. Chain-reaction bounces
+      // (where circle B was hit by moving circle A) are silent — the
+      // user only hears the sound they directly caused. Sparks still
+      // fire on every collision for visual feedback.
       if (collisionsThisFrame.length > 0) {
         for (const { a, b } of collisionsThisFrame) {
+          const aUser =
+            now - a.lastTouchedAt < COLLISION_AUDIO_WINDOW_MS;
+          const bUser =
+            now - b.lastTouchedAt < COLLISION_AUDIO_WINDOW_MS;
+          const userDriven = aUser || bUser;
           const key = [a.id, b.id].sort().join("|");
           const last = collisionCooldownRef.current.get(key) ?? 0;
-          if (now - last < 400) continue; // 400ms per-pair cooldown
-          collisionCooldownRef.current.set(key, now);
-          // v40: play sound on ONE circle only (the one the user touched
-          // most recently). With the single-voice policy, that means
-          // each collision triggers exactly one new sound, not two
-          // stacked. Picking "a" by default — collisions are rare
-          // enough that the kid can't tell which one played.
-          playRandomFromCircleRef(a, settingsRef.current.volume);
-          // Sparks at the collision midpoint
+          // Sparks: every collision (visual feedback for the kid)
           spawnSparksAtRef.current(
             (a.pos.x + b.pos.x) / 2,
             (a.pos.y + b.pos.y) / 2,
             a.color
           );
+          if (!userDriven) continue; // chain collision — silent
+          if (now - last < 250) continue; // tighter cooldown: 250ms
+          collisionCooldownRef.current.set(key, now);
+          // Play sound on the user-touched circle (or "a" if both are fresh)
+          const circle = aUser ? a : b;
+          playRandomFromCircleRef(circle, settingsRef.current.volume);
         }
       }
 
