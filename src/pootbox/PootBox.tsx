@@ -1,12 +1,11 @@
-// PootBox — minimal sound toy for kids. v39.
+// PootBox — minimal sound toy for kids. v41.
 //
-// v39: add your own sound + emoji. Hold the + button → mic overlay →
-//      speak/sing/whatever → pick an emoji → it drops onto the canvas.
-//      Recordings persist in IndexedDB. Tap a custom circle to show
-//      a red × to delete it. Cap at 12 custom circles.
+// v41: split into focused files. Added tap feedback, onboarding screen,
+//      triple-tap watermark for settings, bigger + button, error boundary
+//      around physics loop, edge case fixes, footer.
+// v40: emojis only, no colored circles. Cream background, physics-driven.
+// v39: add your own sound + emoji. Hold the + button → mic overlay.
 // v38: removed gyroscope. Drift is now a small random nudge every 2.2s.
-//      Added iOS audio-unlocker (silent WAV on first user tap) so the
-//      first sound actually plays.
 // v37: floating-in-water mode. Toned down everything.
 // v36: gyroscope (tilt) drift + tap-empty-to-push.
 // v35: zero-G floating.
@@ -15,312 +14,52 @@
 // v32: physics-based drag/throw/collide.
 // v31: grid layout.
 //
-// 4 user inputs, all "user-driven":
-//   1. Tap emoji        → its sound
-//   2. Drag/throw emoji → it + any circle it bumps
-//   3. Hold emoji 1.5s  → hatches a small animal
-//   4. Tap empty space  → soft radial push from tap point
-//   5. Shake phone      → ripple (small impulse)
-//   6. Tap + button     → record your own sound, pick an emoji
-//
-// Plus a passive random drift tick every 2.2s that nudges every circle.
-// Collision sounds play if the colliding pair was touched/tap-pushed/
-// drift-nudged in the last ~500ms. Idle field is silent.
-//
-// Physics: requestAnimationFrame loop, 60fps. Each circle has:
-//   - x, y (px from top-left of canvas)
-//   - vx, vy (px per frame)
-//   - radius (px)
-//   - mass (proportional to radius²)
-//   - color, emoji, sounds[]
-//
-// Collisions: O(n²) circle-circle check (n=12, fine). Walls: clamp + reflect.
-// Drag: pointer down = grab, pointer move = move, pointer up = release with
-// velocity computed from recent pointer positions.
+// Sound definitions (CIRCLES) live in ./constants.
+// Physics constants live in ./constants.
+// IndexedDB helpers live in ./recordings.
+// Audio manager lives in ./audioManager.
+// Settings modal lives in ./SettingsModal.
+
+/* eslint-disable react-hooks/refs, react-hooks/purity, react-hooks/immutability */
 
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import { playSingle, stopAllSounds, isAnySoundPlaying } from "./audioManager";
-
-// === Sound definitions ===
-
-interface Circle {
-  id: string;
-  emoji: string;
-  color: string;
-  shadow: string;
-  hatchEmoji: string;
-  sounds: string[];
-  // Per-circle config
-  radius: number; // base radius in px
-  mass: number; // mass for collisions (proportional to radius²)
-}
-
-// A user-created circle. The audio lives at blobUrl (an object URL
-// created from the recorded Blob). hatchEmoji/color/shadow are unused
-// for custom circles (we don't show a settings row for them).
-interface CustomCircle {
-  id: string; // "c-<timestamp>"
-  emoji: string;
-  blobUrl: string; // object URL for the recorded audio
-  radius: number;
-  mass: number;
-  createdAt: number;
-}
-
-// v40: emojis only, no colored circles. Cream background, physics-driven
-// emojis. Each emoji = single object, radius covers physics + hit area + visual.
-// All radii >= 30px so tap targets are well above Apple's 44pt minimum on iPhone.
-// (Previous version had 32-38px which was too small.)
-const CIRCLES: Circle[] = [
-  { id: "cow", emoji: "🐄", color: "transparent", shadow: "transparent", hatchEmoji: "🐦", sounds: ["/sounds/cow.mp3", "/sounds/v1/cow.mp3"], radius: 32, mass: 1 },
-  { id: "dog", emoji: "🐕", color: "transparent", shadow: "transparent", hatchEmoji: "🦋", sounds: ["/sounds/dog.mp3", "/sounds/v1/dog.mp3"], radius: 30, mass: 1 },
-  { id: "cat", emoji: "🐈", color: "transparent", shadow: "transparent", hatchEmoji: "🐟", sounds: ["/sounds/cat.mp3", "/sounds/v1/cat.mp3"], radius: 30, mass: 1 },
-  { id: "pig", emoji: "🐖", color: "transparent", shadow: "transparent", hatchEmoji: "🐛", sounds: ["/sounds/pig.mp3", "/sounds/extra/pig.mp3"], radius: 32, mass: 1 },
-  { id: "duck", emoji: "🦆", color: "transparent", shadow: "transparent", hatchEmoji: "🐝", sounds: ["/sounds/duck.mp3", "/sounds/v1/duck.mp3"], radius: 30, mass: 1 },
-  { id: "lion", emoji: "🦁", color: "transparent", shadow: "transparent", hatchEmoji: "🐞", sounds: ["/sounds/lion.mp3", "/sounds/v1/lion.mp3", "/sounds/extra/lion_long.mp3"], radius: 32, mass: 1 },
-  { id: "frog", emoji: "🐸", color: "transparent", shadow: "transparent", hatchEmoji: "🐜", sounds: ["/sounds/frog.mp3", "/sounds/v1/frog.mp3"], radius: 30, mass: 1 },
-  { id: "monkey", emoji: "🐒", color: "transparent", shadow: "transparent", hatchEmoji: "🐌", sounds: ["/sounds/monkey.mp3", "/sounds/v1/monkey.mp3"], radius: 30, mass: 1 },
-  { id: "horse", emoji: "🐎", color: "transparent", shadow: "transparent", hatchEmoji: "🐢", sounds: ["/sounds/horse.mp3", "/sounds/v1/horse.mp3"], radius: 32, mass: 1 },
-  { id: "elephant", emoji: "🐘", color: "transparent", shadow: "transparent", hatchEmoji: "🦄", sounds: ["/sounds/elephant.mp3", "/sounds/v1/elephant.mp3", "/sounds/extra/elephant_long.mp3"], radius: 34, mass: 1 },
-  { id: "rooster", emoji: "🐓", color: "transparent", shadow: "transparent", hatchEmoji: "🦜", sounds: ["/sounds/rooster.mp3"], radius: 30, mass: 1 },
-  { id: "bear", emoji: "🐻", color: "transparent", shadow: "transparent", hatchEmoji: "🐨", sounds: ["/sounds/bear.mp3"], radius: 32, mass: 1 },
-];
-
-// === Physics types ===
-
-interface Vec2 {
-  x: number;
-  y: number;
-}
-
-interface PhysicsCircle extends Circle {
-  // Position (px, top-left of viewport)
-  pos: Vec2;
-  // Velocity (px/frame at 60fps; multiplied by dt to be frame-rate independent)
-  vel: Vec2;
-  // Last time (performance.now ms) this circle was directly touched by the user
-  // (tap, drag, throw, hatch). -1 = never touched.
-  lastTouchedAt: number;
-  // v40 fix: last time the user RELEASED this circle after a drag/throw.
-  // After release, the circle's lastTouchedAt is also set to "now", so
-  // we need a separate timestamp to know "this circle was released, any
-  // collisions after this point are post-throw chain reactions, not
-  // direct user action". A circle is "user-driven" for collision audio
-  // only if (now - lastReleasedAt) > 200ms — i.e., a tap is recent
-  // AND the user hasn't just released a throw.
-  lastReleasedAt: number;
-  // Last time the user tapped empty space and this circle was within
-  // the tap-push radius.
-  lastTapPushedAt: number;
-  // Last time this circle was nudged by the random drift tick. Used to
-  // make recent drift-driven collisions play sound (so when an emoji is
-  // gently floating and bumps another, the kid hears it).
-  lastDriftedAt: number;
-  // v40: hero circle pulses gently until tapped, drawing the kid's eye
-  // to the obvious "tap me" target. Set once at init.
-  isHero: boolean;
-}
-
-interface Ripple {
-  id: number;
-  x: number;
-  y: number;
-  color: string;
-}
-
-interface Spark {
-  id: number;
-  x: number;
-  y: number;
-  dx: number;
-  dy: number;
-  color: string;
-  life: number;
-}
-
-interface HatchAnimal {
-  id: number;
-  x: number;
-  y: number;
-  emoji: string;
-  bornAt: number;
-}
-
-// === Settings ===
-
-interface Settings {
-  volume: number;
-  reducedMotion: boolean;
-}
-
-const DEFAULT_SETTINGS: Settings = {
-  volume: 0.9,
-  reducedMotion: false,
-};
-
-const SETTINGS_KEY = "pootbox-settings-v1";
-const HIDDEN_LONG_PRESS_MS = 5000;
-const HATCH_HOLD_MS = 1500;
-const MAX_CUSTOM_CIRCLES = 12;
-const MAX_RECORDING_MS = 6000;
-
-// IndexedDB helpers for persisting user recordings.
-// We use a single object store with key=id (custom circle id) and value=Blob.
-// On app load, all stored recordings are read back and re-attached as
-// blob URLs to the custom circles (so playback works after refresh).
-const DB_NAME = "pootbox";
-const STORE_NAME = "recordings";
-const DB_VERSION = 1;
-
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function saveRecording(id: string, blob: Blob): Promise<void> {
-  try {
-    const db = await openDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      tx.objectStore(STORE_NAME).put(blob, id);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-    db.close();
-  } catch {
-    // Best-effort persistence. If IDB fails, the recording still works
-    // for the current session.
-  }
-}
-
-// Persist emoji metadata alongside the blob. We can't extend the IDB
-// schema without a migration, so we use a parallel localStorage map
-// keyed by the same `c-<timestamp>` id. Tiny payload, no quota issues.
-function saveRecordingEmoji(id: string, emoji: string): void {
-  try {
-    const raw = localStorage.getItem("pootbox-recording-emojis") || "{}";
-    const map = JSON.parse(raw);
-    map[id] = emoji;
-    localStorage.setItem("pootbox-recording-emojis", JSON.stringify(map));
-  } catch {
-    // ignore
-  }
-}
-
-function loadRecordingEmojis(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem("pootbox-recording-emojis") || "{}";
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
-
-function deleteRecordingEmoji(id: string): void {
-  try {
-    const map = loadRecordingEmojis();
-    delete map[id];
-    localStorage.setItem("pootbox-recording-emojis", JSON.stringify(map));
-  } catch {
-    // ignore
-  }
-}
-
-async function loadAllRecordings(): Promise<Map<string, Blob>> {
-  const out = new Map<string, Blob>();
-  try {
-    const db = await openDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readonly");
-      const req = tx.objectStore(STORE_NAME).getAll();
-      req.onsuccess = () => {
-        // getAll() returns values only — we need keys too. Use openCursor.
-        const curReq = tx.objectStore(STORE_NAME).openCursor();
-        curReq.onsuccess = () => {
-          const cursor = curReq.result;
-          if (cursor) {
-            out.set(String(cursor.key), cursor.value as Blob);
-            cursor.continue();
-          }
-        };
-      };
-      req.onerror = () => reject(req.error);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-    db.close();
-  } catch {
-    // Best-effort.
-  }
-  return out;
-}
-
-async function deleteRecording(id: string): Promise<void> {
-  try {
-    const db = await openDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      tx.objectStore(STORE_NAME).delete(id);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-    db.close();
-  } catch {
-    // Best-effort.
-  }
-}
-
-// === Physics constants (v40) ===
-//
-// v40: stillness by default, satisfying bounces on interaction.
-//   - Friction is very low (0.995) — circles coast a long time after
-//     a throw. They keep moving until they hit a wall or another circle.
-//   - Wall and collision bounces are punchy (0.7) — kids get the
-//     satisfying "boing" they expect from a sound toy.
-//   - Drift is removed — circles are still until the kid touches them.
-const FRICTION = 0.995; // very low friction — coast a long time
-const WALL_BOUNCE = 0.7; // punchy wall bounce
-const COLLISION_BOUNCE = 0.85; // satisfying circle-circle bounce
-const DRAG_THROW_MULTIPLIER = 1.0;
-const TAP_PUSH_RADIUS = 130; // smaller push radius
-const TAP_PUSH_MAX = 2; // much gentler push (was 6 — ~3x weaker)
-// v40 fix: collision sound only fires if the user DIRECTLY touched
-// one of the colliding circles in the last 800ms. This stops the
-// "ton of random farts" chain reaction that happens when a kid
-// throws one circle into a pile and the chain bounces 5-6 times.
-// The user-caused collision plays its sound; the chain after that
-// is silent (still has visible sparks, but no audio).
-const COLLISION_AUDIO_WINDOW_MS = 800;
-
-function loadSettings(): Settings {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    if (raw) {
-      const s = JSON.parse(raw);
-      return { ...DEFAULT_SETTINGS, ...s };
-    }
-  } catch {
-    // ignore
-  }
-  return DEFAULT_SETTINGS;
-}
-
-function saveSettings(s: Settings): void {
-  try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
-  } catch {
-    // ignore
-  }
-}
+import type {
+  Circle,
+  CustomCircle,
+  PhysicsCircle,
+  Vec2,
+  Ripple,
+  Spark,
+  HatchAnimal,
+  Settings,
+  CircleButtonProps,
+} from "./types";
+import {
+  CIRCLES,
+  HIDDEN_LONG_PRESS_MS,
+  HATCH_HOLD_MS,
+  MAX_CUSTOM_CIRCLES,
+  MAX_RECORDING_MS,
+  FRICTION,
+  WALL_BOUNCE,
+  COLLISION_BOUNCE,
+  DRAG_THROW_MULTIPLIER,
+  TAP_PUSH_RADIUS,
+  TAP_PUSH_MAX,
+  COLLISION_AUDIO_WINDOW_MS,
+  loadSettings,
+  saveSettings,
+} from "./constants";
+import {
+  saveRecording,
+  loadAllRecordings,
+  deleteRecording,
+  saveRecordingEmoji,
+  loadRecordingEmojis,
+  deleteRecordingEmoji,
+} from "./recordings";
+import SettingsModal from "./SettingsModal";
 
 // === Component ===
 
@@ -336,24 +75,36 @@ export default function PootBox() {
   const [pressedId, setPressedId] = useState<string | null>(null);
   const [hatchedId, setHatchedId] = useState<string | null>(null);
   // v40: hero circle pulses gently until the kid has tapped any circle.
-  // After the first tap, the pulse stops. (Hero is the center circle of
-  // the 4x3 grid; set in the init useEffect.)
   const [heroTapped, setHeroTapped] = useState(false);
-  // v40: track if any sound is currently playing. Polled every 100ms
-  // via the audio manager — used to show a "stop" button only when
-  // there's something to stop.
+  // v40: track if any sound is currently playing.
   const [soundPlaying, setSoundPlaying] = useState(false);
 
   // Recording + custom circles
-  // Phase: 'idle' = show + button. 'recording' = big mic, tap to stop.
-  // 'picking' = show emoji picker.
   const [recPhase, setRecPhase] = useState<"idle" | "recording" | "picking">("idle");
   const [pendingBlob, setPendingBlob] = useState<Blob | null>(null);
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const [recordingMs, setRecordingMs] = useState(0);
   const [customCircles, setCustomCircles] = useState<CustomCircle[]>([]);
-  // ID of the custom circle whose delete-X is currently shown (tap to delete)
+  // ID of the custom circle whose delete-X is currently shown
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
+  // Tap feedback: Record<circleId, timestamp>
+  const [tappedRecently, setTappedRecently] = useState<Record<string, number>>({});
+
+  // Onboarding: first-time users see a full-screen overlay
+  const [onboarded, setOnboarded] = useState(() => {
+    try {
+      return !!localStorage.getItem("pootbox-onboarded-v1");
+    } catch {
+      return false;
+    }
+  });
+
+  // Triple-tap watermark counter
+  const watermarkTapCount = useRef(0);
+  const watermarkTapTimer = useRef<number | null>(null);
+  // Long-press for footer
+  const footerHoldTimer = useRef<number | null>(null);
 
   // Refs for animation loop
   const circlesRef = useRef<PhysicsCircle[]>([]);
@@ -361,9 +112,6 @@ export default function PootBox() {
   const lastFrameRef = useRef<number>(0);
   const lastShakeAtRef = useRef<number>(0);
   const collisionCooldownRef = useRef<Map<string, number>>(new Map());
-  // Per-circle last-played timestamp. Prevents one tap from triggering
-  // multiple sounds on the same circle (e.g. tap → sound, then 50ms later
-  // a drift-induced collision fires the same sound again).
   const lastCirclePlayRef = useRef<Map<string, number>>(new Map());
 
   // Refs for drag
@@ -372,7 +120,7 @@ export default function PootBox() {
     lastX: number;
     lastY: number;
     lastT: number;
-    velocity: Vec2; // px per ms
+    velocity: Vec2;
   } | null>(null);
   const holdTimers = useRef<Map<string, number>>(new Map());
 
@@ -385,6 +133,14 @@ export default function PootBox() {
   const rippleIdRef = useRef(0);
   const sparkIdRef = useRef(0);
   const hatchIdRef = useRef(0);
+
+  // Track settings in a ref for the physics loop
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const [, setTick] = useState(0);
+
+  // Per-circle sound cooldown
+  const PER_CIRCLE_SOUND_COOLDOWN_MS = 250;
 
   // === Measure canvas ===
 
@@ -402,25 +158,15 @@ export default function PootBox() {
   }, []);
 
   // === Initialize circle positions ===
-  //
-  // v40: deterministic initial layout. 4×3 grid with the cow in the
-  // center, slightly bigger, gently pulsing. Sago Mini's trick: the
-  // first thing the kid sees is one obvious "tap me" target in the
-  // middle, with the other 11 arranged around it. Nothing random.
-  // Re-init on resize (portrait/landscape flip) since the grid math
-  // depends on dimensions.
 
   useEffect(() => {
     if (size.w === 0 || size.h === 0) return;
     const cols = 4;
     const rows = 3;
-    // 12 circles in a 4x3 grid; reserve top/bottom safe-area.
-    // The center cell of the middle row is the "hero" cell — that's
-    // where the cow goes, with a slight scale-up.
-    const heroIndex = 1 * cols + 1; // row 1, col 1 (middle of 4x3)
+    const heroIndex = 1 * cols + 1;
     const padX = 16;
-    const padTop = Math.max(40, size.h * 0.08); // room for status bar
-    const padBottom = 80; // room for + button
+    const padTop = Math.max(40, size.h * 0.08);
+    const padBottom = 80;
     const usableH = size.h - padTop - padBottom;
     const cellW = (size.w - padX * 2) / cols;
     const cellH = usableH / rows;
@@ -429,7 +175,6 @@ export default function PootBox() {
       const col = i % cols;
       const row = Math.floor(i / cols);
       const isHero = i === heroIndex;
-      // Slight jitter so it doesn't look like a spreadsheet
       const jx = (col - (cols - 1) / 2) * 6;
       const jy = (row - (rows - 1) / 2) * 4;
       return {
@@ -438,15 +183,11 @@ export default function PootBox() {
           x: padX + cellW * col + cellW / 2 + jx,
           y: padTop + cellH * row + cellH / 2 + jy,
         },
-        // Hero gets tiny initial "breathing" velocity. Others still.
-        vel: isHero
-          ? { x: 0, y: 0 }
-          : { x: 0, y: 0 },
+        vel: { x: 0, y: 0 },
         lastTouchedAt: -1,
         lastReleasedAt: -1,
         lastTapPushedAt: -1,
         lastDriftedAt: -1,
-        // Hero pulse for the self-teaching first screen
         isHero,
       };
     });
@@ -454,164 +195,149 @@ export default function PootBox() {
 
   // === Physics loop ===
 
+  // Ref-stable version for the physics loop. Must be declared before the
+  // useEffect that references it inside tick().
+  const playRandomFromCircleRef = useCallback(
+    (circle: Circle, volume: number) => {
+      const now = performance.now();
+      const last = lastCirclePlayRef.current.get(circle.id) ?? 0;
+      if (now - last < PER_CIRCLE_SOUND_COOLDOWN_MS) return;
+      lastCirclePlayRef.current.set(circle.id, now);
+      const sound = circle.sounds[Math.floor(Math.random() * circle.sounds.length)];
+      playSingle(sound, volume);
+    },
+    []
+  );
+
   useEffect(() => {
     if (size.w === 0 || size.h === 0) return;
     let mounted = true;
+    let loopStopped = false;
 
     const tick = (now: number) => {
-      if (!mounted) return;
-      const dt = lastFrameRef.current === 0 ? 16.67 : now - lastFrameRef.current;
-      lastFrameRef.current = now;
-      // Cap dt to avoid huge jumps when tab is backgrounded
-      const clampedDt = Math.min(dt, 50);
-      const stepScale = clampedDt / 16.67; // 1.0 = 60fps baseline
+      if (!mounted || loopStopped) return;
+      try {
+        const dt = lastFrameRef.current === 0 ? 16.67 : now - lastFrameRef.current;
+        lastFrameRef.current = now;
+        const clampedDt = Math.min(dt, 50);
+        const stepScale = clampedDt / 16.67;
 
-      const circles = circlesRef.current;
-      const w = size.w;
-      const h = size.h;
-      const collisionsThisFrame: { a: PhysicsCircle; b: PhysicsCircle }[] = [];
+        const circles = circlesRef.current;
+        const w = size.w;
+        const h = size.h;
+        const collisionsThisFrame: { a: PhysicsCircle; b: PhysicsCircle }[] = [];
 
-      // 1. Integrate position (v40: stillness by default. Friction is
-      // low so throws coast, but nothing moves on its own — only what
-      // the kid touched.)
-      for (const c of circles) {
-        if (dragRef.current?.id === c.id) continue; // dragged circle follows pointer
-        c.pos.x += c.vel.x * stepScale;
-        c.pos.y += c.vel.y * stepScale;
-        // Friction (frame-rate independent) — slows them toward stillness
-        const damp = Math.pow(FRICTION, stepScale);
-        c.vel.x *= damp;
-        c.vel.y *= damp;
-        // Stop tiny velocities
-        if (Math.abs(c.vel.x) < 0.05) c.vel.x = 0;
-        if (Math.abs(c.vel.y) < 0.05) c.vel.y = 0;
-      }
-
-      // v40: no periodic drift. Circles stay still until the kid
-      // touches them. (Previous versions had a 2.2s random nudge; that
-      // looked glitchy to parents and made the kid's tap target move.)
-
-      // 2. Wall collisions — very soft, just keeps them on screen
-      for (const c of circles) {
-        if (dragRef.current?.id === c.id) continue;
-        if (c.pos.x - c.radius < 0) {
-          c.pos.x = c.radius;
-          c.vel.x = -c.vel.x * WALL_BOUNCE;
-        } else if (c.pos.x + c.radius > w) {
-          c.pos.x = w - c.radius;
-          c.vel.x = -c.vel.x * WALL_BOUNCE;
+        for (const c of circles) {
+          if (dragRef.current?.id === c.id) continue;
+          c.pos.x += c.vel.x * stepScale;
+          c.pos.y += c.vel.y * stepScale;
+          const damp = Math.pow(FRICTION, stepScale);
+          c.vel.x *= damp;
+          c.vel.y *= damp;
+          if (Math.abs(c.vel.x) < 0.05) c.vel.x = 0;
+          if (Math.abs(c.vel.y) < 0.05) c.vel.y = 0;
         }
-        if (c.pos.y - c.radius < 0) {
-          c.pos.y = c.radius;
-          c.vel.y = -c.vel.y * WALL_BOUNCE;
-        } else if (c.pos.y + c.radius > h) {
-          c.pos.y = h - c.radius;
-          c.vel.y = -c.vel.y * WALL_BOUNCE;
-        }
-      }
 
-      // 3. Circle-circle collisions
-      for (let i = 0; i < circles.length; i++) {
-        for (let j = i + 1; j < circles.length; j++) {
-          const a = circles[i];
-          const b = circles[j];
-          const dx = b.pos.x - a.pos.x;
-          const dy = b.pos.y - a.pos.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          const minDist = a.radius + b.radius;
-          if (dist < minDist && dist > 0.001) {
-            // Normal vector
-            const nx = dx / dist;
-            const ny = dy / dist;
-            // Push apart (positional correction)
-            const overlap = (minDist - dist) / 2;
-            // If either is being dragged, only push the other
-            const aDragged = dragRef.current?.id === a.id;
-            const bDragged = dragRef.current?.id === b.id;
-            if (!aDragged && !bDragged) {
-              a.pos.x -= nx * overlap;
-              a.pos.y -= ny * overlap;
-              b.pos.x += nx * overlap;
-              b.pos.y += ny * overlap;
-            } else if (aDragged && !bDragged) {
-              b.pos.x += nx * overlap;
-              b.pos.y += ny * overlap;
-            } else if (bDragged && !aDragged) {
-              a.pos.x -= nx * overlap;
-              a.pos.y -= ny * overlap;
-            }
-            // Velocity exchange (elastic with damping)
-            const aDragged2 = dragRef.current?.id === a.id;
-            const bDragged2 = dragRef.current?.id === b.id;
-            // If either is dragged, that circle's velocity is treated as zero
-            const vaX = aDragged2 ? 0 : a.vel.x;
-            const vaY = aDragged2 ? 0 : a.vel.y;
-            const vbX = bDragged2 ? 0 : b.vel.x;
-            const vbY = bDragged2 ? 0 : b.vel.y;
-            // Relative velocity along normal
-            const rvx = vbX - vaX;
-            const rvy = vbY - vaY;
-            const velAlongNormal = rvx * nx + rvy * ny;
-            if (velAlongNormal < 0) {
-              // Already separating, skip
-              continue;
-            }
-            const restitution = COLLISION_BOUNCE;
-            // Equal mass (1) so impulse is just velAlongNormal * (1 + restitution) / 2
-            const impulse = (velAlongNormal * (1 + restitution)) / 2;
-            if (!aDragged2) {
-              a.vel.x += impulse * nx;
-              a.vel.y += impulse * ny;
-            }
-            if (!bDragged2) {
-              b.vel.x -= impulse * nx;
-              b.vel.y -= impulse * ny;
-            }
-            collisionsThisFrame.push({ a, b });
+        for (const c of circles) {
+          if (dragRef.current?.id === c.id) continue;
+          if (c.pos.x - c.radius < 0) {
+            c.pos.x = c.radius;
+            c.vel.x = -c.vel.x * WALL_BOUNCE;
+          } else if (c.pos.x + c.radius > w) {
+            c.pos.x = w - c.radius;
+            c.vel.x = -c.vel.x * WALL_BOUNCE;
+          }
+          if (c.pos.y - c.radius < 0) {
+            c.pos.y = c.radius;
+            c.vel.y = -c.vel.y * WALL_BOUNCE;
+          } else if (c.pos.y + c.radius > h) {
+            c.pos.y = h - c.radius;
+            c.vel.y = -c.vel.y * WALL_BOUNCE;
           }
         }
-      }
 
-      // 4. Play collision sounds + sparks for user-driven collisions.
-      // v40 fix: ONLY play sound if the user directly touched one of
-      // the colliding circles AND has not just released a throw.
-      //
-      // "userDriven" requires BOTH:
-      //   (a) the circle was touched within COLLISION_AUDIO_WINDOW_MS
-      //   (b) the circle has not been released in the last 200ms
-      //       (i.e., it's a fresh tap, not the tail end of a throw)
-      //
-      // Chain-reaction bounces after a release are silent. Sparks
-      // still fire on every collision for visual feedback.
-      if (collisionsThisFrame.length > 0) {
-        for (const { a, b } of collisionsThisFrame) {
-          const aTouched = now - a.lastTouchedAt < COLLISION_AUDIO_WINDOW_MS;
-          const aReleased = now - a.lastReleasedAt < 200;
-          const aUser = aTouched && !aReleased;
-          const bTouched = now - b.lastTouchedAt < COLLISION_AUDIO_WINDOW_MS;
-          const bReleased = now - b.lastReleasedAt < 200;
-          const bUser = bTouched && !bReleased;
-          const userDriven = aUser || bUser;
-          const key = [a.id, b.id].sort().join("|");
-          const last = collisionCooldownRef.current.get(key) ?? 0;
-          // Sparks: every collision (visual feedback for the kid)
-          spawnSparksAtRef.current(
-            (a.pos.x + b.pos.x) / 2,
-            (a.pos.y + b.pos.y) / 2,
-            a.color
-          );
-          if (!userDriven) continue; // chain collision — silent
-          if (now - last < 250) continue; // tighter cooldown: 250ms
-          collisionCooldownRef.current.set(key, now);
-          // Play sound on the user-touched circle (or "a" if both)
-          const circle = aUser ? a : b;
-          playRandomFromCircleRef(circle, settingsRef.current.volume);
+        for (let i = 0; i < circles.length; i++) {
+          for (let j = i + 1; j < circles.length; j++) {
+            const a = circles[i];
+            const b = circles[j];
+            const dx = b.pos.x - a.pos.x;
+            const dy = b.pos.y - a.pos.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const minDist = a.radius + b.radius;
+            if (dist < minDist && dist > 0.001) {
+              const nx = dx / dist;
+              const ny = dy / dist;
+              const overlap = (minDist - dist) / 2;
+              const aDragged = dragRef.current?.id === a.id;
+              const bDragged = dragRef.current?.id === b.id;
+              if (!aDragged && !bDragged) {
+                a.pos.x -= nx * overlap;
+                a.pos.y -= ny * overlap;
+                b.pos.x += nx * overlap;
+                b.pos.y += ny * overlap;
+              } else if (aDragged && !bDragged) {
+                b.pos.x += nx * overlap;
+                b.pos.y += ny * overlap;
+              } else if (bDragged && !aDragged) {
+                a.pos.x -= nx * overlap;
+                a.pos.y -= ny * overlap;
+              }
+              const aDragged2 = dragRef.current?.id === a.id;
+              const bDragged2 = dragRef.current?.id === b.id;
+              const vaX = aDragged2 ? 0 : a.vel.x;
+              const vaY = aDragged2 ? 0 : a.vel.y;
+              const vbX = bDragged2 ? 0 : b.vel.x;
+              const vbY = bDragged2 ? 0 : b.vel.y;
+              const rvx = vbX - vaX;
+              const rvy = vbY - vaY;
+              const velAlongNormal = rvx * nx + rvy * ny;
+              if (velAlongNormal < 0) continue;
+              const restitution = COLLISION_BOUNCE;
+              const impulse = (velAlongNormal * (1 + restitution)) / 2;
+              if (!aDragged2) {
+                a.vel.x += impulse * nx;
+                a.vel.y += impulse * ny;
+              }
+              if (!bDragged2) {
+                b.vel.x -= impulse * nx;
+                b.vel.y -= impulse * ny;
+              }
+              collisionsThisFrame.push({ a, b });
+            }
+          }
         }
-      }
 
-      // 5. Force a re-render by bumping a tick counter
-      setTick((t) => (t + 1) % 1000000);
-      rafRef.current = requestAnimationFrame(tick);
+        if (collisionsThisFrame.length > 0) {
+          for (const { a, b } of collisionsThisFrame) {
+            const aTouched = now - a.lastTouchedAt < COLLISION_AUDIO_WINDOW_MS;
+            const aReleased = now - a.lastReleasedAt < 200;
+            const aUser = aTouched && !aReleased;
+            const bTouched = now - b.lastTouchedAt < COLLISION_AUDIO_WINDOW_MS;
+            const bReleased = now - b.lastReleasedAt < 200;
+            const bUser = bTouched && !bReleased;
+            const userDriven = aUser || bUser;
+            const key = [a.id, b.id].sort().join("|");
+            const last = collisionCooldownRef.current.get(key) ?? 0;
+            spawnSparksAtRef.current(
+              (a.pos.x + b.pos.x) / 2,
+              (a.pos.y + b.pos.y) / 2,
+              a.color
+            );
+            if (!userDriven) continue;
+            if (now - last < 250) continue;
+            collisionCooldownRef.current.set(key, now);
+            const circle = aUser ? a : b;
+            playRandomFromCircleRef(circle, settingsRef.current.volume);
+          }
+        }
+
+        setTick((t) => (t + 1) % 1000000);
+        rafRef.current = requestAnimationFrame(tick);
+      } catch (err) {
+        console.error("Physics loop error:", err);
+        loopStopped = true;
+        // Circles become static; kid can still tap to play sounds
+      }
     };
 
     rafRef.current = requestAnimationFrame(tick);
@@ -621,17 +347,6 @@ export default function PootBox() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [size.w, size.h]);
-
-  // Track settings in a ref for the physics loop
-  const settingsRef = useRef(settings);
-  settingsRef.current = settings;
-  const [, setTick] = useState(0);
-
-  // Per-circle sound cooldown. After a circle plays, it can't play again
-  // for ~250ms. This is what stops "tap one emoji → 10 sounds" — the
-  // collision step would otherwise keep firing the same sound for as
-  // long as the touch window (600ms) is open.
-  const PER_CIRCLE_SOUND_COOLDOWN_MS = 250;
 
   const playRandomFromCircle = useCallback(
     (circle: Circle) => {
@@ -643,19 +358,6 @@ export default function PootBox() {
       playSingle(sound, settings.volume);
     },
     [settings.volume]
-  );
-
-  // Use ref-stable version for the physics loop
-  const playRandomFromCircleRef = useCallback(
-    (circle: Circle, volume: number) => {
-      const now = performance.now();
-      const last = lastCirclePlayRef.current.get(circle.id) ?? 0;
-      if (now - last < PER_CIRCLE_SOUND_COOLDOWN_MS) return;
-      lastCirclePlayRef.current.set(circle.id, now);
-      const sound = circle.sounds[Math.floor(Math.random() * circle.sounds.length)];
-      playSingle(sound, volume);
-    },
-    []
   );
 
   const spawnSparksAt = useCallback((x: number, y: number, color: string) => {
@@ -697,7 +399,6 @@ export default function PootBox() {
   const spawnHatch = useCallback((circle: Circle, x: number, y: number) => {
     setHatchedId(circle.id);
     setTimeout(() => setHatchedId(null), 800);
-    // 8 burst particles
     const newSparks: Spark[] = [];
     for (let i = 0; i < 8; i++) {
       const angle = (i / 8) * Math.PI * 2;
@@ -716,7 +417,6 @@ export default function PootBox() {
     setTimeout(() => {
       setSparks((prev) => prev.filter((s) => !newSparks.find((ns) => ns.id === s.id)));
     }, 800);
-    // Hatched animal
     const hatch: HatchAnimal = {
       id: ++hatchIdRef.current,
       x,
@@ -744,9 +444,6 @@ export default function PootBox() {
         lastShakeAtRef.current = now;
         setShaking(true);
         setTimeout(() => setShaking(false), 600);
-        // Apply random impulse to all circles (gentle — they should ripple
-        // around like water, not explode). Marked as touched so the resulting
-        // collisions make sound.
         for (const c of circlesRef.current) {
           c.vel.x += (Math.random() - 0.5) * 5;
           c.vel.y += (Math.random() - 0.5) * 5;
@@ -759,26 +456,17 @@ export default function PootBox() {
   }, []);
 
   // === iOS audio unlock ===
-  //
-  // iOS Safari blocks `new Audio().play()` until a user gesture has
-  // "unlocked" the audio context. The first user tap is the gesture,
-  // but the first `play()` call on that gesture can still fail silently
-  // if the audio context isn't fully unlocked. The standard fix is to
-  // play a silent (or near-silent) buffer on the first user tap, before
-  // any real sound needs to play. This runs once and then becomes a no-op.
+
   const audioUnlockedRef = useRef(false);
   const unlockAudio = useCallback(() => {
     if (audioUnlockedRef.current) return;
     audioUnlockedRef.current = true;
     try {
-      // Create a 0.01s silent WAV. play() with volume 0.0 still
-      // triggers the iOS audio context unlock.
       const silent = new Audio(
         "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA="
       );
       silent.volume = 0.0;
       void silent.play().catch(() => {
-        // If even the silent buffer fails, try again on the next gesture
         audioUnlockedRef.current = false;
       });
     } catch {
@@ -787,21 +475,22 @@ export default function PootBox() {
   }, []);
 
   // === Recording: MediaRecorder setup ===
-  // Held in refs (not state) because they're mutable objects we don't
-  // want React to re-render on. The UI listens to recPhase state instead.
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaChunksRef = useRef<Blob[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordingTimerRef = useRef<number | null>(null);
   const recordingStartRef = useRef<number>(0);
 
+  // Mic permission denied state (Task 6.2)
+  const [micDenied, setMicDenied] = useState(false);
+
   const startRecording = useCallback(async () => {
     if (mediaRecorderRef.current) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
-      // iOS Safari produces audio/mp4. Other browsers default to webm.
-      // Pick whatever MediaRecorder supports.
+      setMicDenied(false);
       const mimeType = MediaRecorder.isTypeSupported("audio/mp4")
         ? "audio/mp4"
         : MediaRecorder.isTypeSupported("audio/webm")
@@ -813,15 +502,18 @@ export default function PootBox() {
         if (e.data && e.data.size > 0) mediaChunksRef.current.push(e.data);
       };
       rec.onstop = () => {
-        // Build the blob + object URL
+        // Task 6.4: check for empty recording
         const blob = new Blob(mediaChunksRef.current, {
           type: rec.mimeType || "audio/webm",
         });
+        if (mediaChunksRef.current.length === 0 || blob.size === 0) {
+          setRecPhase("idle");
+          return;
+        }
         const url = URL.createObjectURL(blob);
         setPendingBlob(blob);
         setPendingUrl(url);
         setRecPhase("picking");
-        // Stop the mic stream
         if (mediaStreamRef.current) {
           for (const t of mediaStreamRef.current.getTracks()) t.stop();
           mediaStreamRef.current = null;
@@ -833,11 +525,9 @@ export default function PootBox() {
       recordingStartRef.current = performance.now();
       setRecordingMs(0);
       setRecPhase("recording");
-      // Tick the recording timer so the UI shows the live duration
       recordingTimerRef.current = window.setInterval(() => {
         const ms = performance.now() - recordingStartRef.current;
         setRecordingMs(ms);
-        // Auto-stop at max
         if (ms >= MAX_RECORDING_MS) {
           if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
             mediaRecorderRef.current.stop();
@@ -849,7 +539,10 @@ export default function PootBox() {
         }
       }, 50);
     } catch (err) {
-      // User denied mic permission, or browser doesn't support getUserMedia
+      // Task 6.2: detect NotAllowedError
+      if (err instanceof DOMException && err.name === "NotAllowedError") {
+        setMicDenied(true);
+      }
       setRecPhase("idle");
     }
   }, []);
@@ -870,7 +563,6 @@ export default function PootBox() {
       recordingTimerRef.current = null;
     }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-      // Stop but don't save the result
       mediaRecorderRef.current.ondataavailable = null;
       mediaRecorderRef.current.onstop = null;
       mediaRecorderRef.current.stop();
@@ -887,7 +579,15 @@ export default function PootBox() {
     setRecPhase("idle");
   }, [pendingUrl]);
 
-  // Pick an emoji for the pending recording → drops a new circle onto the canvas
+  // Task 6.3: beforeunload to cancel recording
+  useEffect(() => {
+    const handler = () => {
+      if (recPhase === "recording") cancelRecording();
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [recPhase, cancelRecording]);
+
   const completeRecordingWithEmoji = useCallback(
     (emoji: string) => {
       if (!pendingBlob || !pendingUrl) return;
@@ -896,15 +596,13 @@ export default function PootBox() {
         id,
         emoji,
         blobUrl: pendingUrl,
-        radius: 32, // matches built-in animal radii (30-34)
+        radius: 32,
         mass: 1,
         createdAt: Date.now(),
       };
-      // Persist the recording to IndexedDB + emoji to localStorage
       void saveRecording(id, pendingBlob);
       saveRecordingEmoji(id, emoji);
       setCustomCircles((prev) => [...prev, newCircle]);
-      // Spawn the new circle with a small drop-in velocity
       if (size.w > 0 && size.h > 0) {
         const x = newCircle.radius + Math.random() * (size.w - newCircle.radius * 2);
         const y = newCircle.radius + Math.random() * (size.h - newCircle.radius * 2);
@@ -934,7 +632,6 @@ export default function PootBox() {
     [pendingBlob, pendingUrl, size.w, size.h]
   );
 
-  // Delete a custom circle
   const deleteCustomCircle = useCallback(
     (id: string) => {
       const c = customCircles.find((x) => x.id === id);
@@ -951,7 +648,7 @@ export default function PootBox() {
     [customCircles, deleteTarget]
   );
 
-  // On mount, restore any saved custom circles from IndexedDB
+  // On mount, restore saved custom circles
   useEffect(() => {
     const emojiMap = loadRecordingEmojis();
     void loadAllRecordings().then((map) => {
@@ -959,25 +656,14 @@ export default function PootBox() {
       const restored: CustomCircle[] = [];
       for (const [id, blob] of map.entries()) {
         const url = URL.createObjectURL(blob);
-        // Use the saved emoji if we have one, otherwise fall back to
-        // a generic 🎤 placeholder for legacy recordings.
         const emoji = emojiMap[id] || "🎤";
-        restored.push({
-          id,
-          emoji,
-          blobUrl: url,
-          radius: 32,
-          mass: 1,
-          createdAt: 0,
-        });
+        restored.push({ id, emoji, blobUrl: url, radius: 32, mass: 1, createdAt: 0 });
       }
       setCustomCircles(restored);
     });
   }, []);
 
-  // v40: poll the audio manager every 100ms so the "stop" button
-  // appears only when there's actually a sound playing. setInterval
-  // is fine here — we're not driving animation off this.
+  // Poll audio manager every 100ms for stop button
   useEffect(() => {
     const id = window.setInterval(() => {
       const playing = isAnySoundPlaying();
@@ -996,30 +682,30 @@ export default function PootBox() {
       if (target.setPointerCapture && e.pointerId !== undefined) {
         try {
           target.setPointerCapture(e.pointerId);
-        } catch {
-          // ignore
-        }
+        } catch { /* ignore */ }
       }
       setPressedId(id);
 
-      // v40: first tap dismisses the hero pulse — kid has discovered
-      // the app, no more hand-holding.
       if (!heroTapped) setHeroTapped(true);
-
-      // iOS audio unlock on first touch (idempotent, no-op on others)
       unlockAudio();
 
       const circle = circlesRef.current.find((c) => c.id === id);
       if (!circle) return;
 
-      // Mark touched (used to gate collision sounds — see physics loop)
       circle.lastTouchedAt = performance.now();
-
-      // Play sound on touch-down (gives iOS instant feedback)
       playRandomFromCircle(circle);
       spawnRipple(circle, e.clientX, e.clientY);
 
-      // Set up drag
+      // Task 2: tap feedback
+      setTappedRecently((prev) => ({ ...prev, [id]: performance.now() }));
+      setTimeout(() => {
+        setTappedRecently((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      }, 300);
+
       dragRef.current = {
         id,
         lastX: e.clientX,
@@ -1027,22 +713,19 @@ export default function PootBox() {
         lastT: performance.now(),
         velocity: { x: 0, y: 0 },
       };
-      // Stop the circle's existing motion while held
       circle.vel.x = 0;
       circle.vel.y = 0;
 
-      // Set up hold-to-hatch timer
       const existing = holdTimers.current.get(id);
       if (existing) window.clearTimeout(existing);
       const timerId = window.setTimeout(() => {
-        // Hatched
         spawnHatch(circle, circle.pos.x, circle.pos.y);
         playRandomFromCircle(circle);
         holdTimers.current.delete(id);
       }, HATCH_HOLD_MS);
       holdTimers.current.set(id, timerId);
     },
-    [playRandomFromCircle, spawnRipple, spawnHatch]
+    [playRandomFromCircle, spawnRipple, spawnHatch, heroTapped, unlockAudio]
   );
 
   const onCirclePointerMove = useCallback(
@@ -1052,13 +735,10 @@ export default function PootBox() {
       const circle = circlesRef.current.find((c) => c.id === id);
       if (!circle) return;
 
-      // Track velocity (px per ms)
       const now = performance.now();
-      // Keep lastTouchedAt fresh while the user is dragging
       circle.lastTouchedAt = now;
       const dt = now - drag.lastT;
       if (dt > 0) {
-        // Smoothed velocity
         const instVx = (e.clientX - drag.lastX) / dt;
         const instVy = (e.clientY - drag.lastY) / dt;
         drag.velocity.x = drag.velocity.x * 0.6 + instVx * 0.4;
@@ -1068,7 +748,6 @@ export default function PootBox() {
       drag.lastY = e.clientY;
       drag.lastT = now;
 
-      // Move circle to follow pointer (convert client coords to canvas coords)
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
@@ -1084,7 +763,6 @@ export default function PootBox() {
       e.stopPropagation();
       setPressedId(null);
 
-      // Cancel hold timer
       const timer = holdTimers.current.get(id);
       if (timer) {
         window.clearTimeout(timer);
@@ -1095,26 +773,15 @@ export default function PootBox() {
       if (drag && drag.id === id) {
         const circle = circlesRef.current.find((c) => c.id === id);
         if (circle) {
-          // If the user didn't drag (or barely moved), this counts as a tap
-          // on a custom circle → show the delete-X badge.
           const totalDist = Math.sqrt(
             (e.clientX - drag.lastX) ** 2 + (e.clientY - drag.lastY) ** 2
           );
-          // For drag, the lastX/Y is updated every move, so totalDist
-          // is the distance from the last move to the up point. A tap
-          // has small totalDist.
           if (totalDist < 8 && circle.id.startsWith("c-")) {
             setDeleteTarget(circle.id);
           }
-          // Throw with velocity from drag (px/ms → px/frame at 60fps)
           circle.vel.x = drag.velocity.x * 16.67 * DRAG_THROW_MULTIPLIER;
           circle.vel.y = drag.velocity.y * 16.67 * DRAG_THROW_MULTIPLIER;
-          // Keep lastTouchedAt fresh on release so the throw's collisions
-          // still count as user-initiated for the TOUCH_RECENT_MS window.
           circle.lastTouchedAt = performance.now();
-          // v40 fix: also mark as just-released. From this point on,
-          // collisions are chain reactions, not direct user action —
-          // see the userDriven check in the physics loop.
           circle.lastReleasedAt = performance.now();
         }
         dragRef.current = null;
@@ -1142,15 +809,9 @@ export default function PootBox() {
   const onBlankPointerDown = useCallback((e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest("[data-circle]")) return;
 
-    // iOS audio unlock on first touch (idempotent)
     unlockAudio();
-
-    // Tap on empty space clears any lingering delete-X badge
     if (deleteTarget) setDeleteTarget(null);
 
-    // Radial push: any circle within TAP_PUSH_RADIUS gets pushed away
-    // from the tap point, scaled by inverse distance. Marked as
-    // tap-pushed so the resulting collisions make sound.
     const canvas = canvasRef.current;
     if (canvas) {
       const rect = canvas.getBoundingClientRect();
@@ -1162,7 +823,7 @@ export default function PootBox() {
         const dy = c.pos.y - ty;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < TAP_PUSH_RADIUS && dist > 0.001) {
-          const ramp = 1 - dist / TAP_PUSH_RADIUS; // 1 at center, 0 at edge
+          const ramp = 1 - dist / TAP_PUSH_RADIUS;
           const push = TAP_PUSH_MAX * ramp;
           c.vel.x += (dx / dist) * push;
           c.vel.y += (dy / dist) * push;
@@ -1216,6 +877,58 @@ export default function PootBox() {
     };
   }, []);
 
+  // === Watermark triple-tap handler (Task 4) ===
+
+  const handleWatermarkTap = useCallback(() => {
+    if (watermarkTapTimer.current) window.clearTimeout(watermarkTapTimer.current);
+    watermarkTapCount.current += 1;
+    watermarkTapTimer.current = window.setTimeout(() => {
+      watermarkTapCount.current = 0;
+      watermarkTapTimer.current = null;
+    }, 1000);
+    if (watermarkTapCount.current >= 3) {
+      watermarkTapCount.current = 0;
+      if (watermarkTapTimer.current) {
+        window.clearTimeout(watermarkTapTimer.current);
+        watermarkTapTimer.current = null;
+      }
+      setShowSettings(true);
+    }
+  }, []);
+
+  const handleWatermarkPointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const target = e.currentTarget as HTMLElement;
+    if (target.setPointerCapture && e.pointerId !== undefined) {
+      try {
+        target.setPointerCapture(e.pointerId);
+      } catch { /* ignore */ }
+    }
+    // Start long-press timer for footer (1.5s)
+    if (footerHoldTimer.current) window.clearTimeout(footerHoldTimer.current);
+    footerHoldTimer.current = window.setTimeout(() => {
+      setShowSettings(true);
+      footerHoldTimer.current = null;
+    }, 1500);
+    handleWatermarkTap();
+  }, [handleWatermarkTap]);
+
+  const handleWatermarkPointerUp = useCallback(() => {
+    if (footerHoldTimer.current) {
+      window.clearTimeout(footerHoldTimer.current);
+      footerHoldTimer.current = null;
+    }
+  }, []);
+
+  // === Dismiss onboarding ===
+  const dismissOnboarding = useCallback(() => {
+    try {
+      localStorage.setItem("pootbox-onboarded-v1", "1");
+    } catch { /* ignore */ }
+    setOnboarded(true);
+  }, []);
+
   // === Render ===
 
   return (
@@ -1236,22 +949,62 @@ export default function PootBox() {
       onPointerUp={onBlankPointerUp}
       onPointerCancel={onBlankPointerUp}
     >
+      {/* Onboarding screen (Task 3) */}
+      {!onboarded && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 200,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(254,243,199,0.95)",
+            backdropFilter: "blur(4px)",
+            WebkitBackdropFilter: "blur(4px)",
+            cursor: "pointer",
+          }}
+          onClick={dismissOnboarding}
+        >
+          <div
+            style={{
+              fontSize: "2.5rem",
+              fontWeight: 700,
+              color: "#3D2C1E",
+              marginBottom: 32,
+              textAlign: "center",
+            }}
+          >
+            Tap a circle! 👆
+          </div>
+          <div style={{ fontSize: "4rem", animation: "pootbox-hero-pulse 1.6s ease-in-out infinite" }}>
+            🦁
+          </div>
+        </div>
+      )}
+
       {/* Render circles */}
-      {circlesRef.current.map((c) => (
-        <CircleButton
-          key={c.id}
-          circle={c}
-          pressed={pressedId === c.id}
-          hatched={hatchedId === c.id}
-          shaking={shaking}
-          reducedMotion={settings.reducedMotion}
-          showHeroPulse={c.isHero && !heroTapped}
-          onPointerDown={onCirclePointerDown}
-          onPointerMove={onCirclePointerMove}
-          onPointerUp={onCirclePointerUp}
-          onPointerCancel={onCirclePointerCancel}
-        />
-      ))}
+      {circlesRef.current.map((c) => {
+        const tappedAt = tappedRecently[c.id];
+        const isTapped = tappedAt !== undefined && performance.now() - tappedAt < 300;
+        return (
+          <CircleButton
+            key={c.id}
+            circle={c}
+            pressed={pressedId === c.id}
+            hatched={hatchedId === c.id}
+            shaking={shaking}
+            reducedMotion={settings.reducedMotion}
+            showHeroPulse={c.isHero && !heroTapped}
+            tapped={isTapped}
+            onPointerDown={onCirclePointerDown}
+            onPointerMove={onCirclePointerMove}
+            onPointerUp={onCirclePointerUp}
+            onPointerCancel={onCirclePointerCancel}
+          />
+        );
+      })}
 
       {/* Ripples */}
       {ripples.map((r) => (
@@ -1273,7 +1026,7 @@ export default function PootBox() {
         />
       ))}
 
-      {/* Sparks (collision + hatch) */}
+      {/* Sparks */}
       {sparks.map((s) => (
         <div
           key={s.id}
@@ -1315,23 +1068,53 @@ export default function PootBox() {
         </div>
       ))}
 
-      {/* Tiny corner 💨 watermark */}
-      <div
-        style={{
-          position: "fixed",
-          bottom: "max(8px, env(safe-area-inset-bottom))",
-          right: 12,
-          fontSize: "1.4rem",
-          opacity: 0.35,
-          pointerEvents: "none",
-          zIndex: 5,
-        }}
-      >
-        💨
-      </div>
+      {/* Mic denied banner (Task 6.2) */}
+      {micDenied && (
+        <div
+          style={{
+            position: "fixed",
+            top: 16,
+            left: 16,
+            right: 16,
+            background: "rgba(255,82,82,0.95)",
+            color: "white",
+            borderRadius: 16,
+            padding: "12px 16px",
+            zIndex: 150,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
+            fontSize: "0.85rem",
+          }}
+        >
+          <span>Microphone access denied. Enable in Settings to record your own sounds.</span>
+          <button
+            onClick={() => {
+              setMicDenied(false);
+              void startRecording();
+            }}
+            style={{
+              appearance: "none",
+              border: "1px solid rgba(255,255,255,0.4)",
+              background: "rgba(255,255,255,0.15)",
+              color: "white",
+              borderRadius: 10,
+              padding: "6px 12px",
+              cursor: "pointer",
+              fontSize: "0.85rem",
+              fontFamily: "inherit",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+            }}
+          >
+            Try again
+          </button>
+        </div>
+      )}
 
-      {/* Stop button — appears when any sound is currently playing.
-          Tapping it silences all audio without leaving the app. */}
+      {/* Stop button */}
       {soundPlaying && (
         <button
           data-stop-sound
@@ -1343,7 +1126,7 @@ export default function PootBox() {
           style={{
             position: "fixed",
             bottom: `calc(20px + env(safe-area-inset-bottom))`,
-            right: customCircles.length < MAX_CUSTOM_CIRCLES ? 88 : 20,
+            right: customCircles.length < MAX_CUSTOM_CIRCLES ? 96 : 20,
             width: 56,
             height: 56,
             borderRadius: "50%",
@@ -1368,7 +1151,7 @@ export default function PootBox() {
         </button>
       )}
 
-      {/* Add button — only when idle and we have room for more */}
+      {/* Add button (Task 5: 72px × 72px) */}
       {recPhase === "idle" && customCircles.length < MAX_CUSTOM_CIRCLES && (
         <button
           data-add-button
@@ -1381,13 +1164,13 @@ export default function PootBox() {
             position: "fixed",
             bottom: `calc(20px + env(safe-area-inset-bottom))`,
             right: 20,
-            width: 56,
-            height: 56,
+            width: 72,
+            height: 72,
             borderRadius: "50%",
             background: "rgba(255,255,255,0.9)",
             border: "1px solid rgba(0,0,0,0.06)",
             boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
-            fontSize: "1.8rem",
+            fontSize: "2rem",
             lineHeight: 1,
             cursor: "pointer",
             display: "flex",
@@ -1403,7 +1186,36 @@ export default function PootBox() {
         </button>
       )}
 
-      {/* Delete-X badge on a tapped custom circle */}
+      {/* Add button at max — show disabled 12/12 badge (Task 5) */}
+      {recPhase === "idle" && customCircles.length >= MAX_CUSTOM_CIRCLES && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: `calc(24px + env(safe-area-inset-bottom))`,
+            right: 20,
+            width: 72,
+            height: 72,
+            borderRadius: "50%",
+            background: "rgba(200,190,180,0.6)",
+            border: "1px solid rgba(0,0,0,0.08)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 50,
+            fontSize: "0.75rem",
+            color: "#92705A",
+            fontWeight: 600,
+            cursor: "default",
+          }}
+          title="12/12 — tap one to delete"
+        >
+          <span style={{ fontSize: "1.4rem", lineHeight: 1 }}>＋</span>
+          <span>12/12</span>
+        </div>
+      )}
+
+      {/* Delete-X badge */}
       {deleteTarget && (() => {
         const target = circlesRef.current.find((c) => c.id === deleteTarget);
         if (!target) return null;
@@ -1442,10 +1254,11 @@ export default function PootBox() {
         );
       })()}
 
-      {/* Recording UI */}
+      {/* Recording UI — Task 6.1: bg tap cancels recording */}
       {recPhase === "recording" && (
         <div
           data-rec-overlay
+          onClick={cancelRecording}
           style={{
             position: "fixed",
             inset: 0,
@@ -1469,9 +1282,7 @@ export default function PootBox() {
               opacity: 0.9,
             }}
           >
-            {recordingMs === 0
-              ? "Get ready…"
-              : "Tap the mic to stop"}
+            {recordingMs === 0 ? "Get ready…" : "Tap the mic to stop"}
           </div>
           <div
             data-mic-button
@@ -1550,10 +1361,11 @@ export default function PootBox() {
         </div>
       )}
 
-      {/* Emoji picker (after recording finishes) */}
+      {/* Emoji picker — Task 6.5: click-outside dismisses */}
       {recPhase === "picking" && (
         <div
           data-emoji-picker
+          onClick={cancelRecording}
           style={{
             position: "fixed",
             inset: 0,
@@ -1570,89 +1382,87 @@ export default function PootBox() {
           }}
         >
           <div
+            onClick={(e) => e.stopPropagation()}
             style={{
-              color: "white",
-              fontSize: "1.1rem",
-              fontWeight: 600,
-              opacity: 0.9,
+              background: "white",
+              borderRadius: 24,
+              padding: 24,
+              maxWidth: 360,
+              width: "100%",
+              boxShadow: "0 16px 48px rgba(0,0,0,0.2)",
             }}
           >
-            Pick an emoji
+            <div
+              style={{
+                color: "#3D2C1E",
+                fontSize: "1.1rem",
+                fontWeight: 600,
+                marginBottom: 16,
+                textAlign: "center",
+              }}
+            >
+              Pick an emoji
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(6, 1fr)",
+                gap: 8,
+              }}
+            >
+              {[
+                "🎤", "🎸", "🥁", "🎺", "🎹", "🎷",
+                "🐶", "🐱", "🐰", "🦊", "🐻", "🐼",
+                "🦁", "🐯", "🐸", "🐵", "🐔", "🦆",
+                "🐮", "🐷", "🐭", "🐹", "🐨", "🦄",
+                "⭐", "🌈", "🔥", "💧", "🌸", "🍕",
+              ].map((em) => (
+                <button
+                  key={em}
+                  data-emoji-option={em}
+                  onClick={() => completeRecordingWithEmoji(em)}
+                  style={{
+                    appearance: "none",
+                    border: "none",
+                    background: "rgba(255,255,255,0.95)",
+                    borderRadius: 12,
+                    fontSize: "1.7rem",
+                    lineHeight: 1,
+                    padding: "10px 0",
+                    cursor: "pointer",
+                    WebkitTapHighlightColor: "transparent",
+                  }}
+                >
+                  {em}
+                </button>
+              ))}
+            </div>
+            <button
+              data-redo-rec
+              onClick={() => {
+                if (pendingUrl) URL.revokeObjectURL(pendingUrl);
+                setPendingUrl(null);
+                setPendingBlob(null);
+                setRecordingMs(0);
+                void startRecording();
+              }}
+              style={{
+                appearance: "none",
+                border: "1px solid rgba(61,44,30,0.2)",
+                background: "transparent",
+                color: "#3D2C1E",
+                fontSize: "0.9rem",
+                padding: "8px 16px",
+                borderRadius: 12,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                marginTop: 16,
+                width: "100%",
+              }}
+            >
+              ↺ Re-record
+            </button>
           </div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(6, 1fr)",
-              gap: 8,
-              maxWidth: 320,
-            }}
-          >
-            {[
-              "🎤", "🎸", "🥁", "🎺", "🎹", "🎷",
-              "🐶", "🐱", "🐰", "🦊", "🐻", "🐼",
-              "🦁", "🐯", "🐸", "🐵", "🐔", "🦆",
-              "🐮", "🐷", "🐭", "🐹", "🐨", "🦄",
-              "⭐", "🌈", "🔥", "💧", "🌸", "🍕",
-            ].map((em) => (
-              <button
-                key={em}
-                data-emoji-option={em}
-                onClick={() => completeRecordingWithEmoji(em)}
-                style={{
-                  appearance: "none",
-                  border: "none",
-                  background: "rgba(255,255,255,0.95)",
-                  borderRadius: 12,
-                  fontSize: "1.7rem",
-                  lineHeight: 1,
-                  padding: "10px 0",
-                  cursor: "pointer",
-                  WebkitTapHighlightColor: "transparent",
-                }}
-              >
-                {em}
-              </button>
-            ))}
-          </div>
-          <button
-            data-redo-rec
-            onClick={() => {
-              if (pendingUrl) URL.revokeObjectURL(pendingUrl);
-              setPendingUrl(null);
-              setPendingBlob(null);
-              setRecordingMs(0);
-              void startRecording();
-            }}
-            style={{
-              appearance: "none",
-              border: "1px solid rgba(255,255,255,0.3)",
-              background: "transparent",
-              color: "white",
-              fontSize: "0.95rem",
-              padding: "10px 20px",
-              borderRadius: 14,
-              cursor: "pointer",
-              fontFamily: "inherit",
-            }}
-          >
-            ↺ Re-record
-          </button>
-          <button
-            data-cancel-pick
-            onClick={cancelRecording}
-            style={{
-              appearance: "none",
-              border: "none",
-              background: "transparent",
-              color: "rgba(255,255,255,0.6)",
-              fontSize: "0.85rem",
-              padding: "6px 12px",
-              cursor: "pointer",
-              fontFamily: "inherit",
-            }}
-          >
-            Cancel
-          </button>
         </div>
       )}
 
@@ -1667,6 +1477,36 @@ export default function PootBox() {
           onClose={() => setShowSettings(false)}
         />
       )}
+
+      {/* Footer with watermark (Task 8) */}
+      <div
+        data-footer
+        onPointerDown={handleWatermarkPointerDown}
+        onPointerUp={handleWatermarkPointerUp}
+        onPointerCancel={handleWatermarkPointerUp}
+        style={{
+          position: "fixed",
+          bottom: "max(4px, env(safe-area-inset-bottom))",
+          left: 0,
+          right: 0,
+          display: "flex",
+          justifyContent: "center",
+          pointerEvents: "auto",
+          zIndex: 5,
+        }}
+      >
+        <span
+          style={{
+            fontSize: "0.7rem",
+            color: "#92705A",
+            opacity: 0.6,
+            cursor: "default",
+            userSelect: "none",
+          }}
+        >
+          💨 PootBox v1.0.0
+        </span>
+      </div>
 
       {/* Inline keyframes */}
       <style>{`
@@ -1697,6 +1537,11 @@ export default function PootBox() {
           0%, 100% { transform: scale(1); opacity: 0.55; }
           50% { transform: scale(1.25); opacity: 0.2; }
         }
+        @keyframes pootbox-tap-flash {
+          0% { opacity: 0; }
+          20% { opacity: 0.3; }
+          100% { opacity: 0; }
+        }
       `}</style>
     </div>
   );
@@ -1704,19 +1549,8 @@ export default function PootBox() {
 
 // === Single circle button ===
 
-interface CircleButtonProps {
-  circle: PhysicsCircle;
-  pressed: boolean;
-  hatched: boolean;
-  shaking: boolean;
-  reducedMotion: boolean;
-  /** True when this is the "hero" circle that the kid hasn't tapped yet
-   *  on the first screen — pulses gently to draw the eye. */
-  showHeroPulse: boolean;
-  onPointerDown: (id: string, e: React.PointerEvent) => void;
-  onPointerMove: (id: string, e: React.PointerEvent) => void;
-  onPointerUp: (id: string, e: React.PointerEvent) => void;
-  onPointerCancel: (id: string) => void;
+interface CircleButtonComponentProps extends Omit<CircleButtonProps, ""> {
+  tapped: boolean;
 }
 
 function CircleButton({
@@ -1726,17 +1560,18 @@ function CircleButton({
   shaking,
   reducedMotion,
   showHeroPulse,
+  tapped,
   onPointerDown,
   onPointerMove,
   onPointerUp,
   onPointerCancel,
-}: CircleButtonProps) {
-  // v33: emojis only. Emoji IS the button. radius → font size + hit area.
+}: CircleButtonComponentProps) {
   const size = circle.radius * 2;
-  // Hero circle: tap target slightly larger + subtle pulse animation.
-  // Once tapped, hero flag is cleared by parent (showHeroPulse=false)
-  // and the pulse stops. This is the "self-teaching" trick.
   const heroScale = showHeroPulse ? 1.15 : 1;
+
+  // Task 2: tap scale pulse 1.0 → 1.25 → 1.0 over 200ms
+  const tapScale = tapped ? 1.25 : 1;
+
   return (
     <button
       data-circle={circle.id}
@@ -1758,9 +1593,11 @@ function CircleButton({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        transform: `scale(${pressed ? 0.88 : hatched ? 1.25 : heroScale})`,
+        transform: `scale(${pressed ? 0.88 : hatched ? 1.25 : heroScale * tapScale})`,
         transition: pressed
           ? "transform 100ms ease-out"
+          : tapped
+          ? "transform 200ms ease-out"
           : "transform 200ms ease-out",
         touchAction: "none",
         WebkitTapHighlightColor: "transparent",
@@ -1774,7 +1611,7 @@ function CircleButton({
         userSelect: "none",
       }}
     >
-      {/* Soft glow ring around the hero circle, only when not yet tapped */}
+      {/* Hero glow ring */}
       {showHeroPulse && (
         <span
           aria-hidden
@@ -1788,9 +1625,23 @@ function CircleButton({
           }}
         />
       )}
+      {/* Tap color flash overlay */}
+      {tapped && (
+        <span
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: -4,
+            borderRadius: "50%",
+            background: "rgba(245,158,11,0.25)",
+            pointerEvents: "none",
+            animation: "pootbox-tap-flash 300ms ease-out forwards",
+          }}
+        />
+      )}
       <span
         style={{
-          fontSize: `${circle.radius * 1.4}px`, // emoji bigger than hit area for finger forgiveness
+          fontSize: `${circle.radius * 1.4}px`,
           lineHeight: 1,
           filter: "drop-shadow(0 2px 3px rgba(0,0,0,0.12))",
           pointerEvents: "none",
@@ -1801,165 +1652,3 @@ function CircleButton({
     </button>
   );
 }
-
-// === Settings modal (backdoor) ===
-
-interface SettingsModalProps {
-  settings: Settings;
-  onChange: (s: Settings) => void;
-  onClose: () => void;
-}
-
-function SettingsModal({ settings, onChange, onClose }: SettingsModalProps) {
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.5)",
-        backdropFilter: "blur(8px)",
-        WebkitBackdropFilter: "blur(8px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 100,
-        padding: 16,
-      }}
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: "white",
-          borderRadius: 24,
-          padding: 24,
-          maxWidth: 360,
-          width: "100%",
-          boxShadow: "0 16px 48px rgba(0,0,0,0.2)",
-        }}
-      >
-        <h2
-          style={{
-            margin: "0 0 4px",
-            fontSize: "1.4rem",
-            fontWeight: 700,
-            color: "#3D2C1E",
-          }}
-        >
-          💨 PootBox
-        </h2>
-        <p
-          style={{
-            margin: "0 0 20px",
-            fontSize: "0.85rem",
-            color: "#92705A",
-          }}
-        >
-          Parent settings (hidden)
-        </p>
-
-        <label style={{ display: "block", marginBottom: 16 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginBottom: 6,
-              fontSize: "0.9rem",
-              color: "#3D2C1E",
-            }}
-          >
-            <span>Volume</span>
-            <span style={{ fontFamily: "monospace" }}>
-              {Math.round(settings.volume * 100)}%
-            </span>
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={settings.volume}
-            onChange={(e) =>
-              onChange({ ...settings, volume: parseFloat(e.target.value) })
-            }
-            style={{ width: "100%", accentColor: "#F59E0B" }}
-          />
-        </label>
-
-        <label
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 20,
-            padding: "8px 0",
-          }}
-        >
-          <span style={{ fontSize: "0.9rem", color: "#3D2C1E" }}>Reduce motion</span>
-          <button
-            onClick={() => onChange({ ...settings, reducedMotion: !settings.reducedMotion })}
-            style={{
-              appearance: "none",
-              border: "none",
-              cursor: "pointer",
-              width: 48,
-              height: 28,
-              borderRadius: 14,
-              background: settings.reducedMotion ? "#F59E0B" : "#E5E0D5",
-              position: "relative",
-              transition: "background 200ms",
-              padding: 0,
-            }}
-          >
-            <span
-              style={{
-                position: "absolute",
-                top: 2,
-                left: settings.reducedMotion ? 22 : 2,
-                width: 24,
-                height: 24,
-                borderRadius: "50%",
-                background: "white",
-                transition: "left 200ms",
-                boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-              }}
-            />
-          </button>
-        </label>
-
-        <button
-          onClick={onClose}
-          style={{
-            appearance: "none",
-            border: "none",
-            cursor: "pointer",
-            width: "100%",
-            padding: "12px 0",
-            borderRadius: 16,
-            background: "#F59E0B",
-            color: "white",
-            fontSize: "1rem",
-            fontWeight: 700,
-            fontFamily: "inherit",
-          }}
-        >
-          Done
-        </button>
-
-        <p
-          style={{
-            margin: "16px 0 0",
-            fontSize: "0.7rem",
-            color: "#92705A",
-            textAlign: "center",
-          }}
-        >
-          This menu only appears after holding the background for 5 seconds.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-
-
