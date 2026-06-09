@@ -202,6 +202,39 @@ async function saveRecording(id: string, blob: Blob): Promise<void> {
   }
 }
 
+// Persist emoji metadata alongside the blob. We can't extend the IDB
+// schema without a migration, so we use a parallel localStorage map
+// keyed by the same `c-<timestamp>` id. Tiny payload, no quota issues.
+function saveRecordingEmoji(id: string, emoji: string): void {
+  try {
+    const raw = localStorage.getItem("pootbox-recording-emojis") || "{}";
+    const map = JSON.parse(raw);
+    map[id] = emoji;
+    localStorage.setItem("pootbox-recording-emojis", JSON.stringify(map));
+  } catch {
+    // ignore
+  }
+}
+
+function loadRecordingEmojis(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem("pootbox-recording-emojis") || "{}";
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function deleteRecordingEmoji(id: string): void {
+  try {
+    const map = loadRecordingEmojis();
+    delete map[id];
+    localStorage.setItem("pootbox-recording-emojis", JSON.stringify(map));
+  } catch {
+    // ignore
+  }
+}
+
 async function loadAllRecordings(): Promise<Map<string, Blob>> {
   const out = new Map<string, Blob>();
   try {
@@ -312,9 +345,9 @@ export default function PootBox() {
   const [soundPlaying, setSoundPlaying] = useState(false);
 
   // Recording + custom circles
-  // Phase: 'idle' = show + button. 'recording' = big mic, hold to capture.
-  // 'picking' = show emoji picker. 'previewing' = play back the recording.
-  const [recPhase, setRecPhase] = useState<"idle" | "recording" | "picking" | "previewing">("idle");
+  // Phase: 'idle' = show + button. 'recording' = big mic, tap to stop.
+  // 'picking' = show emoji picker.
+  const [recPhase, setRecPhase] = useState<"idle" | "recording" | "picking">("idle");
   const [pendingBlob, setPendingBlob] = useState<Blob | null>(null);
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const [recordingMs, setRecordingMs] = useState(0);
@@ -863,12 +896,13 @@ export default function PootBox() {
         id,
         emoji,
         blobUrl: pendingUrl,
-        radius: 36,
+        radius: 32, // matches built-in animal radii (30-34)
         mass: 1,
         createdAt: Date.now(),
       };
-      // Persist the recording to IndexedDB
+      // Persist the recording to IndexedDB + emoji to localStorage
       void saveRecording(id, pendingBlob);
+      saveRecordingEmoji(id, emoji);
       setCustomCircles((prev) => [...prev, newCircle]);
       // Spawn the new circle with a small drop-in velocity
       if (size.w > 0 && size.h > 0) {
@@ -907,6 +941,7 @@ export default function PootBox() {
       if (c) {
         URL.revokeObjectURL(c.blobUrl);
         void deleteRecording(id);
+        deleteRecordingEmoji(id);
       }
       setCustomCircles((prev) => prev.filter((x) => x.id !== id));
       circlesRef.current = circlesRef.current.filter((c) => c.id !== id);
@@ -918,18 +953,20 @@ export default function PootBox() {
 
   // On mount, restore any saved custom circles from IndexedDB
   useEffect(() => {
+    const emojiMap = loadRecordingEmojis();
     void loadAllRecordings().then((map) => {
       if (map.size === 0) return;
-      // We don't have emoji metadata stored (only Blobs), so we use a
-      // generic 🎤 placeholder. Future improvement: store emoji too.
       const restored: CustomCircle[] = [];
       for (const [id, blob] of map.entries()) {
         const url = URL.createObjectURL(blob);
+        // Use the saved emoji if we have one, otherwise fall back to
+        // a generic 🎤 placeholder for legacy recordings.
+        const emoji = emojiMap[id] || "🎤";
         restored.push({
           id,
-          emoji: "🎤",
+          emoji,
           blobUrl: url,
-          radius: 36,
+          radius: 32,
           mass: 1,
           createdAt: 0,
         });
@@ -1432,11 +1469,14 @@ export default function PootBox() {
               opacity: 0.9,
             }}
           >
-            {recordingMs > 0 ? "Recording…" : "Get ready…"}
+            {recordingMs === 0
+              ? "Get ready…"
+              : "Tap the mic to stop"}
           </div>
           <div
             data-mic-button
-            aria-label="Recording"
+            aria-label="Tap to stop recording"
+            onClick={recordingMs > 0 ? stopRecording : undefined}
             style={{
               width: 180,
               height: 180,
@@ -1449,6 +1489,7 @@ export default function PootBox() {
               alignItems: "center",
               justifyContent: "center",
               padding: 0,
+              cursor: recordingMs > 0 ? "pointer" : "default",
               boxShadow:
                 recordingMs > 0
                   ? "0 0 0 16px rgba(255,82,82,0.25), 0 8px 32px rgba(0,0,0,0.3)"
