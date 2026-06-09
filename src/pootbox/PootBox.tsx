@@ -39,6 +39,7 @@
 // velocity computed from recent pointer positions.
 
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
+import { playSingle, stopAllSounds, isAnySoundPlaying } from "./audioManager";
 
 // === Sound definitions ===
 
@@ -66,22 +67,23 @@ interface CustomCircle {
   createdAt: number;
 }
 
-// v33: emojis only, no colored circles. Cream background, physics-driven
+// v40: emojis only, no colored circles. Cream background, physics-driven
 // emojis. Each emoji = single object, radius covers physics + hit area + visual.
-// (Previous version had separate "color circle" + emoji; v33 drops the circle.)
+// All radii >= 30px so tap targets are well above Apple's 44pt minimum on iPhone.
+// (Previous version had 32-38px which was too small.)
 const CIRCLES: Circle[] = [
-  { id: "cow", emoji: "🐄", color: "transparent", shadow: "transparent", hatchEmoji: "🐦", sounds: ["/sounds/cow.mp3", "/sounds/v1/cow.mp3"], radius: 36, mass: 1 },
-  { id: "dog", emoji: "🐕", color: "transparent", shadow: "transparent", hatchEmoji: "🦋", sounds: ["/sounds/dog.mp3", "/sounds/v1/dog.mp3"], radius: 34, mass: 1 },
-  { id: "cat", emoji: "🐈", color: "transparent", shadow: "transparent", hatchEmoji: "🐟", sounds: ["/sounds/cat.mp3", "/sounds/v1/cat.mp3"], radius: 34, mass: 1 },
-  { id: "pig", emoji: "🐖", color: "transparent", shadow: "transparent", hatchEmoji: "🐛", sounds: ["/sounds/pig.mp3", "/sounds/extra/pig.mp3"], radius: 36, mass: 1 },
-  { id: "duck", emoji: "🦆", color: "transparent", shadow: "transparent", hatchEmoji: "🐝", sounds: ["/sounds/duck.mp3", "/sounds/v1/duck.mp3"], radius: 32, mass: 1 },
-  { id: "lion", emoji: "🦁", color: "transparent", shadow: "transparent", hatchEmoji: "🐞", sounds: ["/sounds/lion.mp3", "/sounds/v1/lion.mp3", "/sounds/extra/lion_long.mp3"], radius: 36, mass: 1 },
-  { id: "frog", emoji: "🐸", color: "transparent", shadow: "transparent", hatchEmoji: "🐜", sounds: ["/sounds/frog.mp3", "/sounds/v1/frog.mp3"], radius: 34, mass: 1 },
-  { id: "monkey", emoji: "🐒", color: "transparent", shadow: "transparent", hatchEmoji: "🐌", sounds: ["/sounds/monkey.mp3", "/sounds/v1/monkey.mp3"], radius: 34, mass: 1 },
-  { id: "horse", emoji: "🐎", color: "transparent", shadow: "transparent", hatchEmoji: "🐢", sounds: ["/sounds/horse.mp3", "/sounds/v1/horse.mp3"], radius: 36, mass: 1 },
-  { id: "elephant", emoji: "🐘", color: "transparent", shadow: "transparent", hatchEmoji: "🦄", sounds: ["/sounds/elephant.mp3", "/sounds/v1/elephant.mp3", "/sounds/extra/elephant_long.mp3"], radius: 38, mass: 1 },
-  { id: "rooster", emoji: "🐓", color: "transparent", shadow: "transparent", hatchEmoji: "🦜", sounds: ["/sounds/rooster.mp3"], radius: 34, mass: 1 },
-  { id: "bear", emoji: "🐻", color: "transparent", shadow: "transparent", hatchEmoji: "🐨", sounds: ["/sounds/bear.mp3"], radius: 36, mass: 1 },
+  { id: "cow", emoji: "🐄", color: "transparent", shadow: "transparent", hatchEmoji: "🐦", sounds: ["/sounds/cow.mp3", "/sounds/v1/cow.mp3"], radius: 32, mass: 1 },
+  { id: "dog", emoji: "🐕", color: "transparent", shadow: "transparent", hatchEmoji: "🦋", sounds: ["/sounds/dog.mp3", "/sounds/v1/dog.mp3"], radius: 30, mass: 1 },
+  { id: "cat", emoji: "🐈", color: "transparent", shadow: "transparent", hatchEmoji: "🐟", sounds: ["/sounds/cat.mp3", "/sounds/v1/cat.mp3"], radius: 30, mass: 1 },
+  { id: "pig", emoji: "🐖", color: "transparent", shadow: "transparent", hatchEmoji: "🐛", sounds: ["/sounds/pig.mp3", "/sounds/extra/pig.mp3"], radius: 32, mass: 1 },
+  { id: "duck", emoji: "🦆", color: "transparent", shadow: "transparent", hatchEmoji: "🐝", sounds: ["/sounds/duck.mp3", "/sounds/v1/duck.mp3"], radius: 30, mass: 1 },
+  { id: "lion", emoji: "🦁", color: "transparent", shadow: "transparent", hatchEmoji: "🐞", sounds: ["/sounds/lion.mp3", "/sounds/v1/lion.mp3", "/sounds/extra/lion_long.mp3"], radius: 32, mass: 1 },
+  { id: "frog", emoji: "🐸", color: "transparent", shadow: "transparent", hatchEmoji: "🐜", sounds: ["/sounds/frog.mp3", "/sounds/v1/frog.mp3"], radius: 30, mass: 1 },
+  { id: "monkey", emoji: "🐒", color: "transparent", shadow: "transparent", hatchEmoji: "🐌", sounds: ["/sounds/monkey.mp3", "/sounds/v1/monkey.mp3"], radius: 30, mass: 1 },
+  { id: "horse", emoji: "🐎", color: "transparent", shadow: "transparent", hatchEmoji: "🐢", sounds: ["/sounds/horse.mp3", "/sounds/v1/horse.mp3"], radius: 32, mass: 1 },
+  { id: "elephant", emoji: "🐘", color: "transparent", shadow: "transparent", hatchEmoji: "🦄", sounds: ["/sounds/elephant.mp3", "/sounds/v1/elephant.mp3", "/sounds/extra/elephant_long.mp3"], radius: 34, mass: 1 },
+  { id: "rooster", emoji: "🐓", color: "transparent", shadow: "transparent", hatchEmoji: "🦜", sounds: ["/sounds/rooster.mp3"], radius: 30, mass: 1 },
+  { id: "bear", emoji: "🐻", color: "transparent", shadow: "transparent", hatchEmoji: "🐨", sounds: ["/sounds/bear.mp3"], radius: 32, mass: 1 },
 ];
 
 // === Physics types ===
@@ -106,6 +108,9 @@ interface PhysicsCircle extends Circle {
   // make recent drift-driven collisions play sound (so when an emoji is
   // gently floating and bumps another, the kid hears it).
   lastDriftedAt: number;
+  // v40: hero circle pulses gently until tapped, drawing the kid's eye
+  // to the obvious "tap me" target. Set once at init.
+  isHero: boolean;
 }
 
 interface Ripple {
@@ -233,16 +238,20 @@ async function deleteRecording(id: string): Promise<void> {
   }
 }
 
-const FRICTION = 0.92; // stronger friction — settles to slow drift
-const WALL_BOUNCE = 0.05; // almost no wall bounce, just barely a nudge
-const COLLISION_BOUNCE = 0.08; // very soft push — feels like jelly, not balls
-const DRAG_THROW_MULTIPLIER = 0.5; // half-strength throws
-const DRIFT_INTERVAL_MS = 2200; // random nudge interval — keeps field alive
-const DRIFT_MAX = 0.15; // px/frame — small, calm
-const TOUCH_RECENT_MS = 500; // collision sound if either circle touched within this window
+// === Physics constants (v40) ===
+//
+// v40: stillness by default, satisfying bounces on interaction.
+//   - Friction is very low (0.995) — circles coast a long time after
+//     a throw. They keep moving until they hit a wall or another circle.
+//   - Wall and collision bounces are punchy (0.7) — kids get the
+//     satisfying "boing" they expect from a sound toy.
+//   - Drift is removed — circles are still until the kid touches them.
+const FRICTION = 0.995; // very low friction — coast a long time
+const WALL_BOUNCE = 0.7; // punchy wall bounce
+const COLLISION_BOUNCE = 0.85; // satisfying circle-circle bounce
+const DRAG_THROW_MULTIPLIER = 1.0;
 const TAP_PUSH_RADIUS = 130; // smaller push radius
 const TAP_PUSH_MAX = 2; // much gentler push (was 6 — ~3x weaker)
-const TAP_PUSH_RECENT_MS = 350;
 
 function loadSettings(): Settings {
   try {
@@ -278,6 +287,10 @@ export default function PootBox() {
   const [hatchAnimals, setHatchAnimals] = useState<HatchAnimal[]>([]);
   const [pressedId, setPressedId] = useState<string | null>(null);
   const [hatchedId, setHatchedId] = useState<string | null>(null);
+  // v40: track if any sound is currently playing. Polled every 100ms
+  // via the audio manager — used to show a "stop" button only when
+  // there's something to stop.
+  const [soundPlaying, setSoundPlaying] = useState(false);
 
   // Recording + custom circles
   // Phase: 'idle' = show + button. 'recording' = big mic, hold to capture.
@@ -295,7 +308,6 @@ export default function PootBox() {
   const rafRef = useRef<number | null>(null);
   const lastFrameRef = useRef<number>(0);
   const lastShakeAtRef = useRef<number>(0);
-  const lastDriftNudgeAtRef = useRef<number>(0);
   const collisionCooldownRef = useRef<Map<string, number>>(new Map());
 
   // Refs for drag
@@ -334,28 +346,51 @@ export default function PootBox() {
   }, []);
 
   // === Initialize circle positions ===
+  //
+  // v40: deterministic initial layout. 4×3 grid with the cow in the
+  // center, slightly bigger, gently pulsing. Sago Mini's trick: the
+  // first thing the kid sees is one obvious "tap me" target in the
+  // middle, with the other 11 arranged around it. Nothing random.
+  // Re-init on resize (portrait/landscape flip) since the grid math
+  // depends on dimensions.
 
   useEffect(() => {
     if (size.w === 0 || size.h === 0) return;
-    // v35: zero-g drift. No drop, no settle. Each emoji starts somewhere
-    // on the canvas with a small random velocity, so they float and
-    // gently nudge each other out of the way.
-    // Skip if already initialized (rotation / resize shouldn't reset).
-    if (circlesRef.current.length > 0) return;
-    circlesRef.current = CIRCLES.map((c) => {
-      // Random position anywhere in the canvas (with padding so circles aren't half off-screen)
-      const x = c.radius + Math.random() * (size.w - c.radius * 2);
-      const y = c.radius + Math.random() * (size.h - c.radius * 2);
-      // Tiny initial velocity — water-floating, not darting around
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 0.1 + Math.random() * 0.2;
+    const cols = 4;
+    const rows = 3;
+    // 12 circles in a 4x3 grid; reserve top/bottom safe-area.
+    // The center cell of the middle row is the "hero" cell — that's
+    // where the cow goes, with a slight scale-up.
+    const heroIndex = 1 * cols + 1; // row 1, col 1 (middle of 4x3)
+    const padX = 16;
+    const padTop = Math.max(40, size.h * 0.08); // room for status bar
+    const padBottom = 80; // room for + button
+    const usableH = size.h - padTop - padBottom;
+    const cellW = (size.w - padX * 2) / cols;
+    const cellH = usableH / rows;
+
+    circlesRef.current = CIRCLES.map((c, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const isHero = i === heroIndex;
+      // Slight jitter so it doesn't look like a spreadsheet
+      const jx = (col - (cols - 1) / 2) * 6;
+      const jy = (row - (rows - 1) / 2) * 4;
       return {
         ...c,
-        pos: { x, y },
-        vel: { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed },
+        pos: {
+          x: padX + cellW * col + cellW / 2 + jx,
+          y: padTop + cellH * row + cellH / 2 + jy,
+        },
+        // Hero gets tiny initial "breathing" velocity. Others still.
+        vel: isHero
+          ? { x: 0, y: 0 }
+          : { x: 0, y: 0 },
         lastTouchedAt: -1,
         lastTapPushedAt: -1,
         lastDriftedAt: -1,
+        // Hero pulse for the self-teaching first screen
+        isHero,
       };
     });
   }, [size.w, size.h]);
@@ -379,7 +414,9 @@ export default function PootBox() {
       const h = size.h;
       const collisionsThisFrame: { a: PhysicsCircle; b: PhysicsCircle }[] = [];
 
-      // 1. Integrate position (zero-G: no gravity, just velocity + friction)
+      // 1. Integrate position (v40: stillness by default. Friction is
+      // low so throws coast, but nothing moves on its own — only what
+      // the kid touched.)
       for (const c of circles) {
         if (dragRef.current?.id === c.id) continue; // dragged circle follows pointer
         c.pos.x += c.vel.x * stepScale;
@@ -393,20 +430,9 @@ export default function PootBox() {
         if (Math.abs(c.vel.y) < 0.05) c.vel.y = 0;
       }
 
-      // 1.5 Periodic random drift nudge — keeps the field alive when
-      // everything has settled. Tiny push on every circle every 2.2s.
-      if (now - lastDriftNudgeAtRef.current > DRIFT_INTERVAL_MS) {
-        lastDriftNudgeAtRef.current = now;
-        for (const c of circles) {
-          if (dragRef.current?.id === c.id) continue;
-          // Direction: random angle. Magnitude: small but random.
-          const ang = Math.random() * Math.PI * 2;
-          const mag = Math.random() * DRIFT_MAX;
-          c.vel.x += Math.cos(ang) * mag;
-          c.vel.y += Math.sin(ang) * mag;
-          c.lastDriftedAt = now;
-        }
-      }
+      // v40: no periodic drift. Circles stay still until the kid
+      // touches them. (Previous versions had a 2.2s random nudge; that
+      // looked glitchy to parents and made the kid's tap target move.)
 
       // 2. Wall collisions — very soft, just keeps them on screen
       for (const c of circles) {
@@ -489,36 +515,28 @@ export default function PootBox() {
         }
       }
 
-      // 4. Play collision sounds when a user is driving the motion —
-      // direct touch (tap/drag/throw/hatch), recent drift nudge, or
-      // tap-push (user poked empty space). Pure drift between two
-      // settled emojis is silent and spark-less.
+      // 4. Play collision sounds + sparks for every user-driven collision.
+      // v40: with drift removed, every collision is user-driven (either
+      // a tap, drag, throw, or tap-push). No need to gate on a "recent
+      // user activity" window — if circles are moving, the kid did it.
       if (collisionsThisFrame.length > 0) {
         for (const { a, b } of collisionsThisFrame) {
-          const aUser =
-            now - a.lastTouchedAt < TOUCH_RECENT_MS ||
-            now - a.lastDriftedAt < TOUCH_RECENT_MS ||
-            now - a.lastTapPushedAt < TAP_PUSH_RECENT_MS;
-          const bUser =
-            now - b.lastTouchedAt < TOUCH_RECENT_MS ||
-            now - b.lastDriftedAt < TOUCH_RECENT_MS ||
-            now - b.lastTapPushedAt < TAP_PUSH_RECENT_MS;
-          if (!aUser && !bUser) continue; // silent drift
           const key = [a.id, b.id].sort().join("|");
           const last = collisionCooldownRef.current.get(key) ?? 0;
           if (now - last < 400) continue; // 400ms per-pair cooldown
           collisionCooldownRef.current.set(key, now);
-          // Play sound on the user-driven circle(s) only
-          if (aUser) playRandomFromCircleRef(a, settingsRef.current.volume);
-          if (bUser) playRandomFromCircleRef(b, settingsRef.current.volume);
-          // Spark if user is driving (visual confirmation)
-          if (aUser || bUser) {
-            spawnSparksAtRef.current(
-              (a.pos.x + b.pos.x) / 2,
-              (a.pos.y + b.pos.y) / 2,
-              a.color
-            );
-          }
+          // v40: play sound on ONE circle only (the one the user touched
+          // most recently). With the single-voice policy, that means
+          // each collision triggers exactly one new sound, not two
+          // stacked. Picking "a" by default — collisions are rare
+          // enough that the kid can't tell which one played.
+          playRandomFromCircleRef(a, settingsRef.current.volume);
+          // Sparks at the collision midpoint
+          spawnSparksAtRef.current(
+            (a.pos.x + b.pos.x) / 2,
+            (a.pos.y + b.pos.y) / 2,
+            a.color
+          );
         }
       }
 
@@ -819,6 +837,7 @@ export default function PootBox() {
           lastTouchedAt: -1,
           lastTapPushedAt: -1,
           lastDriftedAt: -1,
+          isHero: false,
         });
         setTick((t) => (t + 1) % 1000000);
       }
@@ -866,6 +885,17 @@ export default function PootBox() {
       }
       setCustomCircles(restored);
     });
+  }, []);
+
+  // v40: poll the audio manager every 100ms so the "stop" button
+  // appears only when there's actually a sound playing. setInterval
+  // is fine here — we're not driving animation off this.
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const playing = isAnySoundPlaying();
+      setSoundPlaying((prev) => (prev !== playing ? playing : prev));
+    }, 100);
+    return () => window.clearInterval(id);
   }, []);
 
   // === Drag handlers ===
@@ -1202,6 +1232,44 @@ export default function PootBox() {
       >
         💨
       </div>
+
+      {/* v40: Stop button — visible only when a sound is currently
+          playing. Tapping it silences everything immediately. */}
+      {soundPlaying && (
+        <button
+          data-stop-button
+          onClick={() => {
+            stopAllSounds();
+            setSoundPlaying(false);
+          }}
+          aria-label="Stop sound"
+          style={{
+            position: "fixed",
+            top: `calc(16px + env(safe-area-inset-top))`,
+            left: 16,
+            width: 44,
+            height: 44,
+            borderRadius: "50%",
+            background: "rgba(0,0,0,0.55)",
+            backdropFilter: "blur(4px)",
+            WebkitBackdropFilter: "blur(4px)",
+            color: "white",
+            border: "1px solid rgba(255,255,255,0.2)",
+            fontSize: "1.1rem",
+            lineHeight: 1,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 0,
+            zIndex: 60,
+            WebkitTapHighlightColor: "transparent",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+          }}
+        >
+          ⏹
+        </button>
+      )}
 
       {/* Add button — only when idle and we have room for more */}
       {recPhase === "idle" && customCircles.length < MAX_CUSTOM_CIRCLES && (
@@ -1755,39 +1823,4 @@ function SettingsModal({ settings, onChange, onClose }: SettingsModalProps) {
 }
 
 
-// === Audio (single voice — stop and play) ===
-//
-// Sound toy for kids. To prevent the audio from becoming a wall of
-// overlapping chaos when many circles bump at the same time, we
-// enforce a single-voice policy: when a new sound wants to play,
-// we stop ALL currently-playing sounds first, then start the new
-// one. Each tap or collision is its own distinct sound — no two
-// sounds ever overlap.
 
-const activeAudioElements = new Set<HTMLAudioElement>();
-
-function playSingle(sound: string, volume: number): void {
-  // Stop any currently playing sounds
-  for (const a of activeAudioElements) {
-    try {
-      a.pause();
-    } catch {
-      // ignore
-    }
-  }
-  activeAudioElements.clear();
-
-  const a = new Audio(sound);
-  a.volume = volume;
-  const remove = () => {
-    activeAudioElements.delete(a);
-  };
-  a.addEventListener("ended", remove, { once: true });
-  a.addEventListener("error", remove, { once: true });
-  // Hard safety net: if 'ended' never fires, remove after 10s
-  setTimeout(remove, 10_000);
-  activeAudioElements.add(a);
-  a.play().catch(() => {
-    remove();
-  });
-}
