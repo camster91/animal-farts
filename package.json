@@ -9,9 +9,15 @@
     "lint": "eslint .",
     "test:build": "tsc -p tsconfig.test.json",
     "test": "npm run test:build && node --test --test-force-exit --test-timeout=2000 tests/unit-*.test.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cap:sync": "cap sync android",
+    "cap:build": "npm run build && cap sync android",
+    "cap:open": "cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/core": "^8.4.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },

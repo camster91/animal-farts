@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Poot Party</string>
+    <string name="title_activity_main">Poot Party</string>
+    <string name="package_name">com.ashbi.pootparty</string>
+    <string name="custom_url_scheme">com.ashbi.pootparty</string>
+</resources>

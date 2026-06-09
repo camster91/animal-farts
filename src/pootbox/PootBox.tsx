@@ -1596,7 +1596,14 @@ export default function PootBox() {
             userSelect: "none",
           }}
         >
-          💨 PootBox v1.0.0
+          💨 PootBox v1.0.0{" "}
+          <a
+            href="/android-check.html"
+            style={{ color: "#92705A", textDecoration: "none", opacity: 0.6, fontSize: "0.7rem" }}
+            aria-label="Android check"
+          >
+            🔧
+          </a>
         </span>
       </div>
 
