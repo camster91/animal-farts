@@ -101,6 +101,14 @@ interface PhysicsCircle extends Circle {
   // Last time (performance.now ms) this circle was directly touched by the user
   // (tap, drag, throw, hatch). -1 = never touched.
   lastTouchedAt: number;
+  // v40 fix: last time the user RELEASED this circle after a drag/throw.
+  // After release, the circle's lastTouchedAt is also set to "now", so
+  // we need a separate timestamp to know "this circle was released, any
+  // collisions after this point are post-throw chain reactions, not
+  // direct user action". A circle is "user-driven" for collision audio
+  // only if (now - lastReleasedAt) > 200ms — i.e., a tap is recent
+  // AND the user hasn't just released a throw.
+  lastReleasedAt: number;
   // Last time the user tapped empty space and this circle was within
   // the tap-push radius.
   lastTapPushedAt: number;
@@ -402,6 +410,7 @@ export default function PootBox() {
           ? { x: 0, y: 0 }
           : { x: 0, y: 0 },
         lastTouchedAt: -1,
+        lastReleasedAt: -1,
         lastTapPushedAt: -1,
         lastDriftedAt: -1,
         // Hero pulse for the self-teaching first screen
@@ -532,16 +541,23 @@ export default function PootBox() {
 
       // 4. Play collision sounds + sparks for user-driven collisions.
       // v40 fix: ONLY play sound if the user directly touched one of
-      // the colliding circles in the last 800ms. Chain-reaction bounces
-      // (where circle B was hit by moving circle A) are silent — the
-      // user only hears the sound they directly caused. Sparks still
-      // fire on every collision for visual feedback.
+      // the colliding circles AND has not just released a throw.
+      //
+      // "userDriven" requires BOTH:
+      //   (a) the circle was touched within COLLISION_AUDIO_WINDOW_MS
+      //   (b) the circle has not been released in the last 200ms
+      //       (i.e., it's a fresh tap, not the tail end of a throw)
+      //
+      // Chain-reaction bounces after a release are silent. Sparks
+      // still fire on every collision for visual feedback.
       if (collisionsThisFrame.length > 0) {
         for (const { a, b } of collisionsThisFrame) {
-          const aUser =
-            now - a.lastTouchedAt < COLLISION_AUDIO_WINDOW_MS;
-          const bUser =
-            now - b.lastTouchedAt < COLLISION_AUDIO_WINDOW_MS;
+          const aTouched = now - a.lastTouchedAt < COLLISION_AUDIO_WINDOW_MS;
+          const aReleased = now - a.lastReleasedAt < 200;
+          const aUser = aTouched && !aReleased;
+          const bTouched = now - b.lastTouchedAt < COLLISION_AUDIO_WINDOW_MS;
+          const bReleased = now - b.lastReleasedAt < 200;
+          const bUser = bTouched && !bReleased;
           const userDriven = aUser || bUser;
           const key = [a.id, b.id].sort().join("|");
           const last = collisionCooldownRef.current.get(key) ?? 0;
@@ -554,7 +570,7 @@ export default function PootBox() {
           if (!userDriven) continue; // chain collision — silent
           if (now - last < 250) continue; // tighter cooldown: 250ms
           collisionCooldownRef.current.set(key, now);
-          // Play sound on the user-touched circle (or "a" if both are fresh)
+          // Play sound on the user-touched circle (or "a" if both)
           const circle = aUser ? a : b;
           playRandomFromCircleRef(circle, settingsRef.current.volume);
         }
@@ -869,6 +885,7 @@ export default function PootBox() {
           pos: { x, y },
           vel: { x: Math.cos(ang) * speed, y: Math.sin(ang) * speed },
           lastTouchedAt: -1,
+          lastReleasedAt: -1,
           lastTapPushedAt: -1,
           lastDriftedAt: -1,
           isHero: false,
@@ -1058,6 +1075,10 @@ export default function PootBox() {
           // Keep lastTouchedAt fresh on release so the throw's collisions
           // still count as user-initiated for the TOUCH_RECENT_MS window.
           circle.lastTouchedAt = performance.now();
+          // v40 fix: also mark as just-released. From this point on,
+          // collisions are chain reactions, not direct user action —
+          // see the userDriven check in the physics loop.
+          circle.lastReleasedAt = performance.now();
         }
         dragRef.current = null;
       }
