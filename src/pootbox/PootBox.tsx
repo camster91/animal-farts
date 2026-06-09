@@ -483,10 +483,65 @@ export default function PootBox() {
   const recordingStartRef = useRef<number>(0);
 
   // Mic permission denied state (Task 6.2)
+  // v42: track WHY mic is blocked so the banner can tell the kid's parent
+  // exactly what to do. Three states:
+  //   - "prompt"   : browser hasn't decided, we need to call getUserMedia
+  //   - "denied"   : user said no (or browser auto-denied); show reset hint
+  //   - "granted"  : all good
+  //   - "unsupported" : no Permissions API or no mediaDevices
+  type MicPermState = "prompt" | "denied" | "granted" | "unsupported";
+  // v42: on app mount, query the Permissions API to learn the current
+  // state. If "denied", we know Chrome will auto-reject getUserMedia
+  // without showing a dialog. Surface that to the user immediately.
+  //
+  // We can't use a state setter inside the effect (it would cause a
+  // re-render warning). Instead, the state is initialized via the
+  // async query and updated via the change listener.
+  const [micPermState, setMicPermState] = useState<MicPermState>("prompt");
   const [micDenied, setMicDenied] = useState(false);
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.permissions) return;
+    if (!navigator.mediaDevices?.getUserMedia) return;
+    let cancelled = false;
+    // Initial query
+    navigator.permissions
+      .query({ name: "microphone" as PermissionName })
+      .then((p) => {
+        if (cancelled) return;
+        const initialState = p.state as MicPermState;
+        // Use a microtask to avoid setState-in-effect warnings
+        queueMicrotask(() => {
+          if (cancelled) return;
+          setMicPermState(initialState);
+          if (initialState === "denied") setMicDenied(true);
+        });
+        // Listen for changes (user toggles Chrome settings)
+        p.addEventListener("change", () => {
+          if (cancelled) return;
+          const newState = p.state as MicPermState;
+          setMicPermState(newState);
+          if (newState === "granted") setMicDenied(false);
+          else if (newState === "denied") setMicDenied(true);
+        });
+      })
+      .catch(() => {
+        // Some browsers (Firefox) don't support querying mic permission
+        // — that's fine, we'll fall through to the prompt flow.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const startRecording = useCallback(async () => {
     if (mediaRecorderRef.current) return;
+    // Pre-check: if Chrome has already denied mic permission, don't
+    // even bother with getUserMedia — it would just silently fail.
+    // Instead, show the user the reset-instructions banner.
+    if (micPermState === "denied") {
+      setMicDenied(true);
+      return;
+    }
     // IMPORTANT: getUserMedia must be called synchronously in a user
     // gesture. Do NOT call anything else that might "consume" the
     // gesture (like new Audio().play()) before this.
@@ -560,7 +615,7 @@ export default function PootBox() {
         }
       }
     }, 50);
-  }, [unlockAudio]);
+  }, [unlockAudio, micPermState]);
   const stopRecording = useCallback(() => {
     if (recordingTimerRef.current) {
       window.clearInterval(recordingTimerRef.current);
@@ -1109,7 +1164,11 @@ export default function PootBox() {
             fontSize: "0.85rem",
           }}
         >
-          <span>Microphone access denied. Enable in Settings to record your own sounds.</span>
+          <span style={{ flex: 1 }}>
+            {micPermState === "denied"
+              ? "Microphone is blocked. Click the lock icon 🔒 in the address bar → Site settings → Microphone → Allow."
+              : "Microphone access denied. Tap the + button again to allow."}
+          </span>
           <button
             onClick={() => {
               setMicDenied(false);

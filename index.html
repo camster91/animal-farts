@@ -12,6 +12,13 @@
     <meta name="theme-color" content="#fbbf24" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#fbbf24" />
     <meta name="color-scheme" content="light" />
+    <!-- Permissions-Policy: explicitly ALLOW microphone for our own origin.
+         The Coolify reverse proxy in front of this app sends a
+         Permissions-Policy: microphone=() header that blocks all mic
+         access. This meta tag (browsers that respect it) plus the
+         Permissions API pre-check in JS work around the proxy block.
+         See PootBox.tsx startRecording. -->
+    <meta http-equiv="Permissions-Policy" content="microphone=(self)" />
     <meta name="description" content="PootBox — a sound toy for kids. Tap circles, hold to hatch, shake for fun." />
     <meta name="keywords" content="kids, sounds, sound toy, poot, family, fun, toddler" />
 
