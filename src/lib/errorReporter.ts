@@ -29,7 +29,7 @@ async function report(error: { message: string; stack?: string; lineno?: number;
     url: typeof window !== 'undefined' ? window.location.href : '',
     userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
     // profileId is set by the parent app if the kid has a profile
-    profileId: typeof window !== 'undefined' ? (window as any).__profileId : undefined,
+    profileId: typeof window !== 'undefined' ? (window as unknown as { __profileId?: string }).__profileId : undefined,
     ts: Date.now(),
   };
 
@@ -51,7 +51,11 @@ export function initErrorReporter() {
   window.onerror = (message: string | Event, source?: string, lineno?: number, colno?: number, error?: Error) => {
     if (prevOnError) {
       // Call through so existing handlers still fire
-      try { prevOnError.call(window, message, source, lineno, colno, error); } catch {}
+      try {
+        prevOnError.call(window, message, source, lineno, colno, error);
+      } catch {
+        // ignore — chain to the prior handler
+      }
     }
     void report({ message: String(message), stack: error?.stack, lineno, colno });
     return false; // don't suppress — let the browser console log it too
@@ -61,7 +65,11 @@ export function initErrorReporter() {
   const prevOnUnhandledRejection = window.onunhandledrejection;
   window.onunhandledrejection = (event: PromiseRejectionEvent) => {
     if (prevOnUnhandledRejection) {
-      try { prevOnUnhandledRejection.call(window, event); } catch {}
+      try {
+        prevOnUnhandledRejection.call(window, event);
+      } catch {
+        // ignore — chain to the prior handler
+      }
     }
     const err = event.reason;
     void report({

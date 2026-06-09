@@ -865,15 +865,21 @@ export default function PootBox() {
   // === Cleanup ===
 
   useEffect(() => {
+    // Capture the current ref values at effect-setup time so the
+    // cleanup uses the right Map/Set instances even if React swaps them
+    // out by the time unmount fires.
+    const holdTimersMap = holdTimers.current;
+    const blankTimerRef = blankHoldTimer;
+    const rafRefLocal = rafRef;
     return () => {
-      for (const timer of holdTimers.current.values()) {
+      for (const timer of holdTimersMap.values()) {
         window.clearTimeout(timer);
       }
-      holdTimers.current.clear();
-      if (blankHoldTimer.current) {
-        window.clearTimeout(blankHoldTimer.current);
+      holdTimersMap.clear();
+      if (blankTimerRef.current) {
+        window.clearTimeout(blankTimerRef.current);
       }
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (rafRefLocal.current) cancelAnimationFrame(rafRefLocal.current);
     };
   }, []);
 
