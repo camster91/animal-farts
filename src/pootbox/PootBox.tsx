@@ -34,6 +34,7 @@ import type {
   Settings,
   CircleButtonProps,
 } from "./types";
+import { stepPhysics } from "./physics";
 import {
   CIRCLES,
   HIDDEN_LONG_PRESS_MS,
@@ -117,6 +118,7 @@ export default function PootBox() {
   const lastShakeAtRef = useRef<number>(0);
   const collisionCooldownRef = useRef<Map<string, number>>(new Map());
   const lastCirclePlayRef = useRef<Map<string, number>>(new Map());
+  const lastDriftNudgeAtRef = useRef<number>(0);
 
   // Refs for drag
   const dragRef = useRef<{
@@ -221,115 +223,34 @@ export default function PootBox() {
         const dt = lastFrameRef.current === 0 ? 16.67 : now - lastFrameRef.current;
         lastFrameRef.current = now;
         const clampedDt = Math.min(dt, 50);
-        const stepScale = clampedDt / 16.67;
 
-        const circles = circlesRef.current;
-        const w = size.w;
-        const h = size.h;
-        const collisionsThisFrame: { a: PhysicsCircle; b: PhysicsCircle }[] = [];
+        const collisions = stepPhysics(
+          circlesRef.current,
+          {
+            friction: FRICTION,
+            wallBounce: WALL_BOUNCE,
+            collisionBounce: COLLISION_BOUNCE,
+            driftIntervalMs: 4000,
+            driftForceMax: 0.15,
+            viewportWidth: size.w,
+            viewportHeight: size.h,
+            collisionAudioWindowMs: COLLISION_AUDIO_WINDOW_MS,
+          },
+          now,
+          clampedDt,
+          lastDriftNudgeAtRef,
+          collisionCooldownRef
+        );
 
-        for (const c of circles) {
-          if (dragRef.current?.id === c.id) continue;
-          c.pos.x += c.vel.x * stepScale;
-          c.pos.y += c.vel.y * stepScale;
-          const damp = Math.pow(FRICTION, stepScale);
-          c.vel.x *= damp;
-          c.vel.y *= damp;
-          if (Math.abs(c.vel.x) < 0.05) c.vel.x = 0;
-          if (Math.abs(c.vel.y) < 0.05) c.vel.y = 0;
-        }
-
-        for (const c of circles) {
-          if (dragRef.current?.id === c.id) continue;
-          if (c.pos.x - c.radius < 0) {
-            c.pos.x = c.radius;
-            c.vel.x = -c.vel.x * WALL_BOUNCE;
-          } else if (c.pos.x + c.radius > w) {
-            c.pos.x = w - c.radius;
-            c.vel.x = -c.vel.x * WALL_BOUNCE;
+        for (const ev of collisions) {
+          if (ev.shouldPlaySound) {
+            playRandomFromCircleRef(ev.a as unknown as Circle, settingsRef.current.volume);
           }
-          if (c.pos.y - c.radius < 0) {
-            c.pos.y = c.radius;
-            c.vel.y = -c.vel.y * WALL_BOUNCE;
-          } else if (c.pos.y + c.radius > h) {
-            c.pos.y = h - c.radius;
-            c.vel.y = -c.vel.y * WALL_BOUNCE;
-          }
-        }
-
-        for (let i = 0; i < circles.length; i++) {
-          for (let j = i + 1; j < circles.length; j++) {
-            const a = circles[i];
-            const b = circles[j];
-            const dx = b.pos.x - a.pos.x;
-            const dy = b.pos.y - a.pos.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            const minDist = a.radius + b.radius;
-            if (dist < minDist && dist > 0.001) {
-              const nx = dx / dist;
-              const ny = dy / dist;
-              const overlap = (minDist - dist) / 2;
-              const aDragged = dragRef.current?.id === a.id;
-              const bDragged = dragRef.current?.id === b.id;
-              if (!aDragged && !bDragged) {
-                a.pos.x -= nx * overlap;
-                a.pos.y -= ny * overlap;
-                b.pos.x += nx * overlap;
-                b.pos.y += ny * overlap;
-              } else if (aDragged && !bDragged) {
-                b.pos.x += nx * overlap;
-                b.pos.y += ny * overlap;
-              } else if (bDragged && !aDragged) {
-                a.pos.x -= nx * overlap;
-                a.pos.y -= ny * overlap;
-              }
-              const aDragged2 = dragRef.current?.id === a.id;
-              const bDragged2 = dragRef.current?.id === b.id;
-              const vaX = aDragged2 ? 0 : a.vel.x;
-              const vaY = aDragged2 ? 0 : a.vel.y;
-              const vbX = bDragged2 ? 0 : b.vel.x;
-              const vbY = bDragged2 ? 0 : b.vel.y;
-              const rvx = vbX - vaX;
-              const rvy = vbY - vaY;
-              const velAlongNormal = rvx * nx + rvy * ny;
-              if (velAlongNormal < 0) continue;
-              const restitution = COLLISION_BOUNCE;
-              const impulse = (velAlongNormal * (1 + restitution)) / 2;
-              if (!aDragged2) {
-                a.vel.x += impulse * nx;
-                a.vel.y += impulse * ny;
-              }
-              if (!bDragged2) {
-                b.vel.x -= impulse * nx;
-                b.vel.y -= impulse * ny;
-              }
-              collisionsThisFrame.push({ a, b });
-            }
-          }
-        }
-
-        if (collisionsThisFrame.length > 0) {
-          for (const { a, b } of collisionsThisFrame) {
-            const aTouched = now - a.lastTouchedAt < COLLISION_AUDIO_WINDOW_MS;
-            const aReleased = now - a.lastReleasedAt < 200;
-            const aUser = aTouched && !aReleased;
-            const bTouched = now - b.lastTouchedAt < COLLISION_AUDIO_WINDOW_MS;
-            const bReleased = now - b.lastReleasedAt < 200;
-            const bUser = bTouched && !bReleased;
-            const userDriven = aUser || bUser;
-            const key = [a.id, b.id].sort().join("|");
-            const last = collisionCooldownRef.current.get(key) ?? 0;
-            spawnSparksAtRef.current(
-              (a.pos.x + b.pos.x) / 2,
-              (a.pos.y + b.pos.y) / 2,
-              a.color
-            );
-            if (!userDriven) continue;
-            if (now - last < 250) continue;
-            collisionCooldownRef.current.set(key, now);
-            const circle = aUser ? a : b;
-            playRandomFromCircleRef(circle, settingsRef.current.volume);
-          }
+          spawnSparksAtRef.current(
+            (ev.a.pos.x + ev.b.pos.x) / 2,
+            (ev.a.pos.y + ev.b.pos.y) / 2,
+            (ev.a as unknown as { color?: string }).color ?? "rgba(255,255,255,0.4)"
+          );
         }
 
         setTick((t) => (t + 1) % 1000000);
@@ -337,7 +258,6 @@ export default function PootBox() {
       } catch (err) {
         console.error("Physics loop error:", err);
         loopStopped = true;
-        // Circles become static; kid can still tap to play sounds
       }
     };
 
