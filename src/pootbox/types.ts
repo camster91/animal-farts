@@ -1,34 +1,5 @@
 // === Domain types ===
 
-export interface Circle {
-  id: string;
-  emoji: string;
-  color: string;
-  shadow: string;
-  hatchEmoji: string;
-  sounds: string[];
-  radius: number;
-  mass: number;
-}
-
-export interface CustomCircle {
-  id: string;
-  emoji: string;
-  blobUrl: string;
-  radius: number;
-  mass: number;
-  createdAt: number;
-}
-
-export interface PhysicsCircle extends Circle {
-  pos: Vec2;
-  vel: Vec2;
-  lastTouchedAt: number;
-  lastReleasedAt: number;
-  lastDriftedAt: number;
-  isHero: boolean;
-}
-
 export interface Vec2 {
   x: number;
   y: number;
@@ -51,13 +22,93 @@ export interface Spark {
   life: number;
 }
 
+// --- Page / BubbleState (runtime) ---
+
+export interface BubbleState {
+  id: string; // "b:built-in:cow" | "b:custom:abc123"
+  type: "built-in" | "custom";
+  emoji: string;
+  // built-in only:
+  builtinKey?: string; // "cow", "dog", "fart-wet"…
+  // custom only:
+  blobUrl?: string;
+  // physics (mutated by physics loop, read by CircleButton):
+  pos: Vec2;
+  vel: Vec2;
+  radius: number;
+  mass: number;
+  // audio source:
+  sound: string; // "/sounds/cow.mp3" | blobUrl
+  // user interaction timestamps:
+  lastTouchedAt: number;  // performance.now() or -1
+  lastReleasedAt: number; // performance.now() or -1
+}
+
+export interface Page {
+  id: string;             // "page:default" | "page:1700000000-abc"
+  name: string;           // "My Animals", "Sleepy Time", "Sounds" (default "Sounds")
+  emoji: string;         // page tab icon, default 🏠
+  bubbles: BubbleState[];
+  createdAt: number;
+}
+
+// --- BuiltInSound (static library metadata) ---
+
+export interface BuiltInSound {
+  key: string;    // "cow", "dog", "fart-wet", "burp"…
+  emoji: string;  // 🐄
+  name: string;   // "Cow"
+  file: string;   // "/sounds/cow.mp3"
+  bucket: "animal" | "fart" | "instrument" | "silly";
+}
+
+// --- Settings ---
+
 export interface Settings {
   volume: number;
   reducedMotion: boolean;
 }
 
+// --- Backward-compatible type aliases (for existing PootBox.tsx) ---
+// These allow the old code to keep building while the new types exist in parallel.
+// PhysicsCircle must preserve ALL old Circle fields + runtime fields for full compat.
+
+/** @deprecated Use BubbleState — persists for PootBox.tsx compatibility until v46e */
+export interface PhysicsCircle extends Circle {
+  pos: Vec2;
+  vel: Vec2;
+  lastTouchedAt: number;
+  lastReleasedAt: number;
+  lastDriftedAt: number;
+  isHero: boolean;
+}
+
+/** @deprecated Use BubbleState — persists for PootBox.tsx compatibility until v46e */
+export interface CustomCircle {
+  id: string;
+  emoji: string;
+  blobUrl: string;
+  radius: number;
+  mass: number;
+  createdAt: number;
+}
+
+/** @deprecated Use BubbleState — persists for PootBox.tsx compatibility until v46e */
+export interface Circle {
+  id: string;
+  emoji: string;
+  color: string;
+  shadow: string;
+  hatchEmoji: string;
+  sounds: string[];
+  radius: number;
+  mass: number;
+}
+
 // === Component prop types ===
 
+// Use DOM PointerEvent (not React's) to avoid requiring React types in test tsconfig.
+// The React wrapper is identical at runtime.
 export interface CircleButtonProps {
   circle: PhysicsCircle;
   pressed: boolean;
