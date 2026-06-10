@@ -1,53 +1,118 @@
-// === IndexedDB helpers for persisting user recordings ===
+// === IndexedDB helpers for persisting user recordings & pages ===
+import { BUILT_IN_SOUNDS } from "./constants.js";
 const DB_NAME = "pootbox";
-const STORE_NAME = "recordings";
-const DB_VERSION = 1;
-export function openDB() {
+const DB_VERSION = 2;
+const PAGES_STORE = "pages";
+const BLOBS_STORE = "blobs";
+// --- DB open (defensive, best-effort) ---
+function openDB() {
     return new Promise((resolve, reject) => {
-        const req = indexedDB.open(DB_NAME, DB_VERSION);
-        req.onupgradeneeded = () => {
-            const db = req.result;
-            if (!db.objectStoreNames.contains(STORE_NAME)) {
-                db.createObjectStore(STORE_NAME);
-            }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
+        try {
+            const req = indexedDB.open(DB_NAME, DB_VERSION);
+            req.onupgradeneeded = () => {
+                const db = req.result;
+                if (!db.objectStoreNames.contains(BLOBS_STORE)) {
+                    db.createObjectStore(BLOBS_STORE);
+                }
+                // "pages" store created lazily on first save
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        }
+        catch (e) {
+            reject(e);
+        }
     });
 }
-export async function saveRecording(id, blob) {
+// --- Default page factory ---
+export function createDefaultPage() {
+    const defaultBubbles = BUILT_IN_SOUNDS
+        .filter(s => s.bucket === "animal")
+        .map(s => ({
+        id: `b:built-in:${s.key}`,
+        type: "built-in",
+        emoji: s.emoji,
+        builtinKey: s.key,
+        pos: { x: 0, y: 0 },
+        vel: { x: 0, y: 0 },
+        radius: 30,
+        mass: 1,
+        sound: s.file,
+        lastTouchedAt: -1,
+        lastReleasedAt: -1,
+    }));
+    return {
+        id: "page:default",
+        name: "Sounds",
+        emoji: "🏠",
+        bubbles: defaultBubbles,
+        createdAt: Date.now(),
+    };
+}
+// --- Backward-compatible wrappers for existing PootBox.tsx ---
+/** @deprecated Use saveBlob — persists for PootBox.tsx until v46e */
+export const saveRecording = saveBlob;
+/** @deprecated Use loadAllBlobs — persists for PootBox.tsx until v46e */
+export const loadAllRecordings = loadAllBlobs;
+/** @deprecated Use deleteBlob — persists for PootBox.tsx until v46e */
+export const deleteRecording = deleteBlob;
+// --- Blob repository ---
+export async function saveBlob(bubbleId, blob) {
     try {
         const db = await openDB();
         await new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, "readwrite");
-            tx.objectStore(STORE_NAME).put(blob, id);
+            const tx = db.transaction(BLOBS_STORE, "readwrite");
+            tx.objectStore(BLOBS_STORE).put(blob, bubbleId);
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
         db.close();
     }
+    catch { /* best-effort */ }
+}
+export async function loadBlob(bubbleId) {
+    try {
+        const db = await openDB();
+        const result = await new Promise((resolve, reject) => {
+            const tx = db.transaction(BLOBS_STORE, "readonly");
+            const req = tx.objectStore(BLOBS_STORE).get(bubbleId);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+        db.close();
+        return result ?? null;
+    }
     catch {
-        // Best-effort persistence.
+        return null;
     }
 }
-export async function loadAllRecordings() {
+export async function deleteBlob(bubbleId) {
+    try {
+        const db = await openDB();
+        await new Promise((resolve, reject) => {
+            const tx = db.transaction(BLOBS_STORE, "readwrite");
+            tx.objectStore(BLOBS_STORE).delete(bubbleId);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+        db.close();
+    }
+    catch { /* best-effort */ }
+}
+export async function loadAllBlobs() {
     const out = new Map();
     try {
         const db = await openDB();
         await new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, "readonly");
-            const req = tx.objectStore(STORE_NAME).getAll();
-            req.onsuccess = () => {
-                const curReq = tx.objectStore(STORE_NAME).openCursor();
-                curReq.onsuccess = () => {
-                    const cursor = curReq.result;
-                    if (cursor) {
-                        out.set(String(cursor.key), cursor.value);
-                        cursor.continue();
-                    }
-                };
+            const tx = db.transaction(BLOBS_STORE, "readonly");
+            const curReq = tx.objectStore(BLOBS_STORE).openCursor();
+            curReq.onsuccess = () => {
+                const cursor = curReq.result;
+                if (cursor) {
+                    out.set(String(cursor.key), cursor.value);
+                    cursor.continue();
+                }
             };
-            req.onerror = () => reject(req.error);
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
@@ -56,12 +121,38 @@ export async function loadAllRecordings() {
     catch { /* best-effort */ }
     return out;
 }
-export async function deleteRecording(id) {
+// --- PageRepository (IndexedDB-backed) ---
+export async function loadAllPages() {
     try {
         const db = await openDB();
+        const pages = await new Promise((resolve, reject) => {
+            const tx = db.transaction(PAGES_STORE, "readonly");
+            const req = tx.objectStore(PAGES_STORE).getAll();
+            req.onsuccess = () => resolve(req.result ?? []);
+            req.onerror = () => reject(req.error);
+        });
+        db.close();
+        if (pages.length === 0) {
+            const def = createDefaultPage();
+            await savePage(def);
+            return [def];
+        }
+        return pages;
+    }
+    catch {
+        return [createDefaultPage()];
+    }
+}
+export async function savePage(page) {
+    try {
+        const db = await openDB();
+        // ensure store exists (lazy creation for pages — blobs store created in upgrade)
+        if (!db.objectStoreNames.contains(PAGES_STORE)) {
+            db.createObjectStore(PAGES_STORE);
+        }
         await new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, "readwrite");
-            tx.objectStore(STORE_NAME).delete(id);
+            const tx = db.transaction(PAGES_STORE, "readwrite");
+            tx.objectStore(PAGES_STORE).put(page, page.id);
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
@@ -69,7 +160,48 @@ export async function deleteRecording(id) {
     }
     catch { /* best-effort */ }
 }
-// === Emoji metadata (parallel localStorage map) ===
+export async function deletePage(pageId) {
+    try {
+        const db = await openDB();
+        await new Promise((resolve, reject) => {
+            const tx = db.transaction(PAGES_STORE, "readwrite");
+            tx.objectStore(PAGES_STORE).delete(pageId);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+        db.close();
+    }
+    catch { /* best-effort */ }
+}
+export async function addBubbleToPage(pageId, bubble) {
+    const pages = await loadAllPages();
+    const page = pages.find(p => p.id === pageId);
+    if (!page)
+        return page;
+    const MAX_BUBBLES = 12;
+    const updated = [...page.bubbles];
+    if (updated.length >= MAX_BUBBLES) {
+        // archive oldest (remove first)
+        updated.shift();
+    }
+    updated.push(bubble);
+    const updatedPage = { ...page, bubbles: updated };
+    await savePage(updatedPage);
+    return updatedPage;
+}
+export async function removeBubbleFromPage(pageId, bubbleId) {
+    const pages = await loadAllPages();
+    const page = pages.find(p => p.id === pageId);
+    if (!page)
+        return page;
+    const updatedPage = {
+        ...page,
+        bubbles: page.bubbles.filter(b => b.id !== bubbleId),
+    };
+    await savePage(updatedPage);
+    return updatedPage;
+}
+// --- Emoji metadata (localStorage, reused from existing) ---
 export function saveRecordingEmoji(id, emoji) {
     try {
         const raw = localStorage.getItem("pootbox-recording-emojis") || "{}";
