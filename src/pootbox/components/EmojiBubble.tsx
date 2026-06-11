@@ -121,14 +121,6 @@ const EmojiBubble: FC<EmojiBubbleProps> = ({
           </span>
         )}
       </div>
-
-      <style>{`
-        @keyframes pootbox-bubble-tap {
-          0%   { transform: scale(1); }
-          35%  { transform: scale(0.85); }
-          100% { transform: scale(1); }
-        }
-      `}</style>
     </button>
   );
 };
