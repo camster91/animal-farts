@@ -159,9 +159,6 @@ const PageTabs: FC<PageTabsProps> = ({
     <>
      <div
         style={{
-          position: "fixed",
-          top: 16,
-          right: 16,
           display: "flex",
           alignItems: "center",
           gap: 6,
