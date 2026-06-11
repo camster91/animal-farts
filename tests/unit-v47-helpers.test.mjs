@@ -88,8 +88,8 @@ describe('addBubbleToPageDedup', () => {
     assert.strictEqual(result.pages[1].bubbles.length, 1);
   });
 
-  it('caps at 12 bubbles — oldest is shifted out', () => {
-    const bubbles = Array.from({ length: 12 }, (_, i) => ({
+  it('caps at 24 bubbles — oldest is shifted out', () => {
+    const bubbles = Array.from({ length: 24 }, (_, i) => ({
       id: `b:built-in:animal${i}`,
       type: 'built-in',
       emoji: '🐄',
@@ -105,7 +105,7 @@ describe('addBubbleToPageDedup', () => {
     const pages = [makePage('p1', bubbles)];
     const result = addBubbleToPageDedup(pages, 'p1', ANOTHER_ANIMAL_BUBBLE);
     assert.strictEqual(result.added, true);
-    assert.strictEqual(result.pages[0].bubbles.length, 12);
+    assert.strictEqual(result.pages[0].bubbles.length, 24);
     assert.strictEqual(result.pages[0].bubbles[0].builtinKey, 'animal1'); // animal0 was shifted
   });
 

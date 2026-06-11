@@ -176,7 +176,7 @@ export function addBubbleToPageDedup(
   });
   if (isDuplicate) return { pages, added: false };
 
-  const MAX_BUBBLES = 12;
+  const MAX_BUBBLES = 24;
   const updated: BubbleState[] = [...page.bubbles];
   if (updated.length >= MAX_BUBBLES) {
     updated.shift();
