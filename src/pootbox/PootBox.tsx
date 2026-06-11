@@ -958,54 +958,67 @@ export default function PootBox() {
       {activePageId === "page:default" && (
         <div
           style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 8,
-            padding: "8px 16px 0",
-            justifyContent: "center",
+            position: "sticky",
+            top: 64,
+            zIndex: 150,
+            background: "rgba(254, 243, 199, 0.95)",
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
+            padding: "8px 16px",
+            overflowX: "auto",
+            whiteSpace: "nowrap",
+            maxWidth: "100vw",
           }}
         >
-          {[
-            { label: "Animals", value: "animal" },
-            { label: "Farts", value: "fart" },
-            { label: "Silly", value: "silly" },
-            { label: "Instruments", value: "instrument" },
-          ].map(({ label, value }) => {
-            const isActive = homeCategory === value;
-            return (
-              <button
-                key={value}
-                onClick={() => {
-                  setHomeCategory(value);
-                  // Sync default page bubbles immediately (no effect needed)
-                  setPages(prev => {
-                    const idx = prev.findIndex(p => p.id === "page:default");
-                    if (idx === -1) return prev;
-                    const updated = createDefaultPage(value);
-                    const next = [...prev];
-                    next[idx] = { ...updated, id: "page:default", createdAt: prev[idx].createdAt };
-                    void savePage(next[idx]);
-                    return next;
-                  });
-                }}
-                style={{
-                  height: 32,
-                  padding: "0 14px",
-                  borderRadius: 16,
-                  fontSize: "0.8rem",
-                  fontWeight: 600,
-                  fontFamily: "Fredoka, system-ui, sans-serif",
-                  cursor: "pointer",
-                  transition: "all 150ms ease",
-                  border: isActive ? "none" : "1px solid #E5E0D5",
-                  background: isActive ? "#F59E0B" : "transparent",
-                  color: isActive ? "#FFFFFF" : "#3D2C1E",
-                }}
-              >
-                {label}
-              </button>
-            );
-          })}
+          <div
+            style={{
+              display: "inline-flex",
+              gap: 8,
+            }}
+          >
+            {[
+              { label: "Animals", value: "animal" },
+              { label: "Farts", value: "fart" },
+              { label: "Silly", value: "silly" },
+              { label: "Instruments", value: "instrument" },
+            ].map(({ label, value }) => {
+              const isActive = homeCategory === value;
+              return (
+                <button
+                  key={value}
+                  onClick={() => {
+                    setHomeCategory(value);
+                    // Sync default page bubbles immediately (no effect needed)
+                    setPages(prev => {
+                      const idx = prev.findIndex(p => p.id === "page:default");
+                      if (idx === -1) return prev;
+                      const updated = createDefaultPage(value);
+                      const next = [...prev];
+                      next[idx] = { ...updated, id: "page:default", createdAt: prev[idx].createdAt };
+                      void savePage(next[idx]);
+                      return next;
+                    });
+                  }}
+                  style={{
+                    height: 32,
+                    padding: "0 14px",
+                    borderRadius: 16,
+                    fontSize: "0.8rem",
+                    fontWeight: 600,
+                    fontFamily: "Fredoka, system-ui, sans-serif",
+                    cursor: "pointer",
+                    transition: "all 150ms ease",
+                    border: isActive ? "none" : "1px solid #E5E0D5",
+                    background: isActive ? "#F59E0B" : "transparent",
+                    color: isActive ? "#FFFFFF" : "#3D2C1E",
+                    flexShrink: 0,
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
