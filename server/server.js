@@ -124,6 +124,11 @@ const DIST_DIR = path.join(__dirname, "..", "dist");
 app.use("/sw.js", express.static(path.join(DIST_DIR, "sw.js"), { maxAge: 0, etag: true }));
 app.use(express.static(DIST_DIR, { maxAge: "1h" }));
 
+// Privacy page (static, served from dist/)
+app.get("/privacy.html", (req, res) => {
+  res.sendFile(path.join(DIST_DIR, "privacy.html"));
+});
+
 // SPA fallback: any non-API GET that didn't match a static file → index.html
 app.get(/^(?!\/api|\/uploads).*/, (req, res) => {
   res.sendFile(path.join(DIST_DIR, "index.html"));
