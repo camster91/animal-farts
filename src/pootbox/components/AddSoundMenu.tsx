@@ -64,35 +64,42 @@ const AddSoundMenu: FC<AddSoundMenuProps> = ({
   const setOpen = onShowChange !== undefined ? onShowChange : setInternalOpen;
   const canAddPage = pagesCount < maxPages;
 
+  // When controlled (show + onShowChange provided), don't render our own trigger
+  // — the parent component (TopBar) is the trigger. Otherwise render the floating +
+  // button as before.
+  const isControlled = show !== undefined && onShowChange !== undefined;
+
   return (
     <>
-      <button
-        aria-label="Add sound"
-        onClick={() => setOpen(true)}
-        style={{
-          position: "fixed",
-          top: 72,
-          right: 16,
-          width: 44,
-          height: 44,
-          borderRadius: "50%",
-          background: "rgba(61,44,30,0.75)",
-          backdropFilter: "blur(12px)",
-          WebkitBackdropFilter: "blur(12px)",
-          border: "none",
-          cursor: "pointer",
-          color: "white",
-          fontSize: 22,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 200,
-          boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
+      {!isControlled && (
+        <button
+          aria-label="Add sound"
+          onClick={() => setOpen(true)}
+          style={{
+            position: "fixed",
+            top: 72,
+            right: 16,
+            width: 44,
+            height: 44,
+            borderRadius: "50%",
+            background: "rgba(61,44,30,0.75)",
+            backdropFilter: "blur(12px)",
+            WebkitBackdropFilter: "blur(12px)",
+            border: "none",
+            cursor: "pointer",
+            color: "white",
+            fontSize: 22,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 200,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
           padding: 0,
         }}
       >
         +
       </button>
+      )}
 
       {open && (
         <div
