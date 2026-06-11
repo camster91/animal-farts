@@ -119,39 +119,39 @@ describe('addBubbleToPageDedup', () => {
 describe('deletePagePure', () => {
   it('removes the page', () => {
     const pages = [makePage('p1', []), makePage('p2', [])];
-    const result = deletePagePure(pages, 'p1', new Map());
+    const result = deletePagePure(pages, 'p1');
     assert.strictEqual(result.pages.length, 1);
     assert.strictEqual(result.pages[0].id, 'p2');
   });
 
   it('returns blob IDs for custom recordings on deleted page', () => {
     const pages = [makePage('p1', [CUSTOM_BUBBLE]), makePage('p2', [])];
-    const result = deletePagePure(pages, 'p1', new Map());
+    const result = deletePagePure(pages, 'p1');
     assert.deepStrictEqual(result.removedBlobs, ['b:custom:abc123']);
   });
 
   it('does NOT return blob IDs for built-in bubbles', () => {
     const pages = [makePage('p1', [ANIMAL_BUBBLE]), makePage('p2', [])];
-    const result = deletePagePure(pages, 'p1', new Map());
+    const result = deletePagePure(pages, 'p1');
     assert.deepStrictEqual(result.removedBlobs, []);
   });
 
   it('refuses to remove the last page', () => {
     const pages = [makePage('p1', [])];
-    const result = deletePagePure(pages, 'p1', new Map());
+    const result = deletePagePure(pages, 'p1');
     assert.strictEqual(result.pages.length, 1);
     assert.deepStrictEqual(result.removedBlobs, []);
   });
 
   it('returns unchanged when pageId not found', () => {
     const pages = [makePage('p1', [])];
-    const result = deletePagePure(pages, 'nonexistent', new Map());
+    const result = deletePagePure(pages, 'nonexistent');
     assert.strictEqual(result.pages.length, 1);
   });
 
   it('does not mutate original pages array', () => {
     const pages = [makePage('p1', []), makePage('p2', [])];
-    deletePagePure(pages, 'p1', new Map());
+    deletePagePure(pages, 'p1');
     assert.strictEqual(pages.length, 2);
   });
 });

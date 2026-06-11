@@ -197,7 +197,6 @@ export function addBubbleToPageDedup(
 export function deletePagePure(
   pages: Page[],
   pageId: string,
-  _blobsMap: Map<string, Blob>, // unused — blob IDs come from bubble.id on custom recordings
 ): { pages: Page[]; removedBlobs: string[] } {
   if (pages.length <= 1) return { pages, removedBlobs: [] }; // must keep at least 1 page
 
