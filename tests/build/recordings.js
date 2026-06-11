@@ -170,8 +170,12 @@ export function addBubbleToPageDedup(pages, pageId, bubble) {
  * Pure page deletion — removes the page from the array.
  * Returns blob IDs of custom recordings on that page so caller can delete them from blobs store.
  * Refuses to remove the last remaining page.
+ * blobsMap parameter is unused here (blob IDs come from bubble.id on custom recordings)
+ * but kept in the signature for symmetry with the caller-side cleanup call.
  */
-export function deletePagePure(pages, pageId, _blobsMap) {
+export function deletePagePure(pages, pageId, 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+blobsMap) {
     if (pages.length <= 1)
         return { pages, removedBlobs: [] }; // must keep at least 1 page
     const pageIndex = pages.findIndex(p => p.id === pageId);

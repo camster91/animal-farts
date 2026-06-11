@@ -15,16 +15,6 @@ interface EmojiBubbleProps {
   showPlayedIndicator?: boolean;
 }
 
-// G5: Returns true for a genuine tap (< 250ms, moved < 10px), false for drag/hold
-export function shouldPlayTapFeedback(
-  pointerDownMs: number,
-  pointerUpMs: number,
-  movedPx: number,
-): boolean {
-  const durationMs = pointerUpMs - pointerDownMs;
-  return durationMs < 250 && movedPx < 10;
-}
-
 const EmojiBubble: FC<EmojiBubbleProps> = ({
   id,
   emoji,
@@ -130,7 +120,6 @@ const EmojiBubble: FC<EmojiBubbleProps> = ({
             ♪
           </span>
         )}
-
       </div>
 
       <style>{`
