@@ -41,6 +41,8 @@ import EmptyPageHint from "./components/EmptyPageHint";
 import FirstRunIntro from "./components/FirstRunIntro";
 import ShareSheet from "./components/ShareSheet";
 import VolumeSlider from "./components/VolumeSlider";
+import InstallPrompt from "./components/InstallPrompt";
+import UpdatePrompt from "./components/UpdatePrompt";
 
 // ─── Inline effect components ───────────────────────────────────────────────
 
@@ -1291,6 +1293,9 @@ export default function PootBox() {
           {toast}
         </div>
       )}
+
+      <InstallPrompt />
+      <UpdatePrompt />
 
       <style>{`
         @keyframes pootbox-ripple {

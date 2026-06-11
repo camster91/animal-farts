@@ -29,11 +29,18 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
+const BUCKET_EMOJI: Record<string, string> = {
+  animal: "🏠",
+  fart: "💨",
+  silly: "🎉",
+  instrument: "🎵",
+};
+
 // --- Default page factory ---
 
-export function createDefaultPage(): Page {
+export function createDefaultPage(homeCategory: string = "animal"): Page {
   const defaultBubbles: BubbleState[] = BUILT_IN_SOUNDS
-    .filter(s => s.bucket === "animal")
+    .filter(s => s.bucket === homeCategory)
     .map(s => ({
       id: `b:built-in:${s.key}`,
       type: "built-in" as const,
@@ -51,7 +58,7 @@ export function createDefaultPage(): Page {
   return {
     id: "page:default",
     name: "Sounds",
-    emoji: "🏠",
+    emoji: BUCKET_EMOJI[homeCategory] ?? "🏠",
     bubbles: defaultBubbles,
     createdAt: Date.now(),
   };

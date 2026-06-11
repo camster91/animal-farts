@@ -11,6 +11,21 @@ interface RecordSheetProps {
   emojiOptions: string[];
 }
 
+// 12 animal quick-pick emoji (same as default page)
+const QUICK_PICKS = ["🐄", "🐕", "🐈", "🐖", "🦆", "🦁", "🐸", "🐒", "🐎", "🐘", "🐓", "🐻"];
+
+// 30+ random emoji — distinct from the 12 above
+const RANDOM_POOL = [
+  "🌈", "⭐", "🎈", "🎵", "🌟", "🐳", "🦄", "🍕", "🎪", "🐙", "🦋",
+  "🌸", "🍦", "🎁", "🚀", "🌙", "🎨", "🎭", "🎬", "🎻", "🏖️", "🦜",
+  "🐬", "🦩", "�豹", "🦔", "�章", "🦒", "🦫", "�璚",
+];
+
+export function pickRandomEmoji(exclude: string[] = []): string {
+  const pool = RANDOM_POOL.filter(e => !exclude.includes(e));
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 function formatMs(ms: number): string {
   const s = Math.floor(ms / 1000);
   const frac = Math.floor((ms % 1000) / 10);

@@ -17,9 +17,9 @@ export default function InstallPrompt() {
       // localStorage unavailable — skip
     }
 
-    const handler = (e: BeforeInstallPromptEvent) => {
+    const handler = (e: Event) => {
       e.preventDefault();
-      deferredEventRef.current = e;
+      deferredEventRef.current = e as BeforeInstallPromptEvent;
       setVisible(true);
     };
 
@@ -40,7 +40,7 @@ export default function InstallPrompt() {
     const event = deferredEventRef.current;
     if (!event) return;
     await event.prompt();
-    const { outcome } = await event.userChoice;
+    await event.userChoice;
     setVisible(false);
     deferredEventRef.current = null;
   };
