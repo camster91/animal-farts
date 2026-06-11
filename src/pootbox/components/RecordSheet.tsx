@@ -1,29 +1,15 @@
 import type { FC } from "react";
+import { QUICK_PICKS, pickRandomEmoji } from "./recordSheetUtils";
 
 interface RecordSheetProps {
   recPhase: "idle" | "recording" | "picking";
   recordingMs: number;
-  onMicButtonClick?: () => void; // only used in non-recording idle state (future)
+  onMicButtonClick?: () => void;
   onStopRecording: () => void;
   onCancelRecording: () => void;
   onPickEmoji: (emoji: string) => void;
   onRedo: () => void;
   emojiOptions: string[];
-}
-
-// 12 animal quick-pick emoji (same as default page)
-const QUICK_PICKS = ["🐄", "🐕", "🐈", "🐖", "🦆", "🦁", "🐸", "🐒", "🐎", "🐘", "🐓", "🐻"];
-
-// 30+ random emoji — distinct from the 12 above
-const RANDOM_POOL = [
-  "🌈", "⭐", "🎈", "🎵", "🌟", "🐳", "🦄", "🍕", "🎪", "🐙", "🦋",
-  "🌸", "🍦", "🎁", "🚀", "🌙", "🎨", "🎭", "🎬", "🎻", "🏖️", "🦜",
-  "🐬", "🦩", "�豹", "🦔", "�章", "🦒", "🦫", "�璚",
-];
-
-export function pickRandomEmoji(exclude: string[] = []): string {
-  const pool = RANDOM_POOL.filter(e => !exclude.includes(e));
-  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 function formatMs(ms: number): string {
@@ -32,9 +18,6 @@ function formatMs(ms: number): string {
   return `${s}.${frac.toString().padStart(2, "0")}`;
 }
 
-const COLS = 6;
-const ROWS = 5;
-
 const RecordSheet: FC<RecordSheetProps> = ({
   recPhase,
   recordingMs,
@@ -42,7 +25,8 @@ const RecordSheet: FC<RecordSheetProps> = ({
   onStopRecording,
   onPickEmoji,
   onRedo,
-  emojiOptions,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  emojiOptions: _unused,
 }) => {
   if (recPhase === "idle") return null;
 
@@ -136,64 +120,118 @@ const RecordSheet: FC<RecordSheetProps> = ({
               fontSize: "1.3rem",
               fontWeight: 700,
               color: "white",
-              margin: "0 0 20px",
+              margin: "0 0 16px",
             }}
           >
             Pick an emoji for your sound
           </p>
 
+          {/* Inline emoji strip — horizontal scroll */}
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: `repeat(${COLS}, 1fr)`,
+              display: "flex",
               gap: 10,
-              maxWidth: COLS * 56 + (COLS - 1) * 10,
+              overflowX: "auto",
+              padding: "8px 4px",
+              maxWidth: "100%",
               width: "100%",
+              justifyContent: "center",
+              scrollbarWidth: "none",
+              WebkitOverflowScrolling: "touch",
             }}
           >
-            {emojiOptions.slice(0, COLS * ROWS).map((emoji) => (
+            {QUICK_PICKS.map((emoji) => (
               <button
                 key={emoji}
                 onClick={() => onPickEmoji(emoji)}
                 aria-label={`Sound emoji ${emoji}`}
                 style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: 12,
+                  flexShrink: 0,
+                  width: 56,
+                  height: 56,
+                  borderRadius: 14,
                   background: "white",
                   border: "none",
                   cursor: "pointer",
-                  fontSize: 28,
+                  fontSize: 30,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   padding: 0,
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
                   transition: "transform 100ms ease",
                 }}
               >
                 {emoji}
               </button>
             ))}
+
+            {/* Divider */}
+            <div
+              style={{
+                width: 1,
+                background: "rgba(255,255,255,0.3)",
+                flexShrink: 0,
+                margin: "4px 2px",
+              }}
+            />
+
+            {/* Random button — each tap rolls a new emoji */}
+            <button
+              onClick={() => onPickEmoji(pickRandomEmoji(QUICK_PICKS))}
+              aria-label="Random emoji"
+              style={{
+                flexShrink: 0,
+                width: 56,
+                height: 56,
+                borderRadius: 14,
+                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                border: "none",
+                cursor: "pointer",
+                fontSize: 30,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 0,
+                boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+                transition: "transform 100ms ease",
+              }}
+            >
+              🎲
+            </button>
           </div>
 
-          <button
-            onClick={onRedo}
-            style={{
-              marginTop: 24,
-              background: "transparent",
-              border: "2px solid rgba(255,255,255,0.4)",
-              borderRadius: 16,
-              cursor: "pointer",
-              color: "white",
-              fontSize: "1rem",
-              fontFamily: "inherit",
-              fontWeight: 600,
-              padding: "10px 24px",
-            }}
-          >
-            🔄 Redo
-          </button>
+          <div style={{ display: "flex", gap: 16, marginTop: 20 }}>
+            <button
+              onClick={onRedo}
+              style={{
+                background: "transparent",
+                border: "2px solid rgba(255,255,255,0.4)",
+                borderRadius: 16,
+                cursor: "pointer",
+                color: "white",
+                fontSize: "1rem",
+                fontFamily: "inherit",
+                fontWeight: 600,
+                padding: "10px 24px",
+              }}
+            >
+              🔄 Redo
+            </button>
+            <button
+              onClick={onCancelRecording}
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                color: "rgba(255,255,255,0.55)",
+                fontSize: "0.9rem",
+                fontFamily: "inherit",
+              }}
+            >
+              Discard
+            </button>
+          </div>
         </>
       )}
     </div>
