@@ -121,6 +121,72 @@ export async function loadAllBlobs() {
     catch { /* best-effort */ }
     return out;
 }
+// === Pure helper functions (G3 dedup-add, G1 page-delete, G7 share-code-gen) ===
+const SHARE_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 28 chars, no I/O/0/1
+/**
+ * Generate a 4-character share code from a clean alphabet (no I/O/0/1).
+ * Pure, no side effects, no global state.
+ */
+export function generateShareCode() {
+    let code = "";
+    for (let i = 0; i < 4; i++) {
+        code += SHARE_CODE_ALPHABET[Math.floor(Math.random() * SHARE_CODE_ALPHABET.length)];
+    }
+    return code;
+}
+/**
+ * Pure version of addBubbleToPage — dedup checks prevent duplicates.
+ * For built-in bubbles, checks b.builtinKey match.
+ * For custom bubbles, checks b.id match.
+ * Returns { pages, added: false } if duplicate found, { pages, added: true } otherwise.
+ * Caps at 12 bubbles; oldest shifts out when over limit.
+ */
+export function addBubbleToPageDedup(pages, pageId, bubble) {
+    const pageIndex = pages.findIndex(p => p.id === pageId);
+    if (pageIndex === -1)
+        return { pages, added: false };
+    const page = pages[pageIndex];
+    // Dedup check
+    const isDuplicate = page.bubbles.some(b => {
+        if (bubble.type === "built-in" && b.type === "built-in") {
+            return b.builtinKey === bubble.builtinKey;
+        }
+        return b.id === bubble.id;
+    });
+    if (isDuplicate)
+        return { pages, added: false };
+    const MAX_BUBBLES = 12;
+    const updated = [...page.bubbles];
+    if (updated.length >= MAX_BUBBLES) {
+        updated.shift();
+    }
+    updated.push(bubble);
+    const updatedPage = { ...page, bubbles: updated };
+    const newPages = [...pages];
+    newPages[pageIndex] = updatedPage;
+    return { pages: newPages, added: true };
+}
+/**
+ * Pure page deletion — removes the page from the array.
+ * Returns blob IDs of custom recordings on that page so caller can delete them from blobs store.
+ * Refuses to remove the last remaining page.
+ */
+export function deletePagePure(pages, pageId, _blobsMap) {
+    if (pages.length <= 1)
+        return { pages, removedBlobs: [] }; // must keep at least 1 page
+    const pageIndex = pages.findIndex(p => p.id === pageId);
+    if (pageIndex === -1)
+        return { pages, removedBlobs: [] };
+    // Collect custom recording blob IDs from bubbles on this page
+    const removedBlobs = [];
+    for (const b of pages[pageIndex].bubbles) {
+        if (b.type === "custom") {
+            removedBlobs.push(b.id);
+        }
+    }
+    const newPages = pages.filter(p => p.id !== pageId);
+    return { pages: newPages, removedBlobs };
+}
 // --- PageRepository (IndexedDB-backed) ---
 export async function loadAllPages() {
     try {
@@ -173,21 +239,16 @@ export async function deletePage(pageId) {
     }
     catch { /* best-effort */ }
 }
+/**
+ * @deprecated Use addBubbleToPageDedup — now wraps it; dedup prevents duplicate bubbles.
+ */
 export async function addBubbleToPage(pageId, bubble) {
     const pages = await loadAllPages();
-    const page = pages.find(p => p.id === pageId);
-    if (!page)
-        return page;
-    const MAX_BUBBLES = 12;
-    const updated = [...page.bubbles];
-    if (updated.length >= MAX_BUBBLES) {
-        // archive oldest (remove first)
-        updated.shift();
-    }
-    updated.push(bubble);
-    const updatedPage = { ...page, bubbles: updated };
-    await savePage(updatedPage);
-    return updatedPage;
+    const { pages: newPages } = addBubbleToPageDedup(pages, pageId, bubble);
+    const updatedPage = newPages.find(p => p.id === pageId);
+    if (updatedPage)
+        await savePage(updatedPage);
+    return updatedPage ?? (await loadAllPages()).find(p => p.id === pageId);
 }
 export async function removeBubbleFromPage(pageId, bubbleId) {
     const pages = await loadAllPages();
