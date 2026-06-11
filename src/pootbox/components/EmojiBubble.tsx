@@ -48,8 +48,8 @@ const EmojiBubble: FC<EmojiBubbleProps> = ({
       aria-label={`${emoji} sound`}
       style={{
         position: "absolute",
-        left: pos.x - radius,
-        top: pos.y - radius,
+        left: 0,
+        top: 0,
         width: size,
         height: size,
         borderRadius: "50%",
@@ -63,6 +63,7 @@ const EmojiBubble: FC<EmojiBubbleProps> = ({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
+        // Position is set by transform only (left/top must stay 0 to avoid doubling)
         transform: `translate(${pos.x - radius}px, ${pos.y - radius}px)`,
         userSelect: "none",
         WebkitUserSelect: "none",
