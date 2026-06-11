@@ -6,8 +6,16 @@ interface ShareSheetProps {
   onClose: () => void;
   onGenerateCode?: () => Promise<string>;
   onCopyCode?: (code: string) => void;
-  onLookupCode?: (code: string) => Promise<{ name: string; bubbles: { emoji: string }[] } | null>;
-  onAddAsPage?: (data: { name: string; bubbles: { emoji: string }[] }) => void;
+  onLookupCode?: (code: string) => Promise<SharedSound | null>;
+  onAddAsPage?: (data: SharedSound) => void;
+}
+
+interface SharedSound {
+  code: string;
+  audioUrl: string;
+  name: string;
+  emoji: string;
+  createdAt?: number;
 }
 
 export default function ShareSheet({
@@ -22,7 +30,7 @@ export default function ShareSheet({
   const [code, setCode] = useState<string | null>(null);
   const [lookupInput, setLookupInput] = useState("");
   const [lookupLoading, setLookupLoading] = useState(false);
-  const [lookupResult, setLookupResult] = useState<{ name: string; bubbles: { emoji: string }[] } | null>(null);
+  const [lookupResult, setLookupResult] = useState<SharedSound | null>(null);
   const [lookupError, setLookupError] = useState(false);
 
   // share mode: generate code on mount
@@ -253,7 +261,7 @@ export default function ShareSheet({
                   {lookupResult.name}
                 </p>
                 <p style={{ margin: 0, fontSize: "1.4rem" }}>
-                  {lookupResult.bubbles.map((b) => b.emoji).join(" ")}
+                  {lookupResult.emoji}
                 </p>
               </div>
             )}

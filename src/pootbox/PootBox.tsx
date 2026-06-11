@@ -1090,10 +1090,40 @@ export default function PootBox() {
           mode={showShare === "share" ? "share" : "lookup"}
           pageName={pages.find(p => p.id === activePageId)?.name ?? "Untitled"}
           onClose={() => setShowShare("none")}
-          onGenerateCode={async () => {
-            return generateShareCode();
+          onGenerateCode={async () => generateShareCode()}
+          onCopyCode={(c) => { try { void navigator.clipboard?.writeText(c); } catch { /* ignore */ } }}
+          onLookupCode={async (code) => {
+            try {
+              const r = await fetch(`/api/share/${code}`);
+              if (!r.ok) return null;
+              return await r.json();
+            } catch { return null; }
           }}
-          onCopyCode={(c) => navigator.clipboard?.writeText(c)}
+          onAddAsPage={(data) => {
+            const newPage: Page = {
+              id: `page:share-${data.code}-${Date.now()}`,
+              name: data.name || `Shared ${data.code}`,
+              emoji: data.emoji || "🔗",
+              bubbles: [{
+                id: `b:shared:${data.code}:${Date.now()}`,
+                type: "custom",
+                emoji: data.emoji || "🔗",
+                blobUrl: data.audioUrl,
+                pos: { x: 0, y: 0 },
+                vel: { x: 0, y: 0 },
+                radius: 36,
+                mass: 1,
+                sound: data.audioUrl,
+                lastTouchedAt: -1,
+                lastReleasedAt: -1,
+              }],
+              createdAt: Date.now(),
+            };
+            setPages((prev) => [...prev, newPage]);
+            setActivePageId(newPage.id);
+            void savePage(newPage);
+            setShowShare("none");
+          }}
         />
       )}
 
