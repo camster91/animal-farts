@@ -37,13 +37,13 @@ import PageTabs from "./components/PageTabs";
 import AddSoundMenu from "./components/AddSoundMenu";
 import RecordSheet from "./components/RecordSheet";
 import SoundLibrary from "./components/SoundLibrary";
-import OnboardingHint from "./components/OnboardingHint";
 import EmptyPageHint from "./components/EmptyPageHint";
 import FirstRunIntro from "./components/FirstRunIntro";
 import ShareSheet from "./components/ShareSheet";
 import VolumeSlider from "./components/VolumeSlider";
 import InstallPrompt from "./components/InstallPrompt";
 import UpdatePrompt from "./components/UpdatePrompt";
+import FooterBar from "./components/FooterBar";
 
 // ─── Inline effect components ───────────────────────────────────────────────
 
@@ -888,13 +888,7 @@ export default function PootBox() {
     blankHoldStartPos.current = null;
   }, []);
 
-  // ── Onboarding target ─────────────────────────────────────────────────
-
-  const onboardingTarget = showOnboarding && bubbles.length > 0
-    ? bubbles[0].pos
-    : null;
-
-  // ── Derived ───────────────────────────────────────────────────────────
+  // ── Derived ────────────────────────────────────────────────────────────
 
   const alreadyAddedKeys = new Set(bubbles.map(b => b.builtinKey).filter((k): k is string => !!k));
 
@@ -958,8 +952,10 @@ export default function PootBox() {
       {activePageId === "page:default" && (
         <div
           style={{
-            position: "sticky",
-            top: 64,
+            position: "fixed",
+            top: 56,
+            left: 0,
+            right: 0,
             zIndex: 150,
             background: "rgba(254, 243, 199, 0.95)",
             backdropFilter: "blur(8px)",
@@ -1356,16 +1352,7 @@ export default function PootBox() {
         />
       )}
 
-      {/* Onboarding */}
-      {showOnboarding && (
-        <OnboardingHint
-          targetBubblePos={onboardingTarget}
-          onDismiss={() => {
-            setShowOnboarding(false);
-            try { localStorage.setItem("pootbox-onboarded-v2", "1"); } catch { /* ignore */ }
-          }}
-        />
-      )}
+      {/* OnboardingHint removed — first-run intro is sufficient */}
 
       
 
@@ -1389,8 +1376,10 @@ export default function PootBox() {
         </div>
       )}
 
-      <InstallPrompt />
-      <UpdatePrompt />
+      <FooterBar
+        installBanner={<InstallPrompt />}
+        updateBanner={<UpdatePrompt />}
+      />
 
       <style>{`
         @keyframes pootbox-ripple {
