@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 
 // Import from the compiled build (tsconfig.test.json points to src/pootbox as rootDir)
-import { shouldTriggerLongPress, trimName } from './build/PageTabs.js';
+import { shouldTriggerLongPress, trimName } from './build/pageTabsHelpers.js';
 
 describe('shouldTriggerLongPress', () => {
   it('returns true when duration >= 800ms and moved < 10px', () => {

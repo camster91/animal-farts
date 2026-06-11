@@ -1,6 +1,7 @@
 import type { FC } from "react";
 import { useState, useRef, useCallback } from "react";
 import type { Page } from "../types";
+import { trimName } from "../pageTabsHelpers";
 
 interface PageTabsProps {
   pages: Page[];
@@ -71,7 +72,7 @@ const PageTabs: FC<PageTabsProps> = ({
   }, []);
 
   const handlePointerUp = useCallback(
-    (page: Page, e: React.PointerEvent) => {
+    (page: Page) => {
       if (longPressTimer.current) {
         // Fired before 800ms → treat as regular click
         clearTimeout(longPressTimer.current);
@@ -133,14 +134,14 @@ const PageTabs: FC<PageTabsProps> = ({
 
   // --- Rename ---
   const handleSaveName = useCallback(() => {
-    if (!sheetPage) return;
+    if (!sheetPage || !onRenamePage) return;
     onRenamePage(sheetPage.id, trimName(sheetName), sheetPage.emoji);
     closeSheet();
   }, [sheetPage, sheetName, onRenamePage, closeSheet]);
 
   const handleEmojiPick = useCallback(
     (emoji: string) => {
-      if (!sheetPage) return;
+      if (!sheetPage || !onRenamePage) return;
       onRenamePage(sheetPage.id, sheetPage.name, emoji);
       closeSheet();
     },
@@ -148,7 +149,7 @@ const PageTabs: FC<PageTabsProps> = ({
   );
 
   const handleDeleteConfirm = useCallback(() => {
-    if (!sheetPage) return;
+    if (!sheetPage || !onDeletePage) return;
     onDeletePage(sheetPage.id);
     closeSheet();
   }, [sheetPage, onDeletePage, closeSheet]);
@@ -182,7 +183,7 @@ const PageTabs: FC<PageTabsProps> = ({
               key={page.id}
               onClick={() => onSelectPage(page.id)}
               onPointerDown={(e) => handlePointerDown(page, e)}
-              onPointerUp={(e) => handlePointerUp(page, e)}
+              onPointerUp={() => handlePointerUp(page)}
               onPointerMove={handlePointerMove}
               onPointerCancel={handlePointerCancel}
               onTouchStart={(e) => handleTouchStart(page, e)}
@@ -471,18 +472,3 @@ const PageTabs: FC<PageTabsProps> = ({
 };
 
 export default PageTabs;
-
-// --- Pure helpers (exported for unit testing) ---
-
-export function shouldTriggerLongPress(
-  durationMs: number,
-  movedPx: number
-): boolean {
-  return durationMs >= 800 && movedPx < 10;
-}
-
-export function trimName(name: string): string {
-  const trimmed = name.trim();
-  if (trimmed.length === 0) return "Page";
-  return trimmed.slice(0, 24);
-}
