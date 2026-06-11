@@ -34,6 +34,7 @@ import { playSingle, stopAllSounds, isAnySoundPlaying } from "./audioManager";
 import SettingsModal from "./SettingsModal";
 import BubbleCanvas from "./components/BubbleCanvas";
 import PageTabs from "./components/PageTabs";
+import TopBar from "./components/TopBar.js";
 import AddSoundMenu from "./components/AddSoundMenu";
 import RecordSheet from "./components/RecordSheet";
 import SoundLibrary from "./components/SoundLibrary";

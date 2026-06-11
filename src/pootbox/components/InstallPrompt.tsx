@@ -59,18 +59,14 @@ export default function InstallPrompt() {
   return (
     <div
       style={{
-        position: "fixed",
-        bottom: 0,
-        left: 0,
         width: "100%",
-        height: 60,
+        height: 44,
         background: "rgba(0,0,0,0.95)",
         color: "white",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         gap: 16,
-        zIndex: 2000,
         fontFamily: "Fredoka, system-ui, sans-serif",
         fontSize: "1rem",
         padding: "0 16px",
