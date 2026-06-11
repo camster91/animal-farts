@@ -129,6 +129,11 @@ app.get("/privacy.html", (req, res) => {
   res.sendFile(path.join(DIST_DIR, "privacy.html"));
 });
 
+// About page (static, served from dist/)
+app.get("/about.html", (req, res) => {
+  res.sendFile(path.join(DIST_DIR, "about.html"));
+});
+
 // SPA fallback: any non-API GET that didn't match a static file → index.html
 app.get(/^(?!\/api|\/uploads).*/, (req, res) => {
   res.sendFile(path.join(DIST_DIR, "index.html"));

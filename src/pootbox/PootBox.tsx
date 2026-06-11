@@ -28,6 +28,7 @@ import {
   deleteBlob,
   saveRecordingEmoji,
   deleteRecordingEmoji,
+  createDefaultPage,
 } from "./recordings";
 import { playSingle, stopAllSounds, isAnySoundPlaying } from "./audioManager";
 import SettingsModal from "./SettingsModal";
@@ -136,6 +137,11 @@ export default function PootBox() {
   // Pages
   const [pages, setPages] = useState<Page[]>([]);
   const [activePageId, setActivePageId] = useState<string | null>(null);
+
+  // Home category (which bucket the default page shows)
+  const [homeCategory, setHomeCategory] = useState<string>(() => {
+    try { return localStorage.getItem("pootbox-home-category-v1") || "animal"; } catch { return "animal"; }
+  });
 
   // Bubbles on active page
   const [bubbles, setBubbles] = useState<BubbleState[]>([]);
@@ -274,29 +280,7 @@ export default function PootBox() {
   useEffect(() => {
     void loadAllPages().then((loaded) => {
       if (loaded.length === 0) {
-        const defaultBubbles: BubbleState[] = BUILT_IN_SOUNDS
-          .filter(s => s.bucket === "animal")
-          .slice(0, 12)
-          .map(s => ({
-            id: `b:built-in:${s.key}`,
-            type: "built-in" as const,
-            emoji: s.emoji,
-            builtinKey: s.key,
-            sound: s.file,
-            pos: { x: 0, y: 0 },
-            vel: { x: 0, y: 0 },
-            radius: 36,
-            mass: 1,
-            lastTouchedAt: -1,
-            lastReleasedAt: -1,
-          }));
-        const defaultPage: Page = {
-          id: "page:default",
-          name: "Sounds",
-          emoji: "🏠",
-          bubbles: defaultBubbles,
-          createdAt: Date.now(),
-        };
+        const defaultPage = createDefaultPage(homeCategory);
         setPages([defaultPage]);
         setActivePageId("page:default");
         void savePage(defaultPage);
@@ -306,6 +290,15 @@ export default function PootBox() {
       }
     });
   }, []);
+
+  // ── Persist homeCategory + update default page when it changes ─────────
+
+  // Persist to localStorage + sync default page bubbles when homeCategory changes.
+  // The setHomeCategory handler below does the side effects directly (no effect),
+  // which keeps the setState-in-effect lint happy and avoids a redundant render.
+  useEffect(() => {
+    try { localStorage.setItem("pootbox-home-category-v1", homeCategory); } catch { /* best-effort */ }
+  }, [homeCategory]);
 
   // ── Sync bubblesRef when active page changes ────────────────────────────
 
@@ -647,17 +640,21 @@ export default function PootBox() {
 
   const onAddPage = useCallback(() => {
     if (pages.length >= MAX_PAGES) return;
+    // When adding the first new page (only the default exists), seed it with homeCategory bubbles
+    const seedBubbles = pages.length === 1
+      ? createDefaultPage(homeCategory).bubbles
+      : [];
     const newPage: Page = {
       id: `page:${Date.now()}`,
       name: "New Page",
       emoji: DEFAULT_PAGE_EMOJI,
-      bubbles: [],
+      bubbles: seedBubbles,
       createdAt: Date.now(),
     };
     setPages(prev => [...prev, newPage]);
     setActivePageId(newPage.id);
     void savePage(newPage);
-  }, [pages.length]);
+  }, [pages.length, homeCategory]);
 
   // ── Select page ───────────────────────────────────────────────────────
 
@@ -956,6 +953,61 @@ export default function PootBox() {
         onDeletePage={onDeletePage}
         canDelete={pages.length > 1}
       />
+
+      {/* Home category chips — only on the default page */}
+      {activePageId === "page:default" && (
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 8,
+            padding: "8px 16px 0",
+            justifyContent: "center",
+          }}
+        >
+          {[
+            { label: "Animals", value: "animal" },
+            { label: "Farts", value: "fart" },
+            { label: "Silly", value: "silly" },
+            { label: "Instruments", value: "instrument" },
+          ].map(({ label, value }) => {
+            const isActive = homeCategory === value;
+            return (
+              <button
+                key={value}
+                onClick={() => {
+                  setHomeCategory(value);
+                  // Sync default page bubbles immediately (no effect needed)
+                  setPages(prev => {
+                    const idx = prev.findIndex(p => p.id === "page:default");
+                    if (idx === -1) return prev;
+                    const updated = createDefaultPage(value);
+                    const next = [...prev];
+                    next[idx] = { ...updated, id: "page:default", createdAt: prev[idx].createdAt };
+                    void savePage(next[idx]);
+                    return next;
+                  });
+                }}
+                style={{
+                  height: 32,
+                  padding: "0 14px",
+                  borderRadius: 16,
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                  fontFamily: "Fredoka, system-ui, sans-serif",
+                  cursor: "pointer",
+                  transition: "all 150ms ease",
+                  border: isActive ? "none" : "1px solid #E5E0D5",
+                  background: isActive ? "#F59E0B" : "transparent",
+                  color: isActive ? "#FFFFFF" : "#3D2C1E",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Volume icon */}
       <button

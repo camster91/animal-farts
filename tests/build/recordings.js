@@ -24,10 +24,16 @@ function openDB() {
         }
     });
 }
+const BUCKET_EMOJI = {
+    animal: "🏠",
+    fart: "💨",
+    silly: "🎉",
+    instrument: "🎵",
+};
 // --- Default page factory ---
-export function createDefaultPage() {
+export function createDefaultPage(homeCategory = "animal") {
     const defaultBubbles = BUILT_IN_SOUNDS
-        .filter(s => s.bucket === "animal")
+        .filter(s => s.bucket === homeCategory)
         .map(s => ({
         id: `b:built-in:${s.key}`,
         type: "built-in",
@@ -44,7 +50,7 @@ export function createDefaultPage() {
     return {
         id: "page:default",
         name: "Sounds",
-        emoji: "🏠",
+        emoji: BUCKET_EMOJI[homeCategory] ?? "🏠",
         bubbles: defaultBubbles,
         createdAt: Date.now(),
     };
