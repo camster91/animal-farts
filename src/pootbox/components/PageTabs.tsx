@@ -221,8 +221,8 @@ const PageTabs: FC<PageTabsProps> = ({
             disabled={pages.length >= 6}
             style={{
               flexShrink: 0,
-              width: 36,
-              height: 36,
+              width: 40,
+              height: 40,
               borderRadius: "50%",
               border: "none",
               cursor: pages.length >= 6 ? "not-allowed" : "pointer",
@@ -236,7 +236,7 @@ const PageTabs: FC<PageTabsProps> = ({
               transition: "background 150ms ease",
             }}
           >
-            +
+            ➕
           </button>
         )}
       </div>
