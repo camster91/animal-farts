@@ -146,6 +146,39 @@ export default function SettingsModal({ settings, onChange, onClose }: SettingsM
         >
           This menu only appears after holding the background for 5 seconds.
         </p>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 16,
+            justifyContent: "center",
+            flexWrap: "wrap",
+            marginTop: 12,
+          }}
+        >
+          <a
+            href="/privacy.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: "#92705A", fontSize: "0.8rem", textDecoration: "underline" }}
+          >
+            Privacy
+          </a>
+          <a
+            href="/about.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: "#92705A", fontSize: "0.8rem", textDecoration: "underline" }}
+          >
+            About
+          </a>
+          <button
+            onClick={() => { try { localStorage.removeItem("pootbox-firstrun-done"); } catch (e) { void e; } window.location.reload(); }}
+            style={{ color: "#92705A", fontSize: "0.8rem", textDecoration: "underline", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit" }}
+          >
+            Show welcome again
+          </button>
+        </div>
       </div>
     </div>
   );
