@@ -20,8 +20,10 @@ import {
 import {
   loadAllPages,
   savePage,
-  addBubbleToPage,
+  addBubbleToPageDedup,
   removeBubbleFromPage,
+  deletePagePure,
+  generateShareCode,
   saveBlob,
   deleteBlob,
   saveRecordingEmoji,
@@ -35,6 +37,10 @@ import AddSoundMenu from "./components/AddSoundMenu";
 import RecordSheet from "./components/RecordSheet";
 import SoundLibrary from "./components/SoundLibrary";
 import OnboardingHint from "./components/OnboardingHint";
+import EmptyPageHint from "./components/EmptyPageHint";
+import FirstRunIntro from "./components/FirstRunIntro";
+import ShareSheet from "./components/ShareSheet";
+import VolumeSlider from "./components/VolumeSlider";
 
 // ─── Inline effect components ───────────────────────────────────────────────
 
@@ -172,6 +178,18 @@ export default function PootBox() {
     } catch { return true; }
   });
 
+  // First-run intro
+  const [showFirstRun, setShowFirstRun] = useState(() => !localStorage.getItem("pootbox-firstrun-done"));
+
+  // Volume slider
+  const [showVolume, setShowVolume] = useState(false);
+
+  // Share sheet
+  const [showShare, setShowShare] = useState<"none" | "share" | "lookup">("none");
+
+  // Toast
+  const [toast, setToast] = useState<string | null>(null);
+
   // Mic
   const [micPermState, setMicPermState] = useState<"prompt" | "denied" | "granted" | "unsupported">("prompt");
   const [micDenied, setMicDenied] = useState(false);
@@ -226,6 +244,12 @@ export default function PootBox() {
     });
     setConfettiParticles(particles);
     setConfettiBurst(c => c + 1);
+  }, []);
+
+  // Toast helper
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 1500);
   }, []);
 
   // ── Measure canvas ─────────────────────────────────────────────────────
@@ -563,10 +587,14 @@ export default function PootBox() {
       lastTouchedAt: -1,
       lastReleasedAt: -1,
     };
-    const updated = await addBubbleToPage(activePageId, bubble);
-    setPages(prev => prev.map(p => p.id === updated.id ? updated : p));
+    const { pages: updatedPages, added } = addBubbleToPageDedup(pages, activePageId, bubble);
+    if (!added) {
+      showToast("Already on this page!");
+      return;
+    }
+    setPages(updatedPages);
     setShowLibrary(false);
-  }, [activePageId]);
+  }, [activePageId, pages, showToast]);
 
   // ── Complete recorded sound ───────────────────────────────────────────
 
@@ -588,12 +616,16 @@ export default function PootBox() {
     };
     await saveBlob(id, pendingBlob);
     saveRecordingEmoji(id, emoji);
-    const updated = await addBubbleToPage(activePageId, bubble);
-    setPages(prev => prev.map(p => p.id === updated.id ? updated : p));
+    const { pages: updatedPages, added } = addBubbleToPageDedup(pages, activePageId, bubble);
+    if (!added) {
+      showToast("Already on this page!");
+    } else {
+      setPages(updatedPages);
+    }
     setPendingBlob(null);
     setPendingUrl(null);
     setRecPhase("idle");
-  }, [pendingBlob, pendingUrl, activePageId]);
+  }, [pendingBlob, pendingUrl, activePageId, pages, showToast]);
 
   // ── Remove bubble ─────────────────────────────────────────────────────
 
@@ -630,6 +662,45 @@ export default function PootBox() {
   const onSelectPage = useCallback((pageId: string) => {
     setActivePageId(pageId);
   }, []);
+
+  // ── Rename page ───────────────────────────────────────────────────────
+
+  const onRenamePage = useCallback((pageId: string, newName: string, newEmoji: string) => {
+    setPages(prev => {
+      const updated = prev.map(p =>
+        p.id === pageId ? { ...p, name: newName, emoji: newEmoji } : p
+      );
+      const changed = updated.find(p => p.id === pageId);
+      if (changed) void savePage(changed);
+      return updated;
+    });
+  }, []);
+
+  // ── Delete page ───────────────────────────────────────────────────────
+
+  const onDeletePage = useCallback(async (pageId: string) => {
+    const { pages: updatedPages, removedBlobs } = deletePagePure(pages, pageId);
+    if (updatedPages.length === pages.length) return; // nothing changed
+
+    // Delete blobs for custom recordings on this page
+    for (const blobId of removedBlobs) {
+      await deleteBlob(blobId);
+      deleteRecordingEmoji(blobId);
+    }
+
+    setPages(updatedPages);
+
+    // Switch to another page if the deleted one was active
+    if (activePageId === pageId) {
+      const remaining = updatedPages.filter(p => p.id !== pageId);
+      setActivePageId(remaining[0]?.id ?? null);
+    }
+
+    // Persist all remaining pages
+    for (const p of updatedPages) {
+      void savePage(p);
+    }
+  }, [pages, activePageId]);
 
   // ── Play sound from bubble ────────────────────────────────────────────
 
@@ -848,6 +919,14 @@ export default function PootBox() {
       onPointerUp={onBlankPointerUp}
       onPointerCancel={onBlankPointerUp}
     >
+      <FirstRunIntro
+        show={showFirstRun}
+        onDone={() => {
+          localStorage.setItem("pootbox-firstrun-done", "1");
+          setShowFirstRun(false);
+        }}
+      />
+
       {/* Bubble canvas */}
       <BubbleCanvas
         bubbles={bubbles}
@@ -860,12 +939,109 @@ export default function PootBox() {
         onBubblePointerCancel={onBubblePointerCancel}
       />
 
+      {/* Empty page hint */}
+      {activePageId && pages.find(p => p.id === activePageId)?.bubbles.length === 0 && (
+        <EmptyPageHint show={true} />
+      )}
+
       {/* Page tabs */}
       <PageTabs
         pages={pages}
         activePageId={activePageId ?? ""}
         onSelectPage={onSelectPage}
+        onAddPage={onAddPage}
+        onRenamePage={onRenamePage}
+        onDeletePage={onDeletePage}
+        canDelete={pages.length > 1}
       />
+
+      {/* Volume icon */}
+      <button
+        aria-label="Volume"
+        onClick={() => {
+          if (settings.volume > 0) {
+            // Mute: set volume to 0
+            const updated = { ...settings, volume: 0 };
+            setSettings(updated);
+            saveSettings(updated);
+          } else {
+            // Unmute: open slider to choose level
+            setShowVolume(true);
+          }
+        }}
+        style={{
+          position: "fixed",
+          top: 64,
+          right: 16,
+          width: 44,
+          height: 44,
+          borderRadius: "50%",
+          background: "rgba(61,44,30,0.85)",
+          border: "none",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 22,
+          zIndex: 200,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
+          padding: 0,
+        }}
+      >
+        {settings.volume > 0 ? "🔊" : "🔇"}
+      </button>
+
+      {/* Share button */}
+      <button
+        aria-label="Share page"
+        onClick={() => setShowShare("share")}
+        style={{
+          position: "fixed",
+          top: 116,
+          right: 16,
+          width: 44,
+          height: 44,
+          borderRadius: "50%",
+          background: "rgba(61,44,30,0.85)",
+          border: "none",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 22,
+          zIndex: 200,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
+          padding: 0,
+        }}
+      >
+        🔗
+      </button>
+
+      {/* Volume slider popover */}
+      <VolumeSlider
+        show={showVolume}
+        volume={settings.volume}
+        onChange={(v) => {
+          const updated = { ...settings, volume: v };
+          setSettings(updated);
+          saveSettings(updated);
+          setShowVolume(false);
+        }}
+        position={{ top: 64, left: window.innerWidth - 320 }}
+      />
+
+      {/* Share sheet */}
+      {(showShare === "share" || showShare === "lookup") && (
+        <ShareSheet
+          mode={showShare === "share" ? "share" : "lookup"}
+          pageName={pages.find(p => p.id === activePageId)?.name ?? "Untitled"}
+          onClose={() => setShowShare("none")}
+          onGenerateCode={async () => {
+            return generateShareCode();
+          }}
+          onCopyCode={(c) => navigator.clipboard?.writeText(c)}
+        />
+      )}
 
       {/* Add sound menu */}
       <AddSoundMenu
@@ -1094,40 +1270,28 @@ export default function PootBox() {
         />
       )}
 
-      {/* Footer */}
-      <div
-        style={{
-          position: "fixed",
-          bottom: "max(4px, env(safe-area-inset-bottom))",
-          left: 0,
-          right: 0,
-          display: "flex",
-          justifyContent: "center",
-          pointerEvents: "auto",
-          zIndex: 5,
-        }}
-      >
-        <span
-          style={{
-            fontSize: "0.7rem",
-            color: "#92705A",
-            opacity: 0.6,
-            cursor: "default",
-            userSelect: "none",
-          }}
-        >
-          💨 PootBox v1.0.0{" "}
-          <a
-            href="/android-check.html"
-            style={{ color: "#92705A", textDecoration: "none", opacity: 0.6, fontSize: "0.7rem" }}
-            aria-label="Android check"
-          >
-            🔧
-          </a>
-        </span>
-      </div>
+      
 
-      {/* Keyframes */}
+      
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position: "fixed",
+          top: 16,
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: "rgba(0,0,0,0.85)",
+          color: "white",
+          padding: "10px 20px",
+          borderRadius: 24,
+          zIndex: 1000,
+          fontFamily: "Fredoka, system-ui, sans-serif",
+          fontSize: "0.95rem",
+        }}>
+          {toast}
+        </div>
+      )}
+
       <style>{`
         @keyframes pootbox-ripple {
           0% { width: 0; height: 0; opacity: 0.8; }
