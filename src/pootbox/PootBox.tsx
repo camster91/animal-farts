@@ -33,7 +33,6 @@ import {
 import { playSingle, stopAllSounds, isAnySoundPlaying } from "./audioManager";
 import SettingsModal from "./SettingsModal";
 import BubbleCanvas from "./components/BubbleCanvas";
-import PageTabs from "./components/PageTabs";
 import TopBar from "./components/TopBar.js";
 import AddSoundMenu from "./components/AddSoundMenu";
 import RecordSheet from "./components/RecordSheet";
@@ -195,6 +194,9 @@ export default function PootBox() {
 
   // Share sheet
   const [showShare, setShowShare] = useState<"none" | "share" | "lookup">("none");
+
+  // Add sound menu
+  const [showAddMenu, setShowAddMenu] = useState(false);
 
   // Toast
   const [toast, setToast] = useState<string | null>(null);
@@ -939,7 +941,7 @@ export default function PootBox() {
       )}
 
       {/* Page tabs */}
-      <PageTabs
+      <TopBar
         pages={pages}
         activePageId={activePageId ?? ""}
         onSelectPage={onSelectPage}
@@ -947,6 +949,10 @@ export default function PootBox() {
         onRenamePage={onRenamePage}
         onDeletePage={onDeletePage}
         canDelete={pages.length > 1}
+        volume={settings.volume}
+        onVolumeClick={() => setShowVolume(true)}
+        onShareClick={() => setShowShare("share")}
+        onAddSoundClick={() => setShowAddMenu(true)}
       />
 
       {/* Home category chips — only on the default page */}
@@ -1019,68 +1025,6 @@ export default function PootBox() {
         </div>
       )}
 
-      {/* Volume icon */}
-      <button
-        aria-label="Volume"
-        onClick={() => {
-          if (settings.volume > 0) {
-            // Mute: set volume to 0
-            const updated = { ...settings, volume: 0 };
-            setSettings(updated);
-            saveSettings(updated);
-          } else {
-            // Unmute: open slider to choose level
-            setShowVolume(true);
-          }
-        }}
-        style={{
-          position: "fixed",
-          top: 64,
-          right: 16,
-          width: 44,
-          height: 44,
-          borderRadius: "50%",
-          background: "rgba(61,44,30,0.85)",
-          border: "none",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 22,
-          zIndex: 200,
-          boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
-          padding: 0,
-        }}
-      >
-        {settings.volume > 0 ? "🔊" : "🔇"}
-      </button>
-
-      {/* Share button */}
-      <button
-        aria-label="Share page"
-        onClick={() => setShowShare("share")}
-        style={{
-          position: "fixed",
-          top: 116,
-          right: 16,
-          width: 44,
-          height: 44,
-          borderRadius: "50%",
-          background: "rgba(61,44,30,0.85)",
-          border: "none",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 22,
-          zIndex: 200,
-          boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
-          padding: 0,
-        }}
-      >
-        🔗
-      </button>
-
       {/* Volume slider popover */}
       <VolumeSlider
         show={showVolume}
@@ -1145,6 +1089,8 @@ export default function PootBox() {
         onOpenSettings={() => setShowSettings(true)}
         pagesCount={pages.length}
         maxPages={MAX_PAGES}
+        show={showAddMenu}
+        onShowChange={setShowAddMenu}
       />
 
       {/* Ripples */}

@@ -8,6 +8,8 @@ interface AddSoundMenuProps {
   onOpenSettings: () => void;
   pagesCount: number;
   maxPages: number;
+  show?: boolean;
+  onShowChange?: (show: boolean) => void;
 }
 
 interface MenuOptionProps {
@@ -54,8 +56,12 @@ const AddSoundMenu: FC<AddSoundMenuProps> = ({
   onOpenSettings,
   pagesCount,
   maxPages,
+  show,
+  onShowChange,
 }) => {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = show !== undefined ? show : internalOpen;
+  const setOpen = onShowChange !== undefined ? onShowChange : setInternalOpen;
   const canAddPage = pagesCount < maxPages;
 
   return (
