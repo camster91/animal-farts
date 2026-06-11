@@ -1,0 +1,53 @@
+name: CI Build
+
+# Build-only workflow for animal-farts (PWA: Vite+React frontend + Express server).
+# Build the frontend, then syntax-check the server.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Lint
+        run: npm run lint
+        env:
+          CI: true
+        continue-on-error: true
+
+      - name: Build frontend
+        run: npm run build
+        env:
+          NODE_ENV: production
+          CI: true
+
+      - name: Syntax check server
+        working-directory: server
+        run: node --check server.js
