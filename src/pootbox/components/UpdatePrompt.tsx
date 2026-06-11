@@ -29,10 +29,11 @@ export default function UpdatePrompt() {
     <div
       style={{
         position: "fixed",
-        top: 0,
+        bottom: 60,
         left: 0,
         width: "100%",
-        background: "rgba(0,0,0,0.9)",
+        height: 60,
+        background: "rgba(59, 130, 246, 0.95)",
         color: "white",
         display: "flex",
         alignItems: "center",
@@ -41,7 +42,7 @@ export default function UpdatePrompt() {
         zIndex: 2000,
         fontFamily: "Fredoka, system-ui, sans-serif",
         fontSize: "0.95rem",
-        padding: "10px 16px",
+        padding: "0 16px",
         boxSizing: "border-box",
       }}
     >
