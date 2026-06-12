@@ -2,7 +2,7 @@
 // Rewritten from scratch to consume the v46 architecture:
 // multi-page tabs, random bubble spawn, library picker, and recording flow.
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
-import type { Page, BubbleState, Vec2, Ripple, Spark, Settings, BuiltInSound } from "./types";
+import type { Page, BubbleState, Vec2, Ripple, Spark, BuiltInSound } from "./types";
 import { stepPhysics } from "./physics";
 import {
   BUILT_IN_SOUNDS,
@@ -14,8 +14,6 @@ import {
   DRIFT_FORCE_MAX,
   MIN_DRIFT_INTERVAL_MS,
   COLLISION_AUDIO_WINDOW_MS,
-  loadSettings,
-  saveSettings,
 } from "./constants";
 import {
   loadAllPages,
@@ -31,6 +29,9 @@ import {
   createDefaultPage,
 } from "./recordings";
 import { playSingle, stopAllSounds, isAnySoundPlaying } from "./audioManager";
+import { useSettings } from "./hooks/useSettings";
+import { useToast } from "./hooks/useToast";
+import { useModalState } from "./hooks/useModalState";
 import SettingsModal from "./SettingsModal";
 import BubbleCanvas from "./components/BubbleCanvas";
 import TopBar from "./components/TopBar.js";
@@ -158,13 +159,8 @@ export default function PootBox() {
   const [recordingMs, setRecordingMs] = useState(0);
 
   // Sheets / modals
-  const [showLibrary, setShowLibrary] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-
-  // Settings
-  const [settings, setSettings] = useState<Settings>(loadSettings);
-  const settingsRef = useRef(settings);
-  useEffect(() => { settingsRef.current = settings; }, [settings]);
+  // Settings (extracted to useSettings hook)
+  const { settings, settingsRef, setSettings, setVolume } = useSettings();
 
   // Audio state
   const [soundPlaying, setSoundPlaying] = useState(false);
@@ -186,20 +182,24 @@ export default function PootBox() {
     } catch { return true; }
   });
 
-  // First-run intro
-  const [showFirstRun, setShowFirstRun] = useState(() => !localStorage.getItem("pootbox-firstrun-done"));
+  // Toast (extracted to useToast hook)
+  const { toastMessage, showToast } = useToast();
 
-  // Volume slider
-  const [showVolume, setShowVolume] = useState(false);
-
-  // Share sheet
-  const [showShare, setShowShare] = useState<"none" | "share" | "lookup">("none");
-
-  // Add sound menu
-  const [showAddMenu, setShowAddMenu] = useState(false);
-
-  // Toast
-  const [toast, setToast] = useState<string | null>(null);
+  // Modal/sheet open state (extracted to useModalState hook)
+  const {
+    showLibrary,
+    showSettings,
+    showVolume,
+    showShare,
+    showAddMenu,
+    showFirstRun,
+    setShowLibrary,
+    setShowSettings,
+    setShowVolume,
+    setShowShare,
+    setShowAddMenu,
+    setShowFirstRun,
+  } = useModalState();
 
   // Mic
   const [micPermState, setMicPermState] = useState<"prompt" | "denied" | "granted" | "unsupported">("prompt");
@@ -258,10 +258,7 @@ export default function PootBox() {
   }, []);
 
   // Toast helper
-  const showToast = useCallback((msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 1500);
-  }, []);
+  // (no longer needed — useToast hook provides showToast)
 
   // ── Measure canvas ─────────────────────────────────────────────────────
 
@@ -1030,9 +1027,7 @@ export default function PootBox() {
         show={showVolume}
         volume={settings.volume}
         onChange={(v) => {
-          const updated = { ...settings, volume: v };
-          setSettings(updated);
-          saveSettings(updated);
+          setVolume(v);
           setShowVolume(false);
         }}
         position={{ top: 64, left: window.innerWidth - 320 }}
@@ -1294,7 +1289,7 @@ export default function PootBox() {
       {showSettings && (
         <SettingsModal
           settings={settings}
-          onChange={s => { setSettings(s); saveSettings(s); }}
+          onChange={s => setSettings(s)}
           onClose={() => setShowSettings(false)}
         />
       )}
@@ -1305,7 +1300,7 @@ export default function PootBox() {
 
       
       {/* Toast */}
-      {toast && (
+      {toastMessage && (
         <div style={{
           position: "fixed",
           top: 16,
@@ -1319,7 +1314,7 @@ export default function PootBox() {
           fontFamily: "Fredoka, system-ui, sans-serif",
           fontSize: "0.95rem",
         }}>
-          {toast}
+          {toastMessage}
         </div>
       )}
 
