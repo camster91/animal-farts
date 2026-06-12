@@ -47,9 +47,12 @@ tar -czf "${TMP}/${NAME}.tar.gz" \
   -C "$(pwd)" .
 
 # 3. Ship + extract + build + run.
-echo "[deploy] uploading to ${VPS}…"
+# Use `cat | ssh` instead of scp — some VPS configurations block scp's
+# protocol while keeping raw ssh working. The tarball streams through
+# the same sshd process either way.
+echo "[deploy] uploading to ${VPS} (via cat | ssh)…"
 ssh "${VPS}" "mkdir -p ${DATA_DIR} /opt/${NAME}"
-scp "${TMP}/${NAME}.tar.gz" "${VPS}:/tmp/${NAME}.tar.gz"
+cat "${TMP}/${NAME}.tar.gz" | ssh "${VPS}" "cat > /tmp/${NAME}.tar.gz"
 
 echo "[deploy] extracting + building image on ${VPS}…"
 ssh "${VPS}" "
