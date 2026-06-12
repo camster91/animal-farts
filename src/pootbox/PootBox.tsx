@@ -3,16 +3,9 @@
 // multi-page tabs, random bubble spawn, library picker, and recording flow.
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import type { Page, BubbleState, Ripple, Spark, BuiltInSound } from "./types";
-import { stepPhysics } from "./physics";
 import {
   BUILT_IN_SOUNDS,
   MAX_PAGES,
-  FRICTION,
-  WALL_BOUNCE,
-  COLLISION_BOUNCE,
-  DRIFT_FORCE_MAX,
-  MIN_DRIFT_INTERVAL_MS,
-  COLLISION_AUDIO_WINDOW_MS,
 } from "./constants";
 import {
   addBubbleToPageDedup,
@@ -23,13 +16,14 @@ import {
   createDefaultPage,
   savePage,
 } from "./recordings";
-import { playSingle, stopAllSounds, isAnySoundPlaying } from "./audioManager";
+import { playSingle, stopAllSounds } from "./audioManager";
 import { useSettings } from "./hooks/useSettings";
 import { useToast } from "./hooks/useToast";
 import { useModalState } from "./hooks/useModalState";
 import { usePagesState } from "./hooks/usePagesState";
 import { useCanvasState } from "./hooks/useCanvasState";
 import { useCanvasHandlers } from "./hooks/useCanvasHandlers";
+import { usePhysicsLoop, useSoundPlaying } from "./hooks/usePhysicsLoop";
 import { useRecording } from "./hooks/useRecording";
 import SettingsModal from "./SettingsModal";
 import BubbleCanvas from "./components/BubbleCanvas";
@@ -149,20 +143,14 @@ export default function PootBox() {
   });
 
   // Audio state
-  // Audio state (used by the stop-all-sounds button + the isAnySoundPlaying poll)
-  const [soundPlaying, setSoundPlaying] = useState(false);
+  // Audio state (soundPlaying is set by useSoundPlaying below)
 
   // Combo count (drives the badge in the render block)
   const [comboCount, setComboCount] = useState(0);
 
-  // Combo + confetti (driven by the tap handler below)
-  const [comboBurst, setComboBurst] = useState<{ x: number; y: number; n: number; particles: { dx: number; dy: number }[] } | null>(null);
-  const [confettiBurst, setConfettiBurst] = useState(0);
-  const [confettiParticles, setConfettiParticles] = useState<{ dx: number; dy: number; color: string }[]>([]);
+  // Combo + confetti (driven by the tap handler below) — these states are
+  // owned by usePhysicsLoop; PootBox just renders them.
 
-  // Effects
-  const [ripples, setRipples] = useState<Ripple[]>([]);
-  const [sparks, setSparks] = useState<Spark[]>([]);
 
   // Onboarding
   const [showOnboarding, setShowOnboarding] = useState(() => {
@@ -190,26 +178,19 @@ export default function PootBox() {
     setShowFirstRun,
   } = useModalState();
 
-  // Re-render trigger
-  const [, setTick] = useState(0);
-
-  // Refs
-  const rafRef = useRef<number | null>(null);
-  const lastFrameRef = useRef(0);
-  const lastDriftNudgeAtRef = useRef(0);
-  const collisionCooldownRef = useRef<Map<string, number>>(new Map());
+  // Refs (only the ones still used by PootBox: shake detection, drag, ripple IDs,
+  // tap tracking, last-played-circle). The physics loop owns rafRef, lastFrameRef,
+  // lastDriftNudgeAtRef, collisionCooldownRef, sparkIdRef — they live in usePhysicsLoop now.)
   const lastShakeAtRef = useRef(0);
   const shakeCountRef = useRef(0);
   const shakeWindowTimerRef = useRef<number | null>(null);
   const blankHoldTimer = useRef<number | null>(null);
   const rippleIdRef = useRef(0);
-  const sparkIdRef = useRef(0);
   const lifetimeTapsRef = useRef(0);
   const comboCountRef = useRef(0);
   const lastTapAtRef = useRef(0);
   const comboResetTimerRef = useRef<number | null>(null);
   const lastCirclePlayRef = useRef<Map<string, number>>(new Map());
-  const comboBurstTimeoutRef = useRef<number | null>(null);
 
   // Toast helper
   // (no longer needed — useToast hook provides showToast)
@@ -262,90 +243,35 @@ export default function PootBox() {
     return () => window.removeEventListener("devicemotion", handler);
   }, []);
 
-  // ── Sound playing poll ─────────────────────────────────────────────────
+  // ── Sound playing poll (extracted to useSoundPlaying) ─────────────────
 
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      setSoundPlaying(isAnySoundPlaying());
-    }, 100);
-    return () => window.clearInterval(id);
-  }, []);
+  const [soundPlaying, setSoundPlaying] = useSoundPlaying();
 
-  // ── Physics loop ───────────────────────────────────────────────────────
-
-  useEffect(() => {
-    if (size.w === 0 || size.h === 0) return;
-    let mounted = true;
-
-    const tick = (now: number) => {
-      if (!mounted) return;
-      const dt = lastFrameRef.current === 0 ? 16.67 : now - lastFrameRef.current;
-      lastFrameRef.current = now;
-      const clampedDt = Math.min(dt, 50);
-
-      const collisions = stepPhysics(
-        bubblesRef.current,
-        {
-          friction: FRICTION,
-          wallBounce: WALL_BOUNCE,
-          collisionBounce: COLLISION_BOUNCE,
-          driftIntervalMs: MIN_DRIFT_INTERVAL_MS,
-          driftForceMax: DRIFT_FORCE_MAX,
-          viewportWidth: size.w,
-          viewportHeight: size.h,
-          collisionAudioWindowMs: COLLISION_AUDIO_WINDOW_MS,
-        },
-        now,
-        clampedDt,
-        lastDriftNudgeAtRef,
-        collisionCooldownRef
-      );
-
-      for (const ev of collisions) {
-        if (ev.shouldPlaySound) {
-          const bA = bubblesRef.current.find(b => b.id === (ev.a as unknown as BubbleState).id);
-          const bB = bubblesRef.current.find(b => b.id === (ev.b as unknown as BubbleState).id);
-          if (bA && bB) playSingle(bA.lastTouchedAt >= bB.lastTouchedAt ? bA.sound : bB.sound, settingsRef.current.volume);
-        }
-        // Spawn sparks at collision midpoint
-        const sx = (ev.a.pos.x + ev.b.pos.x) / 2;
-        const sy = (ev.a.pos.y + ev.b.pos.y) / 2;
-        const newSparks: Spark[] = [];
-        for (let i = 0; i < 5; i++) {
-          const angle = (i / 5) * Math.PI * 2 + Math.random() * 0.5;
-          const speed = 2 + Math.random() * 3;
-          newSparks.push({
-            id: ++sparkIdRef.current,
-            x: sx, y: sy,
-            dx: Math.cos(angle) * speed,
-            dy: Math.sin(angle) * speed,
-            color: "rgba(255,255,255,0.6)",
-            life: 600,
-          });
-        }
-        setSparks(prev => [...prev, ...newSparks]);
-        setTimeout(() => setSparks(prev => prev.filter(s => !newSparks.find(ns => ns.id === s.id))), 600);
+  // ── Physics loop + visual effects (extracted to usePhysicsLoop) ─────────
+  const {
+    ripples, setRipples, sparks, comboBurst, confettiBurst, confettiParticles,
+    triggerComboBurst, triggerConfetti,
+  } = usePhysicsLoop({
+    bubblesRef,
+    setBubbles,
+    size,
+    settingsRef,
+    onCollisionSound: (b, vol) => {
+      // Play the more-recently-touched bubble's sound (the one the user was holding)
+      const other = bubblesRef.current.find(x => x.id !== b.id);
+      if (other && other.lastTouchedAt > b.lastTouchedAt) {
+        playSingle(other.sound, vol);
+      } else {
+        playSingle(b.sound, vol);
       }
-
-      // Sync to state (bubble positions rendered via BubbleCanvas)
-      setBubbles([...bubblesRef.current]);
-      setTick(t => (t + 1) % 1000000);
-      rafRef.current = requestAnimationFrame(tick);
-    };
-
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      mounted = false;
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
-  }, [size.w, size.h]);
+    },
+  });
 
   // ── Cleanup ────────────────────────────────────────────────────────────
 
   useEffect(() => {
     return () => {
       if (comboResetTimerRef.current) window.clearTimeout(comboResetTimerRef.current);
-      if (comboBurstTimeoutRef.current) window.clearTimeout(comboBurstTimeoutRef.current);
       if (blankHoldTimer.current) window.clearTimeout(blankHoldTimer.current);
       if (shakeWindowTimerRef.current) window.clearTimeout(shakeWindowTimerRef.current);
     };
@@ -397,8 +323,8 @@ export default function PootBox() {
   // local ripples state — not a "handler" responsibility)
   const spawnRipple = useCallback((x: number, y: number, color = "rgba(255,255,255,0.5)") => {
     const id = ++rippleIdRef.current;
-    setRipples(prev => [...prev, { id, x, y, color }]);
-    setTimeout(() => setRipples(prev => prev.filter(r => r.id !== id)), 700);
+    setRipples((prev: Ripple[]) => [...prev, { id, x, y, color }]);
+    setTimeout(() => setRipples((prev: Ripple[]) => prev.filter((r: Ripple) => r.id !== id)), 700);
   }, []);
 
   // Play a sound from a bubble (debounced — max once per 250ms per bubble)
@@ -410,32 +336,7 @@ export default function PootBox() {
     playSingle(b.sound, volume);
   }, []);
 
-  // Trigger combo burst at every 5th tap
-  const triggerComboBurst = useCallback((x: number, y: number, n: number) => {
-    const particles = Array.from({ length: 8 }, () => {
-      const angle = Math.random() * Math.PI * 2;
-      const dist = 50 + Math.random() * 30;
-      return { dx: Math.cos(angle) * dist, dy: Math.sin(angle) * dist };
-    });
-    setComboBurst({ x, y, n, particles });
-    if (comboBurstTimeoutRef.current) window.clearTimeout(comboBurstTimeoutRef.current);
-    comboBurstTimeoutRef.current = window.setTimeout(() => setComboBurst(null), 700);
-  }, []);
-
-  // Trigger confetti at every 10th lifetime tap
-  const triggerConfetti = useCallback(() => {
-    const colors = ["#FF5252", "#FFD740", "#69F0AE", "#40C4FF", "#B388FF"];
-    const particles = Array.from({ length: 24 }, () => {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 5 + Math.random() * 5;
-      return { dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed, color: colors[Math.floor(Math.random() * colors.length)] };
-    });
-    setConfettiBurst(c => c + 1);
-    setConfettiParticles(particles);
-    setTimeout(() => setConfettiParticles([]), 1200);
-  }, []);
-
-  // Tap handler: orchestrates ripple + sound + combo + lifetime + onboarding dismiss
+  // Tap handler: orquestrates ripple + sound + combo + lifetime + onboarding dismiss
   const handleBubbleTap = useCallback((id: string, clientX: number, clientY: number) => {
     const b = bubblesRef.current.find(x => x.id === id);
     if (!b) return;
