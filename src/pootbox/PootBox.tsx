@@ -30,6 +30,7 @@ import { useSettings } from "./hooks/useSettings";
 import { useToast } from "./hooks/useToast";
 import { useModalState } from "./hooks/useModalState";
 import { usePagesState } from "./hooks/usePagesState";
+import { useCanvasState } from "./hooks/useCanvasState";
 import SettingsModal from "./SettingsModal";
 import BubbleCanvas from "./components/BubbleCanvas";
 import TopBar from "./components/TopBar.js";
@@ -99,34 +100,6 @@ const EMOJI_OPTIONS = [
   "⭐", "🌈", "🔥", "💧", "🌸", "🍕",
 ];
 
-// ─── Position spawner ────────────────────────────────────────────────────────
-
-function spawnPositionsFor(bubbles: BubbleState[], w: number, h: number): Vec2[] {
-  const positions: Vec2[] = [];
-  for (const b of bubbles) {
-    let attempts = 0;
-    while (attempts < 50) {
-      const x = b.radius + Math.random() * (w - b.radius * 2);
-      const y = b.radius + Math.random() * (h - b.radius * 2 - 100);
-      let ok = true;
-      for (const p of positions) {
-        const dx = x - p.x;
-        const dy = y - p.y;
-        if (dx * dx + dy * dy < (b.radius + 40) ** 2) { ok = false; break; }
-      }
-      if (ok) { positions.push({ x, y }); break; }
-      attempts++;
-    }
-    if (attempts >= 50) {
-      positions.push({
-        x: b.radius + Math.random() * (w - b.radius * 2),
-        y: b.radius + Math.random() * (h - b.radius * 2 - 100),
-      });
-    }
-  }
-  return positions;
-}
-
 // ─── Main component ─────────────────────────────────────────────────────────
 
 export default function PootBox() {
@@ -141,13 +114,13 @@ export default function PootBox() {
     savePagesDebounced,
   } = usePagesState();
 
-  // Bubbles on active page
-  const [bubbles, setBubbles] = useState<BubbleState[]>([]);
-  const bubblesRef = useRef<BubbleState[]>([]);
-
-  // Interaction
-  const [pressedId, setPressedId] = useState<string | null>(null);
-  const [showPlayedFor, setShowPlayedFor] = useState<string | null>(null);
+  // Bubbles on active page (extracted to useCanvasState hook)
+  const {
+    bubbles, bubblesRef, setBubbles,
+    pressedId, setPressedId,
+    showPlayedFor, setShowPlayedFor,
+    alreadyAddedKeys,
+  } = useCanvasState({ pages, activePageId, size });
 
   // Recording
   const [recPhase, setRecPhase] = useState<"idle" | "recording" | "picking">("idle");
@@ -270,27 +243,6 @@ export default function PootBox() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-
-  // ── Sync bubblesRef when active page changes ────────────────────────────
-
-  useEffect(() => {
-    if (!activePageId || size.w === 0) return;
-    const page = pages.find(p => p.id === activePageId);
-    if (!page) return;
-
-    const needsSpawn = page.bubbles.every(b => b.pos.x === 0 && b.pos.y === 0);
-    const positions = needsSpawn
-      ? spawnPositionsFor(page.bubbles, size.w, size.h)
-      : page.bubbles.map(b => b.pos);
-
-    const synced = page.bubbles.map((b, i) => ({
-      ...b,
-      pos: positions[i] ?? b.pos,
-      vel: { x: 0, y: 0 },
-    }));
-
-    bubblesRef.current = synced;
-  }, [activePageId, pages, size.w, size.h]);
 
   // ── Mic permission pre-check ──────────────────────────────────────────
 
@@ -783,10 +735,6 @@ export default function PootBox() {
     if (blankHoldTimer.current) { window.clearTimeout(blankHoldTimer.current); blankHoldTimer.current = null; }
     blankHoldStartPos.current = null;
   }, []);
-
-  // ── Derived ────────────────────────────────────────────────────────────
-
-  const alreadyAddedKeys = new Set(bubbles.map(b => b.builtinKey).filter((k): k is string => !!k));
 
   // ── Render ────────────────────────────────────────────────────────────
 
