@@ -35,8 +35,19 @@ import rateLimit from "express-rate-limit";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 5174;
-const UPLOAD_DIR = path.join(__dirname, "uploads");
+// UPLOAD_DIR and DB_PATH are honored from the environment when set, so the
+// Dockerfile's volume mount (and any local override) actually takes effect.
+// The previous version hardcoded both to <repo>/server/* paths, which meant
+// the container wrote to its own ephemeral filesystem instead of the
+// mounted /app/data volume — recordings + DB disappeared on every restart.
+const UPLOAD_DIR = process.env.UPLOAD_DIR
+  ? path.resolve(process.env.UPLOAD_DIR)
+  : path.join(__dirname, "uploads");
+const DB_PATH = process.env.DB_PATH
+  ? path.resolve(process.env.DB_PATH)
+  : path.join(__dirname, "farts.db");
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
 // ─── Audio upload hardening ─────────────────────────────────────────────────
 // Only these extensions are allowed; anything else is rejected before the file
@@ -80,7 +91,7 @@ function safeUnlink(filename) {
 }
 
 // SQLite DB
-const db = new Database(path.join(__dirname, "farts.db"));
+const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");
 db.exec(`
   CREATE TABLE IF NOT EXISTS recordings (
@@ -183,17 +194,39 @@ const shareMintLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-app.use(generalLimiter);
+// Apply the general limiter only to the API. Audio file fetches and the
+// SPA shell bypass the limiter so a service-worker pre-cache or a kid's
+// first play can't be 429-throttled out of a legit request.
+app.use("/api", generalLimiter);
+
+// Map of file extension → audio/* MIME type. Express's static middleware
+// infers `video/webm` for .webm files (webm is registered as a video
+// container in mime-db), which some audio tooling rejects. Override per
+// extension so audio players see a sane Content-Type.
+const AUDIO_MIME = {
+  webm: "audio/webm",
+  m4a: "audio/mp4",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+};
 
 // Serve uploaded audio files
 app.use(
   "/uploads",
   express.static(UPLOAD_DIR, {
     maxAge: "7d",
-    setHeaders: (res) => {
+    setHeaders: (res, filePath) => {
       // Defense in depth: even if a non-audio file ever lands in /uploads
       // (regression of the fileFilter bypass), browsers must not sniff it.
       res.setHeader("X-Content-Type-Options", "nosniff");
+      // Override the extension-based MIME with an audio/* one.
+      const ext = path.extname(filePath).slice(1).toLowerCase();
+      const mime = AUDIO_MIME[ext];
+      if (mime) res.setHeader("Content-Type", mime);
+      // Audio responses are read by <audio> elements and service workers,
+      // not executed by scripts — explicit no-CORS to keep a tight CSP story.
+      res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
     },
   }),
 );
@@ -223,17 +256,8 @@ app.use(
   }),
 );
 
-// Privacy page (static, served from dist/)
-app.get("/privacy.html", (req, res) => {
-  res.sendFile(path.join(DIST_DIR, "privacy.html"));
-});
-
-// About page (static, served from dist/)
-app.get("/about.html", (req, res) => {
-  res.sendFile(path.join(DIST_DIR, "about.html"));
-});
-
 // SPA fallback: any non-API GET that didn't match a static file → index.html
+// (privacy.html and about.html are served by the dist/ static handler above.)
 app.get(/^(?!\/api|\/uploads).*/, (req, res) => {
   res.sendFile(path.join(DIST_DIR, "index.html"));
 });

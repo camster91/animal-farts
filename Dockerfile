@@ -24,7 +24,7 @@ RUN apk add --no-cache curl wget
 
 WORKDIR /app
 
-# Server-only deps (Express, sqlite, multer, cors)
+# Server-only deps (Express, sqlite, multer, express-rate-limit)
 COPY server/package*.json ./server/
 RUN cd server && npm install --omit=dev --no-audit --no-fund && cd ..
 

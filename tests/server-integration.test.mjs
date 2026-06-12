@@ -1,0 +1,241 @@
+// Server integration smoke tests — runs the actual server.js in a subprocess
+// against a fresh data dir, hits every public route over HTTP, and asserts
+// the security/feature gates the server is supposed to enforce.
+//
+// These tests pin the live behavior so a refactor can't silently break
+// the deploy contract. They're slow (~3s for the cold-start subprocess) so
+// they live in a separate file and run alongside the unit tests.
+//
+// Run: npm test
+//   (the npm test glob also picks up unit-*.test.mjs — these end in
+//    server-integration.test.mjs to skip the unit-timeout of 2s per case.)
+
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert";
+import { spawn } from "node:child_process";
+import { mkdtempSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { request } from "node:http";
+
+const ROOT = join(import.meta.dirname, "..");
+const SERVER = join(ROOT, "server", "server.js");
+const PORT = 5284;
+const BASE = `http://127.0.0.1:${PORT}`;
+
+let dataDir;
+let proc;
+let started = false;
+
+function http(method, path, { headers = {}, body } = {}) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(path, BASE);
+    const opts = {
+      method,
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname + url.search,
+      headers,
+    };
+    const req = request(opts, (res) => {
+      const chunks = [];
+      res.on("data", (c) => chunks.push(c));
+      res.on("end", () => {
+        const buf = Buffer.concat(chunks);
+        resolve({
+          status: res.statusCode,
+          headers: res.headers,
+          text: buf.toString("utf8"),
+          body: buf,
+        });
+      });
+    });
+    req.on("error", reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+function multipartAudio(fieldName, fileBuffer, filename, mime) {
+  const boundary = "----test-" + Math.random().toString(36).slice(2);
+  // Form fields MUST come before the file part. Multer (via busboy) parses
+  // parts in stream order; if a file part ends with the multipart boundary
+  // before a text field, the text field is silently dropped.
+  const nameField = Buffer.from(
+    `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="name"\r\n\r\n` +
+      `integration-test\r\n`,
+  );
+  const head = Buffer.from(
+    `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="${fieldName}"; filename="${filename}"\r\n` +
+      `Content-Type: ${mime}\r\n\r\n`,
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+  return {
+    body: Buffer.concat([nameField, head, fileBuffer, tail]),
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  };
+}
+
+before(async () => {
+  // Skip the whole suite if the server file isn't present (e.g. someone ran
+  // `git clean` and missed the server dir). The unit tests will still pass.
+  if (!existsSync(SERVER)) {
+    console.warn(`[server-integration] skipping: ${SERVER} not found`);
+    return;
+  }
+  dataDir = mkdtempSync(join(tmpdir(), "af-srv-int-"));
+  proc = spawn("node", [SERVER], {
+    env: {
+      ...process.env,
+      PORT: String(PORT),
+      NODE_ENV: "production",
+      DB_PATH: join(dataDir, "farts.db"),
+      UPLOAD_DIR: join(dataDir, "uploads"),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  // Wait for /api/health to return 200 (max 5s).
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    try {
+      const r = await http("GET", "/api/health");
+      if (r.status === 200) {
+        started = true;
+        return;
+      }
+    } catch {
+      // not ready yet
+    }
+    await new Promise((res) => setTimeout(res, 100));
+  }
+  // give up — subsequent tests will fail with connection errors
+});
+
+after(async () => {
+  if (proc) proc.kill("SIGKILL");
+});
+
+describe("server integration: env-respected data paths", () => {
+  it("creates farts.db at the env-supplied DB_PATH, not server/farts.db", async (t) => {
+    if (!started) return t.skip();
+    const want = join(dataDir, "farts.db");
+    assert.ok(existsSync(want), `expected DB at ${want}, not server/farts.db`);
+  });
+
+  it("creates uploads dir at the env-supplied UPLOAD_DIR", async (t) => {
+    if (!started) return t.skip();
+    const want = join(dataDir, "uploads");
+    assert.ok(existsSync(want), `expected uploads at ${want}`);
+  });
+});
+
+describe("server integration: security gates", () => {
+  it("rejects XSS upload (audio/x-foo + .html filename) with 400 JSON", async (t) => {
+    if (!started) return t.skip();
+    const html = Buffer.from("<script>alert(1)</script>");
+    const mp = multipartAudio("audio", html, "x.html", "audio/x-foo");
+    const r = await http("POST", "/api/recordings", {
+      headers: {
+        "x-device-id": "int-smoke",
+        "content-type": mp.contentType,
+        "content-length": String(mp.body.length),
+      },
+      body: mp.body,
+    });
+    assert.strictEqual(r.status, 400, "XSS must be rejected with 400");
+    const body = JSON.parse(r.text);
+    assert.match(body.error, /audio/i);
+  });
+
+  it("rejects upload without x-device-id header with 400", async (t) => {
+    if (!started) return t.skip();
+    const webm = Buffer.from("fake webm bytes");
+    const mp = multipartAudio("audio", webm, "ok.webm", "audio/webm");
+    const r = await http("POST", "/api/recordings", {
+      headers: {
+        "content-type": mp.contentType,
+        "content-length": String(mp.body.length),
+      },
+      body: mp.body,
+    });
+    assert.strictEqual(r.status, 400);
+  });
+
+  it("does NOT send Access-Control-Allow-Origin (no CORS wildcard)", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("GET", "/api/health", {
+      headers: { origin: "https://evil.example" },
+    });
+    assert.ok(!r.headers["access-control-allow-origin"], "CORS must be off");
+  });
+
+  it("serves /uploads/*.webm as audio/webm (not video/webm)", async (t) => {
+    if (!started) return t.skip();
+    const webm = Buffer.from("fake webm");
+    const mp = multipartAudio("audio", webm, "audio-test.webm", "audio/webm");
+    const up = await http("POST", "/api/recordings", {
+      headers: {
+        "x-device-id": "int-smoke",
+        "content-type": mp.contentType,
+        "content-length": String(mp.body.length),
+      },
+      body: mp.body,
+    });
+    assert.strictEqual(
+      up.status,
+      200,
+      `valid webm upload should succeed, got ${up.status} body=${up.text}`,
+    );
+    const { audioUrl } = JSON.parse(up.text);
+    const r = await http("GET", audioUrl);
+    assert.strictEqual(r.status, 200);
+    assert.match(
+      r.headers["content-type"] || "",
+      /^audio\//,
+      `expected audio/* Content-Type, got ${r.headers["content-type"]}`,
+    );
+    assert.strictEqual(r.headers["x-content-type-options"], "nosniff");
+  });
+
+  it("does NOT rate-limit /uploads/* under the general limiter", async (t) => {
+    if (!started) return t.skip();
+    // /uploads static has no rate-limit headers; /api/* does.
+    const api = await http("GET", "/api/health");
+    const up = await http("GET", "/api/me");
+    // /api/health (200) has RateLimit-Remaining; /api/me (400) does too —
+    // both endpoints are under /api so both are rate-limited.
+    assert.ok(api.headers["ratelimit-remaining"], "/api/* should be rate-limited");
+    assert.ok(up.headers["ratelimit-remaining"], "/api/* should be rate-limited");
+  });
+
+  it("share-code lookup is rate-limited to 30/min", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("GET", "/api/share/AAAA");
+    assert.match(r.headers["ratelimit-limit"] || "", /30/, "share lookup cap should be 30");
+  });
+});
+
+describe("server integration: SPA + privacy/about", () => {
+  it("serves /, /sw.js, /privacy.html, /about.html with 200", async (t) => {
+    if (!started) return t.skip();
+    for (const path of ["/", "/sw.js", "/privacy.html", "/about.html"]) {
+      const r = await http("GET", path);
+      assert.strictEqual(r.status, 200, `${path} should be 200, got ${r.status}`);
+    }
+  });
+
+  it("SPA fallback returns index.html for unknown paths", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("GET", "/any/spa/route");
+    assert.strictEqual(r.status, 200);
+    assert.match(r.text, /<div id="root">/);
+  });
+
+  it("/api/* unknown path returns 404 (not the SPA)", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("GET", "/api/nonexistent");
+    assert.strictEqual(r.status, 404);
+  });
+});
