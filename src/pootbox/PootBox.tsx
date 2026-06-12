@@ -2,7 +2,7 @@
 // Rewritten from scratch to consume the v46 architecture:
 // multi-page tabs, random bubble spawn, library picker, and recording flow.
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
-import type { Page, BubbleState, Vec2, Ripple, Spark, BuiltInSound } from "./types";
+import type { Page, BubbleState, Ripple, Spark, BuiltInSound } from "./types";
 import { stepPhysics } from "./physics";
 import {
   BUILT_IN_SOUNDS,
@@ -29,6 +29,7 @@ import { useToast } from "./hooks/useToast";
 import { useModalState } from "./hooks/useModalState";
 import { usePagesState } from "./hooks/usePagesState";
 import { useCanvasState } from "./hooks/useCanvasState";
+import { useCanvasHandlers } from "./hooks/useCanvasHandlers";
 import { useRecording } from "./hooks/useRecording";
 import SettingsModal from "./SettingsModal";
 import BubbleCanvas from "./components/BubbleCanvas";
@@ -116,7 +117,7 @@ export default function PootBox() {
   // Bubbles on active page (extracted to useCanvasState hook)
   const {
     bubbles, bubblesRef, setBubbles,
-    pressedId, setPressedId,
+    pressedId,
     showPlayedFor, setShowPlayedFor,
     alreadyAddedKeys,
   } = useCanvasState({ pages, activePageId, size });
@@ -129,7 +130,7 @@ export default function PootBox() {
   const {
     recPhase, recordingMs, micDenied, micPermState,
     startRecording, stopRecording, cancelRecording,
-    finalizeRecording, redoRecording, unlockAudio,
+    finalizeRecording, redoRecording,
   } = useRecording({
     onBubbleAdded: (bubble) => {
       if (!activePageId) return;
@@ -148,10 +149,13 @@ export default function PootBox() {
   });
 
   // Audio state
+  // Audio state (used by the stop-all-sounds button + the isAnySoundPlaying poll)
   const [soundPlaying, setSoundPlaying] = useState(false);
 
-  // Combo
+  // Combo count (drives the badge in the render block)
   const [comboCount, setComboCount] = useState(0);
+
+  // Combo + confetti (driven by the tap handler below)
   const [comboBurst, setComboBurst] = useState<{ x: number; y: number; n: number; particles: { dx: number; dy: number }[] } | null>(null);
   const [confettiBurst, setConfettiBurst] = useState(0);
   const [confettiParticles, setConfettiParticles] = useState<{ dx: number; dy: number; color: string }[]>([]);
@@ -197,9 +201,7 @@ export default function PootBox() {
   const lastShakeAtRef = useRef(0);
   const shakeCountRef = useRef(0);
   const shakeWindowTimerRef = useRef<number | null>(null);
-  const dragRef = useRef<{ id: string; lastX: number; lastY: number; lastT: number; velocity: Vec2 } | null>(null);
   const blankHoldTimer = useRef<number | null>(null);
-  const blankHoldStartPos = useRef<Vec2 | null>(null);
   const rippleIdRef = useRef(0);
   const sparkIdRef = useRef(0);
   const lifetimeTapsRef = useRef(0);
@@ -208,28 +210,6 @@ export default function PootBox() {
   const comboResetTimerRef = useRef<number | null>(null);
   const lastCirclePlayRef = useRef<Map<string, number>>(new Map());
   const comboBurstTimeoutRef = useRef<number | null>(null);
-
-  const triggerComboBurst = useCallback((x: number, y: number, n: number) => {
-    const particles = Array.from({ length: 8 }, () => {
-      const angle = Math.random() * Math.PI * 2;
-      const dist = 50 + Math.random() * 30;
-      return { dx: Math.cos(angle) * dist, dy: Math.sin(angle) * dist };
-    });
-    setComboBurst({ x, y, n, particles });
-    if (comboBurstTimeoutRef.current) window.clearTimeout(comboBurstTimeoutRef.current);
-    comboBurstTimeoutRef.current = window.setTimeout(() => setComboBurst(null), 700);
-  }, []);
-
-  const triggerConfetti = useCallback(() => {
-    const colors = ["#FF6B6B", "#FFD93D", "#6BCB77", "#4D96FF", "#FF9F1C"];
-    const particles = Array.from({ length: 24 }, () => {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 80 + Math.random() * 60;
-      return { dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed - 30, color: colors[Math.floor(Math.random() * colors.length)] };
-    });
-    setConfettiParticles(particles);
-    setConfettiBurst(c => c + 1);
-  }, []);
 
   // Toast helper
   // (no longer needed — useToast hook provides showToast)
@@ -411,8 +391,17 @@ export default function PootBox() {
     setPages(prev => prev.map(p => p.id === updated.id ? updated : p));
   }, [activePageId, bubbles]);
 
-  // ── Play sound from bubble ────────────────────────────────────────────
+  // ── Canvas pointer handlers + drag + 5s long-press (extracted to useCanvasHandlers) ──
 
+  // Spawn ripple (effect-only helper, stays in PootBox because it only touches
+  // local ripples state — not a "handler" responsibility)
+  const spawnRipple = useCallback((x: number, y: number, color = "rgba(255,255,255,0.5)") => {
+    const id = ++rippleIdRef.current;
+    setRipples(prev => [...prev, { id, x, y, color }]);
+    setTimeout(() => setRipples(prev => prev.filter(r => r.id !== id)), 700);
+  }, []);
+
+  // Play a sound from a bubble (debounced — max once per 250ms per bubble)
   const playFromBubble = useCallback((b: BubbleState, volume: number) => {
     const now = performance.now();
     const last = lastCirclePlayRef.current.get(b.id) ?? 0;
@@ -421,16 +410,32 @@ export default function PootBox() {
     playSingle(b.sound, volume);
   }, []);
 
-  // ── Spawn ripple ──────────────────────────────────────────────────────
-
-  const spawnRipple = useCallback((x: number, y: number, color = "rgba(255,255,255,0.5)") => {
-    const id = ++rippleIdRef.current;
-    setRipples(prev => [...prev, { id, x, y, color }]);
-    setTimeout(() => setRipples(prev => prev.filter(r => r.id !== id)), 700);
+  // Trigger combo burst at every 5th tap
+  const triggerComboBurst = useCallback((x: number, y: number, n: number) => {
+    const particles = Array.from({ length: 8 }, () => {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 50 + Math.random() * 30;
+      return { dx: Math.cos(angle) * dist, dy: Math.sin(angle) * dist };
+    });
+    setComboBurst({ x, y, n, particles });
+    if (comboBurstTimeoutRef.current) window.clearTimeout(comboBurstTimeoutRef.current);
+    comboBurstTimeoutRef.current = window.setTimeout(() => setComboBurst(null), 700);
   }, []);
 
-  // ── Tap handler ───────────────────────────────────────────────────────
+  // Trigger confetti at every 10th lifetime tap
+  const triggerConfetti = useCallback(() => {
+    const colors = ["#FF5252", "#FFD740", "#69F0AE", "#40C4FF", "#B388FF"];
+    const particles = Array.from({ length: 24 }, () => {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 5 + Math.random() * 5;
+      return { dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed, color: colors[Math.floor(Math.random() * colors.length)] };
+    });
+    setConfettiBurst(c => c + 1);
+    setConfettiParticles(particles);
+    setTimeout(() => setConfettiParticles([]), 1200);
+  }, []);
 
+  // Tap handler: orchestrates ripple + sound + combo + lifetime + onboarding dismiss
   const handleBubbleTap = useCallback((id: string, clientX: number, clientY: number) => {
     const b = bubblesRef.current.find(x => x.id === id);
     if (!b) return;
@@ -439,32 +444,26 @@ export default function PootBox() {
 
     playFromBubble(b, settingsRef.current.volume);
     spawnRipple(clientX, clientY);
-
-    // Show played indicator
     setShowPlayedFor(id);
     setTimeout(() => setShowPlayedFor(null), 800);
 
-    // Combo
+    // Combo (decay after 800ms idle)
     let newCombo: number;
     if (now - lastTapAtRef.current < 800) {
       newCombo = comboCountRef.current + 1;
-      setComboCount(newCombo);
     } else {
       newCombo = 1;
-      setComboCount(1);
     }
+    setComboCount(newCombo);
     comboCountRef.current = newCombo;
     lastTapAtRef.current = now;
     if (comboResetTimerRef.current) window.clearTimeout(comboResetTimerRef.current);
     comboResetTimerRef.current = window.setTimeout(() => {
-      setComboCount(0);
       comboCountRef.current = 0;
     }, 800);
 
-    // Combo burst at milestones
-    if (newCombo % 5 === 0) {
-      triggerComboBurst(clientX, clientY, newCombo);
-    }
+    // Combo burst at every 5th
+    if (newCombo % 5 === 0) triggerComboBurst(clientX, clientY, newCombo);
 
     // Lifetime taps → confetti every 10
     const newLifetime = lifetimeTapsRef.current + 1;
@@ -478,125 +477,35 @@ export default function PootBox() {
     }
   }, [playFromBubble, spawnRipple, showOnboarding, triggerComboBurst, triggerConfetti]);
 
-  // ── Bubble pointer handlers ───────────────────────────────────────────
-
-  const onBubblePointerDown = useCallback((id: string, e: React.PointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const target = e.currentTarget as HTMLElement;
-    if (target.setPointerCapture && e.pointerId !== undefined) {
-      try { target.setPointerCapture(e.pointerId); } catch { /* ignore */ }
-    }
-    setPressedId(id);
-    unlockAudio();
-    handleBubbleTap(id, e.clientX, e.clientY);
-
-    const b = bubblesRef.current.find(x => x.id === id);
-    if (b) { b.vel.x = 0; b.vel.y = 0; }
-
-    dragRef.current = {
-      id,
-      lastX: e.clientX,
-      lastY: e.clientY,
-      lastT: performance.now(),
-      velocity: { x: 0, y: 0 },
-    };
-  }, [handleBubbleTap, unlockAudio]);
-
-  const onBubblePointerMove = useCallback((id: string, e: React.PointerEvent) => {
-    const drag = dragRef.current;
-    if (!drag || drag.id !== id) return;
-    const b = bubblesRef.current.find(x => x.id === id);
-    if (!b) return;
-    const now = performance.now();
-    b.lastTouchedAt = now;
-    const dt = now - drag.lastT;
-    if (dt > 0) {
-      const instVx = (e.clientX - drag.lastX) / dt;
-      const instVy = (e.clientY - drag.lastY) / dt;
-      drag.velocity.x = drag.velocity.x * 0.6 + instVx * 0.4;
-      drag.velocity.y = drag.velocity.y * 0.6 + instVy * 0.4;
-    }
-    drag.lastX = e.clientX;
-    drag.lastY = e.clientY;
-    drag.lastT = now;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    b.pos.x = e.clientX - rect.left;
-    b.pos.y = e.clientY - rect.top;
-  }, []);
-
-  const onBubblePointerUp = useCallback((id: string, e: React.PointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setPressedId(null);
-    const drag = dragRef.current;
-    if (drag && drag.id === id) {
-      const b = bubblesRef.current.find(x => x.id === id);
-      if (b) {
-        // Short tap = show delete for custom
-        const totalDist = Math.sqrt((e.clientX - drag.lastX) ** 2 + (e.clientY - drag.lastY) ** 2);
-        if (totalDist < 8 && id.startsWith("b:custom:")) {
-          onRemoveBubble(id);
-        }
-        b.vel.x = drag.velocity.x * 16.67;
-        b.vel.y = drag.velocity.y * 16.67;
-        b.lastTouchedAt = performance.now();
-        b.lastReleasedAt = performance.now();
-        // Persist position
-        setPages(prev => {
-          const updated = prev.map(p => {
-            if (p.id !== activePageId) return p;
-            return {
-              ...p,
-              bubbles: p.bubbles.map(bb => bb.id === id ? { ...bb, pos: { ...b.pos } } : bb),
-            };
-          });
-          savePagesDebounced(updated);
-          return updated;
-        });
+  // The 7 pointer event handlers (extracted to useCanvasHandlers)
+  const {
+    onBubblePointerDown,
+    onBubblePointerMove,
+    onBubblePointerUp,
+    onBubblePointerCancel,
+    onBlankPointerDown,
+    onBlankPointerMove,
+    onBlankPointerUp,
+  } = useCanvasHandlers({
+    canvasRef,
+    bubblesRef,
+    settingsRef,
+    activePageId,
+    setShowPlayedFor,
+    setPages,
+    onRemoveBubble,
+    savePagesDebounced,
+    onSpawnRipple: spawnRipple,
+    onPlayFromBubble: playFromBubble,
+    onBubbleTap: handleBubbleTap,
+    onSettingsOpen: () => setShowSettings(true),
+    onFirstTap: () => {
+      if (showOnboarding) {
+        setShowOnboarding(false);
+        try { localStorage.setItem("pootbox-onboarded-v2", "1"); } catch { /* ignore */ }
       }
-      dragRef.current = null;
-    }
-  }, [activePageId, onRemoveBubble, savePagesDebounced]);
-
-  const onBubblePointerCancel = useCallback((id: string) => {
-    setPressedId(null);
-    if (dragRef.current?.id === id) {
-      const b = bubblesRef.current.find(x => x.id === id);
-      if (b) b.lastTouchedAt = performance.now();
-      dragRef.current = null;
-    }
-  }, []);
-
-  // ── Blank area handlers ───────────────────────────────────────────────
-
-  const onBlankPointerDown = useCallback((e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest("button")) return;
-    unlockAudio();
-    blankHoldStartPos.current = { x: e.clientX, y: e.clientY };
-    if (blankHoldTimer.current) window.clearTimeout(blankHoldTimer.current);
-    blankHoldTimer.current = window.setTimeout(() => {
-      setShowSettings(true);
-      blankHoldTimer.current = null;
-    }, 5000);
-  }, [unlockAudio]);
-
-  const onBlankPointerMove = useCallback((e: React.PointerEvent) => {
-    if (!blankHoldStartPos.current) return;
-    const dx = Math.abs(e.clientX - blankHoldStartPos.current.x);
-    const dy = Math.abs(e.clientY - blankHoldStartPos.current.y);
-    if (dx > 25 || dy > 25) {
-      if (blankHoldTimer.current) { window.clearTimeout(blankHoldTimer.current); blankHoldTimer.current = null; }
-      blankHoldStartPos.current = null;
-    }
-  }, []);
-
-  const onBlankPointerUp = useCallback(() => {
-    if (blankHoldTimer.current) { window.clearTimeout(blankHoldTimer.current); blankHoldTimer.current = null; }
-    blankHoldStartPos.current = null;
-  }, []);
+    },
+  });
 
   // ── Render ────────────────────────────────────────────────────────────
 
