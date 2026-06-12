@@ -18,9 +18,7 @@ import {
   addBubbleToPageDedup,
   removeBubbleFromPage,
   generateShareCode,
-  saveBlob,
   deleteBlob,
-  saveRecordingEmoji,
   deleteRecordingEmoji,
   createDefaultPage,
   savePage,
@@ -31,6 +29,7 @@ import { useToast } from "./hooks/useToast";
 import { useModalState } from "./hooks/useModalState";
 import { usePagesState } from "./hooks/usePagesState";
 import { useCanvasState } from "./hooks/useCanvasState";
+import { useRecording } from "./hooks/useRecording";
 import SettingsModal from "./SettingsModal";
 import BubbleCanvas from "./components/BubbleCanvas";
 import TopBar from "./components/TopBar.js";
@@ -122,15 +121,31 @@ export default function PootBox() {
     alreadyAddedKeys,
   } = useCanvasState({ pages, activePageId, size });
 
-  // Recording
-  const [recPhase, setRecPhase] = useState<"idle" | "recording" | "picking">("idle");
-  const [pendingBlob, setPendingBlob] = useState<Blob | null>(null);
-  const [pendingUrl, setPendingUrl] = useState<string | null>(null);
-  const [recordingMs, setRecordingMs] = useState(0);
-
   // Sheets / modals
   // Settings (extracted to useSettings hook)
   const { settings, settingsRef, setSettings, setVolume } = useSettings();
+
+  // Recording (extracted to useRecording hook)
+  const {
+    recPhase, recordingMs, micDenied, micPermState,
+    startRecording, stopRecording, cancelRecording,
+    finalizeRecording, redoRecording, unlockAudio,
+  } = useRecording({
+    onBubbleAdded: (bubble) => {
+      if (!activePageId) return;
+      const { pages: updatedPages, added } = addBubbleToPageDedup(pages, activePageId, bubble);
+      if (!added) {
+        showToast("Already on this page!");
+        return;
+      }
+      setPages(updatedPages);
+    },
+    onCancel: () => {
+      // The RecordSheet shows/hides itself based on recPhase from the hook,
+      // so onCancel doesn't need to do anything here.
+    },
+    onError: (msg) => { showToast(msg); },
+  });
 
   // Audio state
   const [soundPlaying, setSoundPlaying] = useState(false);
@@ -171,10 +186,6 @@ export default function PootBox() {
     setShowFirstRun,
   } = useModalState();
 
-  // Mic
-  const [micPermState, setMicPermState] = useState<"prompt" | "denied" | "granted" | "unsupported">("prompt");
-  const [micDenied, setMicDenied] = useState(false);
-
   // Re-render trigger
   const [, setTick] = useState(0);
 
@@ -196,12 +207,6 @@ export default function PootBox() {
   const lastTapAtRef = useRef(0);
   const comboResetTimerRef = useRef<number | null>(null);
   const lastCirclePlayRef = useRef<Map<string, number>>(new Map());
-  const audioUnlockedRef = useRef(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const mediaChunksRef = useRef<Blob[]>([]);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const recordingTimerRef = useRef<number | null>(null);
-  const recordingStartRef = useRef(0);
   const comboBurstTimeoutRef = useRef<number | null>(null);
 
   const triggerComboBurst = useCallback((x: number, y: number, n: number) => {
@@ -242,30 +247,6 @@ export default function PootBox() {
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
-
-  // ── Mic permission pre-check ──────────────────────────────────────────
-
-  useEffect(() => {
-    if (typeof navigator === "undefined" || !navigator.permissions) return;
-    if (!navigator.mediaDevices?.getUserMedia) return;
-    let cancelled = false;
-    navigator.permissions.query({ name: "microphone" as PermissionName }).then(p => {
-      if (cancelled) return;
-      const initialState = p.state as typeof micPermState;
-      queueMicrotask(() => {
-        if (cancelled) return;
-        setMicPermState(initialState);
-        if (initialState === "denied") setMicDenied(true);
-      });
-      p.addEventListener("change", () => {
-        if (cancelled) return;
-        const ns = p.state as typeof micPermState;
-        setMicPermState(ns);
-        setMicDenied(ns === "denied");
-      });
-    }).catch(() => { /* Firefox doesn't support query */ });
-    return () => { cancelled = true; };
   }, []);
 
   // ── Shake detection ───────────────────────────────────────────────────
@@ -386,97 +367,9 @@ export default function PootBox() {
       if (comboResetTimerRef.current) window.clearTimeout(comboResetTimerRef.current);
       if (comboBurstTimeoutRef.current) window.clearTimeout(comboBurstTimeoutRef.current);
       if (blankHoldTimer.current) window.clearTimeout(blankHoldTimer.current);
-      if (recordingTimerRef.current) window.clearInterval(recordingTimerRef.current);
       if (shakeWindowTimerRef.current) window.clearTimeout(shakeWindowTimerRef.current);
     };
   }, []);
-
-  // ── Audio unlock ───────────────────────────────────────────────────────
-
-  const unlockAudio = useCallback(() => {
-    if (audioUnlockedRef.current) return;
-    audioUnlockedRef.current = true;
-    try {
-      const silent = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
-      silent.volume = 0;
-      void silent.play().catch(() => { audioUnlockedRef.current = false; });
-    } catch { audioUnlockedRef.current = false; }
-  }, []);
-
-  // ── Recording ──────────────────────────────────────────────────────────
-
-  const startRecording = useCallback(async () => {
-    if (mediaRecorderRef.current) return;
-    if (micPermState === "denied") { setMicDenied(true); return; }
-    let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
-      setMicDenied(true);
-      setRecPhase("idle");
-      return;
-    }
-    mediaStreamRef.current = stream;
-    setMicDenied(false);
-    unlockAudio();
-    const mimeType = MediaRecorder.isTypeSupported("audio/mp4")
-      ? "audio/mp4"
-      : MediaRecorder.isTypeSupported("audio/webm")
-      ? "audio/webm"
-      : "";
-    const rec = mimeType
-      ? new MediaRecorder(stream, { mimeType })
-      : new MediaRecorder(stream);
-    mediaChunksRef.current = [];
-    rec.ondataavailable = e => { if (e.data?.size > 0) mediaChunksRef.current.push(e.data); };
-    rec.onstop = () => {
-      const blob = new Blob(mediaChunksRef.current, { type: rec.mimeType || "audio/webm" });
-      if (mediaChunksRef.current.length === 0 || blob.size === 0) { setRecPhase("idle"); return; }
-      const url = URL.createObjectURL(blob);
-      setPendingBlob(blob);
-      setPendingUrl(url);
-      setRecPhase("picking");
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(t => t.stop());
-        mediaStreamRef.current = null;
-      }
-      mediaRecorderRef.current = null;
-    };
-    rec.start();
-    mediaRecorderRef.current = rec;
-    recordingStartRef.current = performance.now();
-    setRecordingMs(0);
-    setRecPhase("recording");
-    recordingTimerRef.current = window.setInterval(() => {
-      const ms = performance.now() - recordingStartRef.current;
-      setRecordingMs(ms);
-      if (ms >= 6000 && mediaRecorderRef.current?.state === "recording") {
-        mediaRecorderRef.current.stop();
-        if (recordingTimerRef.current) { window.clearInterval(recordingTimerRef.current); recordingTimerRef.current = null; }
-      }
-    }, 50);
-  }, [micPermState, unlockAudio]);
-
-  const stopRecording = useCallback(() => {
-    if (recordingTimerRef.current) { window.clearInterval(recordingTimerRef.current); recordingTimerRef.current = null; }
-    if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop();
-  }, []);
-
-  const cancelRecording = useCallback(() => {
-    if (recordingTimerRef.current) { window.clearInterval(recordingTimerRef.current); recordingTimerRef.current = null; }
-    if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.ondataavailable = null;
-      mediaRecorderRef.current.onstop = null;
-      if (mediaRecorderRef.current.state === "recording") mediaRecorderRef.current.stop();
-      mediaRecorderRef.current = null;
-    }
-    if (mediaStreamRef.current) { mediaStreamRef.current.getTracks().forEach(t => t.stop()); mediaStreamRef.current = null; }
-    if (pendingUrl) URL.revokeObjectURL(pendingUrl);
-    setPendingBlob(null);
-    setPendingUrl(null);
-    setRecordingMs(0);
-    setRecPhase("idle");
-  }, [pendingUrl]);
 
   // ── Add built-in sound to page ────────────────────────────────────────
 
@@ -503,37 +396,6 @@ export default function PootBox() {
     setPages(updatedPages);
     setShowLibrary(false);
   }, [activePageId, pages, showToast]);
-
-  // ── Complete recorded sound ───────────────────────────────────────────
-
-  const onPickRecordedEmoji = useCallback(async (emoji: string) => {
-    if (!pendingBlob || !pendingUrl || !activePageId) return;
-    const id = `b:custom:${Date.now()}`;
-    const bubble: BubbleState = {
-      id,
-      type: "custom",
-      emoji,
-      blobUrl: pendingUrl,
-      sound: pendingUrl,
-      pos: { x: 0, y: 0 },
-      vel: { x: 0, y: 0 },
-      radius: 36,
-      mass: 1,
-      lastTouchedAt: -1,
-      lastReleasedAt: -1,
-    };
-    await saveBlob(id, pendingBlob);
-    saveRecordingEmoji(id, emoji);
-    const { pages: updatedPages, added } = addBubbleToPageDedup(pages, activePageId, bubble);
-    if (!added) {
-      showToast("Already on this page!");
-    } else {
-      setPages(updatedPages);
-    }
-    setPendingBlob(null);
-    setPendingUrl(null);
-    setRecPhase("idle");
-  }, [pendingBlob, pendingUrl, activePageId, pages, showToast]);
 
   // ── Remove bubble ─────────────────────────────────────────────────────
 
@@ -1080,7 +942,7 @@ export default function PootBox() {
               : "Microphone access denied. Tap + again to allow."}
           </span>
           <button
-            onClick={() => { setMicDenied(false); void startRecording(); }}
+            onClick={() => { void startRecording(); }}
             style={{
               appearance: "none",
               border: "1px solid rgba(255,255,255,0.4)",
@@ -1107,13 +969,10 @@ export default function PootBox() {
           recordingMs={recordingMs}
           onStopRecording={stopRecording}
           onCancelRecording={cancelRecording}
-          onPickEmoji={onPickRecordedEmoji}
-          onRedo={() => {
-            if (pendingUrl) URL.revokeObjectURL(pendingUrl);
-            setPendingUrl(null);
-            setPendingBlob(null);
-            setRecordingMs(0);
-            void startRecording();
+          onPickEmoji={finalizeRecording}
+          onRedo={async () => {
+            redoRecording();
+            await startRecording();
           }}
           emojiOptions={EMOJI_OPTIONS}
         />
