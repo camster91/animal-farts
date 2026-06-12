@@ -99,7 +99,6 @@ export function useCanvasState({
     // with an "Already on this page!" toast.
     syncBubblesToActivePage();
     setBubbles(bubblesRef.current);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
   }, [syncBubblesToActivePage]);
 
   // ── Helpers ────────────────────────────────────────────────────────────────

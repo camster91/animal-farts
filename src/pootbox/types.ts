@@ -22,6 +22,22 @@ export interface Spark {
   life: number;
 }
 
+// Shape of the combo burst + confetti data owned by usePhysicsLoop. Kept
+// here so the <CanvasEffects> component and its callers can agree on the
+// shape without circular imports through the physics hook.
+export interface ComboBurst {
+  x: number;
+  y: number;
+  n: number;
+  particles: { dx: number; dy: number }[];
+}
+
+export interface ConfettiParticle {
+  dx: number;
+  dy: number;
+  color: string;
+}
+
 // --- Page / BubbleState (runtime) ---
 
 export interface BubbleState {

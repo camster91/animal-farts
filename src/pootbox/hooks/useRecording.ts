@@ -14,8 +14,6 @@ export interface UseRecordingParams {
   maxRecordingMs?: number;  // default 6000
   /** Called when finalizeRecording adds a new bubble to the active page */
   onBubbleAdded?: (b: BubbleState) => void;
-  /** Called when the user taps "Discard" or cancels */
-  onCancel?: () => void;
   /** Called on recording errors (mic denied, getUserMedia failed, etc.) */
   onError?: (msg: string) => void;
 }
@@ -32,8 +30,6 @@ export interface UseRecordingResult {
   cancelRecording: () => void;
   /** Build the bubble from the pending blob + emoji, save to IDB, call onBubbleAdded */
   finalizeRecording: (emoji: string) => Promise<void>;
-  /** Cancel and re-record (clear pending, go back to idle) */
-  redoRecording: () => void;
   /** iOS Safari: empty audio.play() to unlock the AudioContext. Call from a user gesture. */
   unlockAudio: () => void;
 }
@@ -41,7 +37,7 @@ export interface UseRecordingResult {
 const DEFAULT_MAX_RECORDING_MS = 6000;
 
 export function useRecording(params: UseRecordingParams = {}): UseRecordingResult {
-  const { maxRecordingMs = DEFAULT_MAX_RECORDING_MS, onBubbleAdded, onCancel, onError } = params;
+  const { maxRecordingMs = DEFAULT_MAX_RECORDING_MS, onBubbleAdded, onError } = params;
 
   // ── State ────────────────────────────────────────────────────────────────
   const [recPhase, setRecPhase] = useState<RecPhase>("idle");
@@ -183,8 +179,7 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
     setPendingUrl(null);
     setRecordingMs(0);
     setRecPhase("idle");
-    onCancel?.();
-  }, [pendingUrl, onCancel]);
+  }, [pendingUrl]);
 
   // ── Finalize: build the bubble + save to IDB + add to page ───────────
   const finalizeRecording = useCallback(
@@ -220,14 +215,6 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
     [pendingBlob, pendingUrl, onBubbleAdded, onError]
   );
 
-  // ── Redo: discard current, go back to idle (then user can re-tap 🎙) ──
-  const redoRecording = useCallback(() => {
-    if (pendingUrl) URL.revokeObjectURL(pendingUrl);
-    setPendingBlob(null);
-    setPendingUrl(null);
-    setRecPhase("idle");
-  }, [pendingUrl]);
-
   return {
     recPhase,
     recordingMs,
@@ -239,7 +226,6 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
     stopRecording,
     cancelRecording,
     finalizeRecording,
-    redoRecording,
     unlockAudio,
   };
 }

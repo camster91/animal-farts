@@ -9,7 +9,6 @@ interface RecordSheetProps {
   onCancelRecording: () => void;
   onPickEmoji: (emoji: string) => void;
   onRedo: () => void;
-  emojiOptions: string[];
 }
 
 function formatMs(ms: number): string {
@@ -25,8 +24,6 @@ const RecordSheet: FC<RecordSheetProps> = ({
   onStopRecording,
   onPickEmoji,
   onRedo,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  emojiOptions: _unused,
 }) => {
   if (recPhase === "idle") return null;
 

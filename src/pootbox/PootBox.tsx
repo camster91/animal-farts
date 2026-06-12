@@ -2,7 +2,7 @@
 // Rewritten from scratch to consume the v46 architecture:
 // multi-page tabs, random bubble spawn, library picker, and recording flow.
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
-import type { Page, BubbleState, Ripple, Spark, BuiltInSound } from "./types";
+import type { Page, BubbleState, Ripple, BuiltInSound } from "./types";
 import {
   BUILT_IN_SOUNDS,
   MAX_PAGES,
@@ -27,7 +27,8 @@ import { usePhysicsLoop, useSoundPlaying } from "./hooks/usePhysicsLoop";
 import { useRecording } from "./hooks/useRecording";
 import SettingsModal from "./SettingsModal";
 import BubbleCanvas from "./components/BubbleCanvas";
-import TopBar from "./components/TopBar.js";
+import CanvasEffects from "./components/CanvasEffects";
+import TopBar from "./components/TopBar";
 import AddSoundMenu from "./components/AddSoundMenu";
 import RecordSheet from "./components/RecordSheet";
 import SoundLibrary from "./components/SoundLibrary";
@@ -38,61 +39,6 @@ import VolumeSlider from "./components/VolumeSlider";
 import InstallPrompt from "./components/InstallPrompt";
 import UpdatePrompt from "./components/UpdatePrompt";
 import FooterBar from "./components/FooterBar";
-
-// ─── Inline effect components ───────────────────────────────────────────────
-
-function RippleView({ ripple }: { ripple: Ripple }) {
-  return (
-    <div
-      aria-hidden
-      style={{
-        position: "absolute",
-        left: ripple.x,
-        top: ripple.y,
-        width: 0,
-        height: 0,
-        borderRadius: "50%",
-        border: `3px solid ${ripple.color}`,
-        transform: "translate(-50%, -50%)",
-        animation: "pootbox-ripple 0.7s ease-out forwards",
-        pointerEvents: "none",
-        zIndex: 10,
-      }}
-    />
-  );
-}
-
-function SparkView({ spark }: { spark: Spark }) {
-  return (
-    <div
-      aria-hidden
-      style={{
-        position: "absolute",
-        left: spark.x,
-        top: spark.y,
-        width: 8,
-        height: 8,
-        borderRadius: "50%",
-        background: spark.color,
-        transform: "translate(-50%, -50%)",
-        animation: "pootbox-spark 0.6s ease-out forwards",
-        ["--dx" as string]: `${spark.dx * 12}px`,
-        ["--dy" as string]: `${spark.dy * 12}px`,
-        pointerEvents: "none",
-        zIndex: 11,
-        boxShadow: `0 0 6px ${spark.color}`,
-      }}
-    />
-  );
-}
-
-const EMOJI_OPTIONS = [
-  "🎤", "🎸", "🥁", "🎺", "🎹", "🎷",
-  "🐶", "🐱", "🐰", "🦊", "🐻", "🐼",
-  "🦁", "🐯", "🐸", "🐵", "🐔", "🦆",
-  "🐮", "🐷", "🐭", "🐹", "🐨", "🦄",
-  "⭐", "🌈", "🔥", "💧", "🌸", "🍕",
-];
 
 // ─── Main component ─────────────────────────────────────────────────────────
 
@@ -124,7 +70,7 @@ export default function PootBox() {
   const {
     recPhase, recordingMs, micDenied, micPermState,
     startRecording, stopRecording, cancelRecording,
-    finalizeRecording, redoRecording,
+    finalizeRecording,
   } = useRecording({
     onBubbleAdded: (bubble) => {
       if (!activePageId) return;
@@ -134,10 +80,6 @@ export default function PootBox() {
         return;
       }
       setPages(updatedPages);
-    },
-    onCancel: () => {
-      // The RecordSheet shows/hides itself based on recPhase from the hook,
-      // so onCancel doesn't need to do anything here.
     },
     onError: (msg) => { showToast(msg); },
   });
@@ -604,94 +546,17 @@ export default function PootBox() {
         onShowChange={setShowAddMenu}
       />
 
-      {/* Ripples */}
-      {ripples.map(r => <RippleView key={r.id} ripple={r} />)}
-
-      {/* Sparks */}
-      {sparks.map(s => <SparkView key={s.id} spark={s} />)}
-
-      {/* Combo glow */}
-      {comboCount >= 5 && (
-        <div
-          aria-hidden
-          style={{
-            position: "fixed",
-            inset: 0,
-            pointerEvents: "none",
-            background: "radial-gradient(circle at center, rgba(255,215,0,0.15) 0%, transparent 70%)",
-            zIndex: 3,
-          }}
-        />
-      )}
-
-      {/* Combo burst stars */}
-      {comboBurst && comboBurst.particles.map((p, i) => (
-        <div
-          key={`combo-${comboBurst.n}-${i}`}
-          aria-hidden
-          style={{
-            position: "fixed",
-            left: comboBurst.x,
-            top: comboBurst.y,
-            fontSize: "1.5rem",
-            pointerEvents: "none",
-            zIndex: 13,
-            animation: "pootbox-combo-star 0.7s ease-out forwards",
-            ["--dx" as string]: `${p.dx}px`,
-            ["--dy" as string]: `${p.dy}px`,
-          }}
-        >
-          {i % 2 === 0 ? "⭐" : "✨"}
-        </div>
-      ))}
-
-      {/* Confetti */}
-      {confettiBurst > 0 && confettiParticles.map((p, i) => (
-        <div
-          key={`confetti-${confettiBurst}-${i}`}
-          aria-hidden
-          style={{
-            position: "fixed",
-            left: "50%",
-            top: "50%",
-            width: 10,
-            height: 14,
-            borderRadius: 2,
-            background: p.color,
-            pointerEvents: "none",
-            zIndex: 14,
-            animation: "pootbox-confetti 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards",
-            ["--dx" as string]: `${p.dx}px`,
-            ["--dy" as string]: `${p.dy}px`,
-          }}
-        />
-      ))}
-
-      {/* Combo badge */}
-      {comboCount >= 2 && (
-        <div
-          aria-hidden
-          style={{
-            position: "fixed",
-            top: "calc(20px + env(safe-area-inset-top, 0px))",
-            right: 20,
-            background: "rgba(0,0,0,0.65)",
-            color: comboCount >= 5 ? "#FFD700" : "white",
-            padding: "8px 16px",
-            borderRadius: 20,
-            fontSize: "1.4rem",
-            fontWeight: 800,
-            fontFamily: "Fredoka, system-ui, sans-serif",
-            pointerEvents: "none",
-            zIndex: 11,
-            transform: comboCount >= 5 ? "scale(1.15)" : "scale(1)",
-            transition: "transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), color 200ms",
-            boxShadow: comboCount >= 5 ? "0 0 24px rgba(255,215,0,0.6)" : "0 2px 8px rgba(0,0,0,0.2)",
-          }}
-        >
-          ×{comboCount}
-        </div>
-      )}
+      {/* Visual-only effects layer (ripples, sparks, combo, confetti).
+          The stop button and mic-denied banner stay inline below because
+          they need setSoundPlaying and recPhase from the parent. */}
+      <CanvasEffects
+        ripples={ripples}
+        sparks={sparks}
+        comboBurst={comboBurst}
+        confettiBurst={confettiBurst}
+        confettiParticles={confettiParticles}
+        comboCount={comboCount}
+      />
 
       {/* Stop button */}
       {soundPlaying && (
@@ -781,10 +646,9 @@ export default function PootBox() {
           onCancelRecording={cancelRecording}
           onPickEmoji={finalizeRecording}
           onRedo={async () => {
-            redoRecording();
+            cancelRecording();
             await startRecording();
           }}
-          emojiOptions={EMOJI_OPTIONS}
         />
       ) : null}
 
@@ -807,11 +671,8 @@ export default function PootBox() {
         />
       )}
 
-      {/* OnboardingHint removed — first-run intro is sufficient */}
+      {/* Stop button */}
 
-      
-
-      
       {/* Toast */}
       {toastMessage && (
         <div style={{
