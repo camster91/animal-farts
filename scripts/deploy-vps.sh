@@ -73,6 +73,12 @@ ssh "${VPS}" "
 echo "[deploy] swapping container…"
 ssh "${VPS}" "
   set -e
+  # Pre-create the data dir tree and chown to the in-container node user
+  # (UID 1000 in the node:20-alpine base image). Without this, the bind
+  # mount inherits root:root from the host and the container's
+  # fs.mkdirSync('/app/data/uploads', { recursive: true }) fails EACCES.
+  mkdir -p ${DATA_DIR}/uploads
+  chown -R 1000:1000 ${DATA_DIR}
   docker rm -f ${NAME} 2>/dev/null || true
   docker run -d --name ${NAME} --restart unless-stopped \
     -p 127.0.0.1:${PORT_HOST}:${PORT_CONT} \
