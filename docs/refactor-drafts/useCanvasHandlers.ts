@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // useCanvasHandlers.ts — extracted from PootBox.tsx in v52-5
 // Owns: dragRef, blankHoldTimer, blankHoldStartPos, lastShakeAtRef, shakeCountRef,
 //       shakeWindowTimerRef, shake detection useEffect, all 7 pointer handlers,
@@ -38,9 +39,9 @@ export interface UseCanvasHandlersOptions {
   /** Increment combo count (returns new count; handles reset internally) */
   incrementCombo: () => number;
   /** Mutable ref for combo count (used to check milestone) */
-  comboCountRef: React.MutableRefObject<number>;
+  _comboCountRef: React.MutableRefObject<number>;
   /** Unlock audio context (must be stable) */
-  unlockAudio: () => void;
+  _unlockAudio: () => void;
   /** Update pages state (used by onBubblePointerUp to sync position) */
   setPages: (updater: (prev: Page[]) => Page[]) => void;
   /** Remove a bubble (custom: also clean up blob; built-in: just page) */
@@ -81,8 +82,8 @@ export function useCanvasHandlers({
   triggerComboBurst,
   triggerConfetti,
   incrementCombo,
-  comboCountRef,
-  unlockAudio,
+  _comboCountRef,
+  _unlockAudio,
   setPages,
   onRemoveBubble,
   savePagesDebounced,
@@ -104,8 +105,8 @@ export function useCanvasHandlers({
 
   // ── Internal tap-tracking refs ────────────────────────────────────────────
 
-  const lastTapAtRef = useRef(0);
-  const lifetimeTapsRef = useRef(0);
+  const _lastTapAtRef = useRef(0);
+  const _lifetimeTapsRef = useRef(0);
   const comboResetTimerRef = useRef<number | null>(null);
 
   // ── handleBubbleTap ─────────────────────────────────────────────────────────

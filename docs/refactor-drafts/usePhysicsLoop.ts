@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // usePhysicsLoop.ts — extracted from PootBox.tsx in v52-6
 // Owns: raf tick, collision events, ripples, sparks, combo, confetti, lifetimeTapsRef
 
@@ -20,7 +21,7 @@ export interface UsePhysicsLoopParams {
   size: { w: number; h: number };
   settingsRef: React.RefObject<Settings>;
   onCollisionSound: (sound: string, volume: number) => void;
-  onPlayFromBubble: (b: BubbleState, volume: number) => void;
+  _onPlayFromBubble: (b: BubbleState, volume: number) => void;
 }
 
 export function usePhysicsLoop({
@@ -29,7 +30,7 @@ export function usePhysicsLoop({
   size,
   settingsRef,
   onCollisionSound,
-  onPlayFromBubble,
+  _onPlayFromBubble,
 }: UsePhysicsLoopParams) {
   // ── Refs owned by this hook ────────────────────────────────────────────
   const rafRef = useRef<number | null>(null);
