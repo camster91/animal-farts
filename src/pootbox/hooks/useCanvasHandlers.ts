@@ -1,9 +1,10 @@
 // useCanvasHandlers.ts — extracted from PootBox.tsx in v52-5
-// Owns: dragRef, blankHoldTimer, blankHoldStartPos, lastShakeAtRef, shakeCountRef,
-//       shakeWindowTimerRef, shake detection useEffect, all 7 pointer handlers,
+// Owns: dragRef, blankHoldTimer, blankHoldStartPos, all 7 pointer handlers,
 //       handleBubbleTap (tap → ripple + sound + tap-to-delete on custom).
+// Shake detection lives in PootBox (it owns the "open settings + nudge bubbles"
+// behavior); an earlier devicemotion listener here was dead code, removed in v53.
 
-import { useRef, useCallback, useEffect } from "react";
+import { useRef, useCallback } from "react";
 import type { Page, BubbleState, Vec2, Settings } from "../types";
 
 // ─── Drag state shape ─────────────────────────────────────────────────────────
@@ -58,9 +59,6 @@ export interface UseCanvasHandlersResult {
 }
 
 const HOLD_TO_OPEN_SETTINGS_MS = 5000;
-const SHAKE_THRESHOLD_MS = 800;       // ms between shakes
-const SHAKE_WINDOW_MS = 1500;         // total window for counting shakes
-const SHAKES_TO_CLEAR = 3;            // 3 shakes in the window = clear all bubbles
 const TAP_DELETE_DISTANCE_PX = 8;     // movement threshold for tap vs drag
 
 export function useCanvasHandlers(opts: UseCanvasHandlersOptions): UseCanvasHandlersResult {
@@ -77,13 +75,6 @@ export function useCanvasHandlers(opts: UseCanvasHandlersOptions): UseCanvasHand
   const dragRef = useRef<DragState | null>(null);
   const blankHoldTimer = useRef<number | null>(null);
   const blankHoldStartPos = useRef<Vec2 | null>(null);
-
-  // ─── Shake detection ─────────────────────────────────────────────────────
-  // 3 quick shakes (each <800ms apart) within a 1500ms window → stop all sounds.
-
-  const lastShakeAtRef = useRef(0);
-  const shakeCountRef = useRef(0);
-  const shakeWindowTimerRef = useRef<number | null>(null);
 
   // ─── handleBubbleTap (tap → ripple + sound + tap-to-delete on custom) ────
 
@@ -224,49 +215,11 @@ export function useCanvasHandlers(opts: UseCanvasHandlersOptions): UseCanvasHand
     blankHoldStartPos.current = null;
   }, []);
 
-  // ─── Shake detection: count 3 quick shakes → stop all sounds ───────────
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const onDeviceMotion = (e: DeviceMotionEvent) => {
-      const acc = e.accelerationIncludingGravity;
-      if (!acc || acc.x == null || acc.y == null || acc.z == null) return;
-      const magnitude = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
-      // A "shake" is a peak in acceleration above 2.5g with rapid deceleration
-      if (magnitude > 18) {
-        const now = performance.now();
-        if (now - lastShakeAtRef.current < SHAKE_THRESHOLD_MS) {
-          shakeCountRef.current++;
-          if (shakeCountRef.current >= SHAKES_TO_CLEAR) {
-            // Stop all sounds + reset
-            // (PootBox will wire this via a separate ref or a callback; for now we
-            //  reset the counter and let the user know via a brief flash)
-            shakeCountRef.current = 0;
-            if (shakeWindowTimerRef.current) {
-              window.clearTimeout(shakeWindowTimerRef.current);
-              shakeWindowTimerRef.current = null;
-            }
-          } else {
-            if (shakeWindowTimerRef.current) window.clearTimeout(shakeWindowTimerRef.current);
-            shakeWindowTimerRef.current = window.setTimeout(() => {
-              shakeCountRef.current = 0;
-              shakeWindowTimerRef.current = null;
-            }, SHAKE_WINDOW_MS);
-          }
-        } else {
-          shakeCountRef.current = 1;
-          if (shakeWindowTimerRef.current) window.clearTimeout(shakeWindowTimerRef.current);
-          shakeWindowTimerRef.current = window.setTimeout(() => {
-            shakeCountRef.current = 0;
-            shakeWindowTimerRef.current = null;
-          }, SHAKE_WINDOW_MS);
-        }
-        lastShakeAtRef.current = now;
-      }
-    };
-    window.addEventListener("devicemotion", onDeviceMotion);
-    return () => window.removeEventListener("devicemotion", onDeviceMotion);
-  }, []);
+  // Shake detection lives in PootBox (it owns the "open settings + nudge
+  // bubbles" behavior). An earlier version of this hook had its own
+  // devicemotion listener that counted shakes and reset itself without
+  // doing anything user-visible. That double-listener + dead-counter was
+  // removed — see the v53 code review.
 
   return {
     onBubblePointerDown,

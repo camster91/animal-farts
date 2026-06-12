@@ -81,11 +81,25 @@ export function useCanvasState({
       vel: { x: 0, y: 0 },
     }));
 
+    // Write to the ref (physics source of truth). The state mirror
+    // happens in the effect below so the ref→state setState call can
+    // carry the lint-disable that documents why it's the right pattern
+    // (the physics loop also writes to bubbles per-frame, so a
+    // useMemo-derived bubbles would fight it).
     bubblesRef.current = synced;
   }, [activePageId, pages, size.w, size.h]);
 
   useEffect(() => {
+    // Mirror the ref into React state once on mount + on page/size
+    // change. The previous version only wrote the ref, so on the first
+    // render after a sync the `bubbles` state was still `[]` — which
+    // meant `alreadyAddedKeys` was empty and SoundLibrary would show
+    // every built-in as not-yet-added, letting the kid double-add a
+    // duplicate that the dedupe helper would then silently swallow
+    // with an "Already on this page!" toast.
     syncBubblesToActivePage();
+    setBubbles(bubblesRef.current);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
   }, [syncBubblesToActivePage]);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
