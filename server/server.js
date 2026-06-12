@@ -25,18 +25,59 @@
 // want, no uniqueness check needed since it's local).
 //
 import express from "express";
-import cors from "cors";
 import multer from "multer";
 import Database from "better-sqlite3";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
+import rateLimit from "express-rate-limit";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 5174;
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+// ─── Audio upload hardening ─────────────────────────────────────────────────
+// Only these extensions are allowed; anything else is rejected before the file
+// is written. The previous mimetype-prefix allowlist ("audio/*") plus the
+// fallback to the original filename's extension allowed a stored XSS via a
+// .html or .svg upload (fileFilter passed, extension came from originalname).
+const ALLOWED_AUDIO_EXTS = new Set(["webm", "m4a", "mp3", "wav", "ogg"]);
+const ALLOWED_MIMETYPES = new Set([
+  "audio/webm",
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/wav",
+  "audio/wave",
+  "audio/x-wav",
+  "audio/ogg",
+]);
+
+// ─── Content moderation (single source of truth) ────────────────────────────
+const BANNED_WORDS = ["fuck", "shit", "bitch", "cunt", "nigger", "fag", "kike"];
+
+function containsBannedWord(s) {
+  const lower = String(s || "").toLowerCase();
+  return BANNED_WORDS.some((w) => lower.includes(w));
+}
+
+// ─── Path-traversal-safe unlink ─────────────────────────────────────────────
+function safeUnlink(filename) {
+  // Resolve the target path and assert it stays inside UPLOAD_DIR. A row
+  // whose `filename` was somehow "../server.js" used to unlink the source.
+  const target = path.resolve(UPLOAD_DIR, filename);
+  const root = path.resolve(UPLOAD_DIR) + path.sep;
+  if (!target.startsWith(root) && target !== path.resolve(UPLOAD_DIR)) {
+    throw new Error("refusing to unlink outside upload dir");
+  }
+  try {
+    fs.unlinkSync(target);
+  } catch (err) {
+    if (err.code !== "ENOENT") throw err;
+  }
+}
 
 // SQLite DB
 const db = new Database(path.join(__dirname, "farts.db"));
@@ -110,19 +151,77 @@ db.exec(`
 `);
 
 const app = express();
-app.use(cors());
+// CORS: same-origin SPA, so no cross-origin headers needed. The previous
+// `app.use(cors())` was a wildcard that let any third-party site hit the API
+// with a custom x-device-id and exercise the full social graph + uploads.
 app.use(express.json({ limit: "1mb" })); // for social endpoints (users, follows, comments)
 
+// ─── Rate limiters (per IP) ─────────────────────────────────────────────────
+// "trust proxy" is NOT enabled, so these count actual client IPs. The upload
+// and share-code endpoints are the most abuse-prone.
+const generalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120, // 2 req/sec sustained
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 6, // 1 upload per 10s
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const shareLookupLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30, // share codes have 1M keyspace; 30/min still allows legit "type a friend's code" UX
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const shareMintLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 6,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use(generalLimiter);
+
 // Serve uploaded audio files
-app.use("/uploads", express.static(UPLOAD_DIR, { maxAge: "7d" }));
+app.use(
+  "/uploads",
+  express.static(UPLOAD_DIR, {
+    maxAge: "7d",
+    setHeaders: (res) => {
+      // Defense in depth: even if a non-audio file ever lands in /uploads
+      // (regression of the fileFilter bypass), browsers must not sniff it.
+      res.setHeader("X-Content-Type-Options", "nosniff");
+    },
+  }),
+);
 
 // Serve the built client (dist/) as static assets — single-port deployment
 // sw.js is explicitly NOT cached (maxAge: 0) so the browser sees new versions
 // on the next visit. Without this, the SW would serve stale code for an hour
 // after each deploy and the new-version toast would never fire.
 const DIST_DIR = path.join(__dirname, "..", "dist");
-app.use("/sw.js", express.static(path.join(DIST_DIR, "sw.js"), { maxAge: 0, etag: true }));
-app.use(express.static(DIST_DIR, { maxAge: "1h" }));
+app.use(
+  "/sw.js",
+  express.static(path.join(DIST_DIR, "sw.js"), {
+    maxAge: 0,
+    etag: true,
+    setHeaders: (res) => {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Cache-Control", "no-cache, must-revalidate");
+    },
+  }),
+);
+app.use(
+  express.static(DIST_DIR, {
+    maxAge: "1h",
+    setHeaders: (res) => {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+    },
+  }),
+);
 
 // Privacy page (static, served from dist/)
 app.get("/privacy.html", (req, res) => {
@@ -143,17 +242,24 @@ app.get(/^(?!\/api|\/uploads).*/, (req, res) => {
 const storage = multer.diskStorage({
   destination: UPLOAD_DIR,
   filename: (req, file, cb) => {
-    // Pick extension from mimetype
-    let ext = "bin";
-    if (file.mimetype.includes("webm")) ext = "webm";
-    else if (file.mimetype.includes("mp4")) ext = "m4a";
-    else if (file.mimetype.includes("mpeg") || file.mimetype.includes("mp3")) ext = "mp3";
-    else if (file.mimetype.includes("wav")) ext = "wav";
-    else if (file.mimetype.includes("ogg")) ext = "ogg";
-    // Fallback to original filename ext
-    if (ext === "bin" && file.originalname) {
-      const m = file.originalname.match(/\.([a-z0-9]{2,4})$/i);
-      if (m) ext = m[1].toLowerCase();
+    // Resolve the extension from the *mimetype only* — never trust
+    // `originalname` (it was a stored-XSS vector). If we don't recognize the
+    // mimetype, reject the file in the fileFilter below; the only way to get
+    // here with an unknown mimetype is if the fileFilter was bypassed.
+    let ext = "";
+    if (file.mimetype === "audio/webm") ext = "webm";
+    else if (file.mimetype === "audio/mp4") ext = "m4a";
+    else if (file.mimetype === "audio/mpeg" || file.mimetype === "audio/mp3") ext = "mp3";
+    else if (
+      file.mimetype === "audio/wav" ||
+      file.mimetype === "audio/wave" ||
+      file.mimetype === "audio/x-wav"
+    )
+      ext = "wav";
+    else if (file.mimetype === "audio/ogg") ext = "ogg";
+    if (!ALLOWED_AUDIO_EXTS.has(ext)) {
+      cb(new Error("Only audio files allowed"));
+      return;
     }
     const id = crypto.randomBytes(8).toString("hex");
     cb(null, `${id}.${ext}`);
@@ -163,7 +269,11 @@ const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB cap
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith("audio/")) cb(null, true);
+    // Strict mimetype allowlist (no more `audio/*` prefix). The filename
+    // callback then re-validates the *resolved* extension. The two checks
+    // together close the XSS vector where a .html file with `audio/x-foo`
+    // mimetype used to land in /uploads as HTML.
+    if (ALLOWED_MIMETYPES.has(file.mimetype)) cb(null, true);
     else cb(new Error("Only audio files allowed"));
   },
 });
@@ -200,15 +310,17 @@ app.post("/api/feedback", (req, res) => {
 const SHARE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L confusion
 
 function generateShareCode() {
-  // 32^4 = 1M combinations, plenty for a kids' toy
+  // 32^4 = 1M combinations. Use crypto-random for the per-char picks so the
+  // sequence is unpredictable from observed outputs (the previous Math.random
+  // implementation was brute-forceable without a rate limit).
   let s = "";
   for (let i = 0; i < 4; i++) {
-    s += SHARE_ALPHABET[Math.floor(Math.random() * SHARE_ALPHABET.length)];
+    s += SHARE_ALPHABET[crypto.randomInt(0, SHARE_ALPHABET.length)];
   }
   return s;
 }
 
-app.post("/api/share", (req, res) => {
+app.post("/api/share", shareMintLimiter, (req, res) => {
   const { audioUrl, name, emoji } = req.body || {};
   if (typeof audioUrl !== "string" || !audioUrl) {
     return res.status(400).json({ error: "audioUrl is required" });
@@ -232,7 +344,7 @@ app.post("/api/share", (req, res) => {
   }
 });
 
-app.get("/api/share/:code", (req, res) => {
+app.get("/api/share/:code", shareLookupLimiter, (req, res) => {
   const code = String(req.params.code || "").toUpperCase().slice(0, 4);
   if (!/^[A-Z0-9]{4}$/.test(code)) {
     return res.status(400).json({ error: "Invalid code format" });
@@ -269,21 +381,39 @@ app.get("/api/recordings", (req, res) => {
 });
 
 // Upload a recording
-app.post("/api/recordings", upload.single("audio"), (req, res) => {
+app.post("/api/recordings", uploadLimiter, (req, res, next) => {
+  upload.single("audio")(req, res, (err) => {
+    // Convert multer errors (including fileFilter rejections) into 4xx so
+    // the client doesn't see a 500 + HTML stack trace when the file is the
+    // wrong type. The HTML response is also why the XSS attempts looked
+    // "almost worked" — they didn't, but the error page was HTML.
+    if (err) {
+      const msg = err.message || "Upload failed";
+      const status = /file too large/i.test(msg) ? 413 : 400;
+      return res.status(status).json({ error: msg });
+    }
+    next();
+  });
+}, (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No audio file provided" });
     const { name, emoji, kidName, durationSec } = req.body;
-    const deviceId = req.headers["x-device-id"] || (req.body && req.body.deviceId);
+    // Require the x-device-id header (consistent with every other write
+    // endpoint). The previous fallback to req.body.deviceId was an extra
+    // spoofing surface and inconsistent with the rest of the API.
+    const deviceId = req.headers["x-device-id"];
     if (!name || !deviceId) {
-      if (req.file) fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: "Missing name or deviceId" });
+      if (req.file) safeUnlink(req.file.filename);
+      return res.status(400).json({ error: "Missing name or x-device-id" });
     }
-    // Basic content moderation — block obvious bad words (extend as needed)
-    const banned = ["fuck", "shit", "bitch", "cunt", "nigger", "fag", "kike"];
-    const lowerName = (name + " " + (emoji || "")).toLowerCase();
-    if (banned.some((w) => lowerName.includes(w))) {
-      fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: "Name contains blocked words" });
+    if (typeof name !== "string" || String(name).length > 40) {
+      if (req.file) safeUnlink(req.file.filename);
+      return res.status(400).json({ error: "Name must be a string up to 40 chars" });
+    }
+    // Content moderation (single source of truth in containsBannedWord).
+    if (containsBannedWord(name) || containsBannedWord(emoji)) {
+      if (req.file) safeUnlink(req.file.filename);
+      return res.status(400).json({ error: "Name or emoji contains blocked words" });
     }
     const result = db.prepare(`
       INSERT INTO recordings (name, emoji, device_id, kid_name, filename, duration_sec, created_at)
@@ -308,6 +438,9 @@ app.post("/api/recordings", upload.single("audio"), (req, res) => {
     });
   } catch (err) {
     console.error("Upload failed:", err);
+    if (req.file) {
+      try { safeUnlink(req.file.filename); } catch { /* ignore */ }
+    }
     res.status(500).json({ error: "Upload failed" });
   }
 });
@@ -340,7 +473,7 @@ app.delete("/api/recordings/:id", (req, res) => {
   const row = db.prepare("SELECT filename, device_id FROM recordings WHERE id = ?").get(id);
   if (!row) return res.status(404).json({ error: "Not found" });
   if (row.device_id !== deviceId) return res.status(403).json({ error: "Not your recording" });
-  try { fs.unlinkSync(path.join(UPLOAD_DIR, row.filename)); } catch {}
+  safeUnlink(row.filename);
   db.prepare("DELETE FROM votes WHERE recording_id = ?").run(id);
   db.prepare("DELETE FROM comments WHERE recording_id = ?").run(id);
   db.prepare("DELETE FROM recordings WHERE id = ?").run(id);
@@ -554,9 +687,7 @@ app.post("/api/recordings/:id/comments", (req, res) => {
   const body = (req.body && req.body.body || "").toString().trim();
   if (!body) return res.status(400).json({ error: "Empty comment" });
   if (body.length > 280) return res.status(400).json({ error: "Comment too long (max 280)" });
-  // Same banned words as recording names
-  const banned = ["fuck", "shit", "bitch", "cunt", "nigger", "fag", "kike"];
-  if (banned.some((w) => body.toLowerCase().includes(w))) {
+  if (containsBannedWord(body)) {
     return res.status(400).json({ error: "Comment contains blocked words" });
   }
   getOrCreateUser(deviceId);
@@ -643,6 +774,14 @@ app.get("/api/users", (req, res) => {
   res.json({ users: rows.map((u) => userToPublic(u, viewer)) });
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`💥 Animal Farts server running on http://localhost:${PORT}`);
-});
+app.listen(PORT, "0.0.0.0")
+  .on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(`[server] port ${PORT} is already in use. Exiting.`);
+      process.exit(1);
+    }
+    throw err;
+  })
+  .on("listening", () => {
+    console.log(`💥 Animal Farts server running on http://localhost:${PORT}`);
+  });
