@@ -216,7 +216,7 @@ export function useCanvasHandlers(opts: UseCanvasHandlersOptions): UseCanvasHand
 
   // ─── Pointer up on blank canvas (clear 5s hold timer) ──────────────────
 
-  const onBlankPointerUp = useCallback((_e: React.PointerEvent) => {
+  const onBlankPointerUp = useCallback(() => {
     if (blankHoldTimer.current) {
       window.clearTimeout(blankHoldTimer.current);
       blankHoldTimer.current = null;

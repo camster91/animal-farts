@@ -48,8 +48,9 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
   const [pendingBlob, setPendingBlob] = useState<Blob | null>(null);
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const [recordingMs, setRecordingMs] = useState(0);
-  const [micPermState, setMicPermState] = useState<"prompt" | "denied" | "granted" | "unsupported">("prompt");
-  const [micDenied, setMicDenied] = useState(false);
+  // micPermState + micDenied are declared further down with deferred
+  // initializers (they need to read navigator.permissions at init time
+  // without setting state in an effect).
 
   // ── Refs ────────────────────────────────────────────────────────────────
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -60,11 +61,17 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
   const audioUnlockedRef = useRef(false);
 
   // ── Track permission state ─────────────────────────────────────────────
+  // We use a "deferred" initial state: if the browser doesn't expose
+  // navigator.permissions, we set 'unsupported' synchronously in the
+  // initializer (which is NOT an effect, so the lint rule about cascading
+  // renders doesn't trip). The effect then only handles the supported case.
+  const [micPermState, setMicPermState] = useState<"prompt" | "denied" | "granted" | "unsupported">(() => {
+    if (typeof navigator === "undefined" || !navigator.permissions) return "unsupported";
+    return "prompt"; // optimistic default; effect refines to actual state
+  });
+  const [micDenied, setMicDenied] = useState(false);
   useEffect(() => {
-    if (typeof navigator === "undefined" || !navigator.permissions) {
-      setMicPermState("unsupported");
-      return;
-    }
+    if (typeof navigator === "undefined" || !navigator.permissions) return;
     let cancelled = false;
     navigator.permissions
       .query({ name: "microphone" as PermissionName })

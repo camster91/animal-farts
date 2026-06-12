@@ -178,7 +178,7 @@ export function usePhysicsLoop(params: UsePhysicsLoopParams): UsePhysicsLoopResu
   // (Alternative: pass it through params from the tap handler, but the raf loop
   //  and tap handler both need it, so a ref-based approach is cleaner.)
   const spawnRippleRef = useRef(spawnRipple);
-  spawnRippleRef.current = spawnRipple;
+  useEffect(() => { spawnRippleRef.current = spawnRipple; });
 
   // ── Cleanup on unmount ───────────────────────────────────────────────
   useEffect(() => {
