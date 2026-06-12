@@ -7,7 +7,6 @@ import { stepPhysics } from "./physics";
 import {
   BUILT_IN_SOUNDS,
   MAX_PAGES,
-  DEFAULT_PAGE_EMOJI,
   FRICTION,
   WALL_BOUNCE,
   COLLISION_BOUNCE,
@@ -16,22 +15,21 @@ import {
   COLLISION_AUDIO_WINDOW_MS,
 } from "./constants";
 import {
-  loadAllPages,
-  savePage,
   addBubbleToPageDedup,
   removeBubbleFromPage,
-  deletePagePure,
   generateShareCode,
   saveBlob,
   deleteBlob,
   saveRecordingEmoji,
   deleteRecordingEmoji,
   createDefaultPage,
+  savePage,
 } from "./recordings";
 import { playSingle, stopAllSounds, isAnySoundPlaying } from "./audioManager";
 import { useSettings } from "./hooks/useSettings";
 import { useToast } from "./hooks/useToast";
 import { useModalState } from "./hooks/useModalState";
+import { usePagesState } from "./hooks/usePagesState";
 import SettingsModal from "./SettingsModal";
 import BubbleCanvas from "./components/BubbleCanvas";
 import TopBar from "./components/TopBar.js";
@@ -135,14 +133,13 @@ export default function PootBox() {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
-  // Pages
-  const [pages, setPages] = useState<Page[]>([]);
-  const [activePageId, setActivePageId] = useState<string | null>(null);
-
-  // Home category (which bucket the default page shows)
-  const [homeCategory, setHomeCategory] = useState<string>(() => {
-    try { return localStorage.getItem("pootbox-home-category-v1") || "animal"; } catch { return "animal"; }
-  });
+  // Pages state (extracted to usePagesState hook)
+  const {
+    pages, activePageId, homeCategory,
+    setPages, setActivePageId, setHomeCategory,
+    addPage, removePage, renamePage,
+    savePagesDebounced,
+  } = usePagesState();
 
   // Bubbles on active page
   const [bubbles, setBubbles] = useState<BubbleState[]>([]);
@@ -232,7 +229,6 @@ export default function PootBox() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordingTimerRef = useRef<number | null>(null);
   const recordingStartRef = useRef(0);
-  const saveDebounceRef = useRef<number | null>(null);
   const comboBurstTimeoutRef = useRef<number | null>(null);
 
   const triggerComboBurst = useCallback((x: number, y: number, n: number) => {
@@ -275,31 +271,6 @@ export default function PootBox() {
     return () => ro.disconnect();
   }, []);
 
-  // ── Load pages on mount ────────────────────────────────────────────────
-
-  useEffect(() => {
-    void loadAllPages().then((loaded) => {
-      if (loaded.length === 0) {
-        const defaultPage = createDefaultPage(homeCategory);
-        setPages([defaultPage]);
-        setActivePageId("page:default");
-        void savePage(defaultPage);
-      } else {
-        setPages(loaded);
-        setActivePageId(loaded[0].id);
-      }
-    });
-  }, []);
-
-  // ── Persist homeCategory + update default page when it changes ─────────
-
-  // Persist to localStorage + sync default page bubbles when homeCategory changes.
-  // The setHomeCategory handler below does the side effects directly (no effect),
-  // which keeps the setState-in-effect lint happy and avoids a redundant render.
-  useEffect(() => {
-    try { localStorage.setItem("pootbox-home-category-v1", homeCategory); } catch { /* best-effort */ }
-  }, [homeCategory]);
-
   // ── Sync bubblesRef when active page changes ────────────────────────────
 
   useEffect(() => {
@@ -320,15 +291,6 @@ export default function PootBox() {
 
     bubblesRef.current = synced;
   }, [activePageId, pages, size.w, size.h]);
-
-  // ── Debounced save pages ───────────────────────────────────────────────
-
-  const savePagesDebounced = useCallback((pagesToSave: Page[]) => {
-    if (saveDebounceRef.current) window.clearTimeout(saveDebounceRef.current);
-    saveDebounceRef.current = window.setTimeout(() => {
-      void savePage(pagesToSave.find(p => p.id === activePageId) ?? pagesToSave[0]);
-    }, 500);
-  }, [activePageId]);
 
   // ── Mic permission pre-check ──────────────────────────────────────────
 
@@ -469,7 +431,6 @@ export default function PootBox() {
 
   useEffect(() => {
     return () => {
-      if (saveDebounceRef.current) window.clearTimeout(saveDebounceRef.current);
       if (comboResetTimerRef.current) window.clearTimeout(comboResetTimerRef.current);
       if (comboBurstTimeoutRef.current) window.clearTimeout(comboBurstTimeoutRef.current);
       if (blankHoldTimer.current) window.clearTimeout(blankHoldTimer.current);
@@ -635,71 +596,6 @@ export default function PootBox() {
     const updated = await removeBubbleFromPage(activePageId, id);
     setPages(prev => prev.map(p => p.id === updated.id ? updated : p));
   }, [activePageId, bubbles]);
-
-  // ── Add page ──────────────────────────────────────────────────────────
-
-  const onAddPage = useCallback(() => {
-    if (pages.length >= MAX_PAGES) return;
-    // When adding the first new page (only the default exists), seed it with homeCategory bubbles
-    const seedBubbles = pages.length === 1
-      ? createDefaultPage(homeCategory).bubbles
-      : [];
-    const newPage: Page = {
-      id: `page:${Date.now()}`,
-      name: "New Page",
-      emoji: DEFAULT_PAGE_EMOJI,
-      bubbles: seedBubbles,
-      createdAt: Date.now(),
-    };
-    setPages(prev => [...prev, newPage]);
-    setActivePageId(newPage.id);
-    void savePage(newPage);
-  }, [pages.length, homeCategory]);
-
-  // ── Select page ───────────────────────────────────────────────────────
-
-  const onSelectPage = useCallback((pageId: string) => {
-    setActivePageId(pageId);
-  }, []);
-
-  // ── Rename page ───────────────────────────────────────────────────────
-
-  const onRenamePage = useCallback((pageId: string, newName: string, newEmoji: string) => {
-    setPages(prev => {
-      const updated = prev.map(p =>
-        p.id === pageId ? { ...p, name: newName, emoji: newEmoji } : p
-      );
-      const changed = updated.find(p => p.id === pageId);
-      if (changed) void savePage(changed);
-      return updated;
-    });
-  }, []);
-
-  // ── Delete page ───────────────────────────────────────────────────────
-
-  const onDeletePage = useCallback(async (pageId: string) => {
-    const { pages: updatedPages, removedBlobs } = deletePagePure(pages, pageId);
-    if (updatedPages.length === pages.length) return; // nothing changed
-
-    // Delete blobs for custom recordings on this page
-    for (const blobId of removedBlobs) {
-      await deleteBlob(blobId);
-      deleteRecordingEmoji(blobId);
-    }
-
-    setPages(updatedPages);
-
-    // Switch to another page if the deleted one was active
-    if (activePageId === pageId) {
-      const remaining = updatedPages.filter(p => p.id !== pageId);
-      setActivePageId(remaining[0]?.id ?? null);
-    }
-
-    // Persist all remaining pages
-    for (const p of updatedPages) {
-      void savePage(p);
-    }
-  }, [pages, activePageId]);
 
   // ── Play sound from bubble ────────────────────────────────────────────
 
@@ -941,10 +837,10 @@ export default function PootBox() {
       <TopBar
         pages={pages}
         activePageId={activePageId ?? ""}
-        onSelectPage={onSelectPage}
-        onAddPage={onAddPage}
-        onRenamePage={onRenamePage}
-        onDeletePage={onDeletePage}
+        onSelectPage={setActivePageId}
+        onAddPage={addPage}
+        onRenamePage={renamePage}
+        onDeletePage={removePage}
         canDelete={pages.length > 1}
         volume={settings.volume}
         onVolumeClick={() => setShowVolume(true)}
@@ -1080,7 +976,7 @@ export default function PootBox() {
       <AddSoundMenu
         onRecord={() => void startRecording()}
         onPickFromLibrary={() => setShowLibrary(true)}
-        onAddNewPage={onAddPage}
+        onAddNewPage={addPage}
         onOpenSettings={() => setShowSettings(true)}
         pagesCount={pages.length}
         maxPages={MAX_PAGES}
