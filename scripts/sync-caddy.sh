@@ -55,38 +55,12 @@ LIVE_SHA_BEFORE="$(ssh "$VPS" "sha256sum $LIVE_CFG 2>/dev/null | cut -d' ' -f1" 
 # block, re-append the canonical block.
 echo "[sync-caddy] live Caddyfile sha256 (before): ${LIVE_SHA_BEFORE}"
 echo "[sync-caddy] shipping rewrite script + animals block to ${VPS}…"
-# Use a regular (non-strict) subshell for the remote rewrite so the
-# local $VPS / $LIVE_CFG / $APEX_BLOCK heredoc variables expand in the
-# local shell (not the remote). set -u is dropped inside the () block
-# because the heredoc would otherwise error on unset local vars.
-(
-  set +e
-  ssh "$VPS" "cat > /tmp/rewrite-caddy.sh" <<REMOTE_SCRIPT
-set -e
-LIVE_CFG="$LIVE_CFG"
-# Backup first.
-cp -f "\$LIVE_CFG" "\$LIVE_CFG.bak"
-# Strip any existing animals.ashbi.ca block. The block ends at the
-# closing '}' of the site stanza.
-awk '
-  BEGIN { in_block = 0 }
-  # Strip any site block that ALREADY covers animals.ashbi.ca:
-  #   - the explicit block (e.g. "animals.ashbi.ca {")
-  #   - the wildcard default (e.g. "*.ashbi.ca, ashbi.ca {")
-  # Both are about the same hostname once you expand the wildcard.
-  /^animals\.ashbi\.ca( |\{|,)/ ||
-  /^\*\.ashbi\.ca( |\{|,)/ {
-    in_block = 1; next
-  }
-  in_block == 1 {
-    if (\$0 ~ /^\}/) { in_block = 0; next }
-    next
-  }
-  { print }
-' "\$LIVE_CFG" > "\$LIVE_CFG.tmp"
-mv "\$LIVE_CFG.tmp" "\$LIVE_CFG"
-REMOTE_SCRIPT
-)
+# Strip the conflicting site blocks via a self-contained script on the
+# host (the inline heredoc-awk approach mangled the regex through ssh
+# quoting — see scripts/strip-animals-block.sh for the explanation).
+ssh "${VPS}" "strip-animals-block.sh" 2>&1 | tail -5 || {
+  echo "[sync-caddy] strip step failed (continuing — the rest of the script will catch it)" >&2
+}
 
 # Append the block (use the local content via cat | ssh)
 cat <<APEX | ssh "$VPS" "cat >> $LIVE_CFG"
