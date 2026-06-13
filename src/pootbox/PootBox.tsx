@@ -132,7 +132,6 @@ export default function PootBox() {
   const comboCountRef = useRef(0);
   const lastTapAtRef = useRef(0);
   const comboResetTimerRef = useRef<number | null>(null);
-  const lastCirclePlayRef = useRef<Map<string, number>>(new Map());
 
   // Toast helper
   // (no longer needed — useToast hook provides showToast)
@@ -159,7 +158,7 @@ export default function PootBox() {
       const acc = e.acceleration;
       if (!acc || acc.x === null || acc.y === null || acc.z === null) return;
       const mag = Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
-      if (mag > 22) {
+      if (mag > 18) {
         const now = Date.now();
         if (now - lastShakeAtRef.current > 1000) {
           shakeCountRef.current = 0;
@@ -170,6 +169,9 @@ export default function PootBox() {
         if (shakeWindowTimerRef.current) window.clearTimeout(shakeWindowTimerRef.current);
         shakeWindowTimerRef.current = window.setTimeout(() => { shakeCountRef.current = 0; }, 2000);
         if (shakeCountRef.current >= 3) {
+          stopAllSounds();
+          setSoundPlaying(false);
+          showToast("🛑 Shaken!");
           setShowSettings(true);
           shakeCountRef.current = 0;
           // Nudge all bubbles
@@ -183,6 +185,9 @@ export default function PootBox() {
     };
     window.addEventListener("devicemotion", handler);
     return () => window.removeEventListener("devicemotion", handler);
+    // setSoundPlaying and showToast are stable (useState setter), so
+    // an empty deps array is intentional — the handler captures the
+    // latest refs but doesn't need to auto-update when they change.
   }, []);
 
   // ── Sound playing poll (extracted to useSoundPlaying) ─────────────────
@@ -269,12 +274,12 @@ export default function PootBox() {
     setTimeout(() => setRipples((prev: Ripple[]) => prev.filter((r: Ripple) => r.id !== id)), 700);
   }, []);
 
-  // Play a sound from a bubble (debounced — max once per 250ms per bubble)
+  // Play a sound from a bubble. The single-voice policy in audioManager.ts
+  // already stops the previous sound before playing the new one, so we
+  // don't need a per-bubble debounce — kids can spam the same emoji
+  // and each tap feels instant.
   const playFromBubble = useCallback((b: BubbleState, volume: number) => {
-    const now = performance.now();
-    const last = lastCirclePlayRef.current.get(b.id) ?? 0;
-    if (now - last < 250) return;
-    lastCirclePlayRef.current.set(b.id, now);
+    try { navigator.vibrate(20); } catch { /* ignore */ }
     playSingle(b.sound, volume);
   }, []);
 
