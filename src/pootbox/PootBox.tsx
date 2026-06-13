@@ -332,22 +332,12 @@ export default function PootBox() {
   } = useCanvasHandlers({
     canvasRef,
     bubblesRef,
-    settingsRef,
     activePageId,
-    setShowPlayedFor,
     setPages,
     onRemoveBubble,
     savePagesDebounced,
-    onSpawnRipple: spawnRipple,
-    onPlayFromBubble: playFromBubble,
     onBubbleTap: handleBubbleTap,
     onSettingsOpen: () => setShowSettings(true),
-    onFirstTap: () => {
-      if (showOnboarding) {
-        setShowOnboarding(false);
-        try { localStorage.setItem("pootbox-onboarded-v2", "1"); } catch { /* ignore */ }
-      }
-    },
   });
 
   // ── Render ────────────────────────────────────────────────────────────
