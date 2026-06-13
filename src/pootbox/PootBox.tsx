@@ -495,6 +495,7 @@ export default function PootBox() {
           onGenerateCode={async () => generateShareCode()}
           onCopyCode={(c) => { try { void navigator.clipboard?.writeText(c); } catch { /* ignore */ } }}
           onLookupCode={async (code) => {
+            if (!navigator.onLine) return { __offline: true, code };
             try {
               const r = await fetch(`/api/share/${code}`);
               if (!r.ok) return null;

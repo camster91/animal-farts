@@ -6,16 +6,21 @@ interface ShareSheetProps {
   onClose: () => void;
   onGenerateCode?: () => Promise<string>;
   onCopyCode?: (code: string) => void;
-  onLookupCode?: (code: string) => Promise<SharedSound | null>;
+  onLookupCode?: (code: string) => Promise<SharedSound | OfflineSignal | null>;
   onAddAsPage?: (data: SharedSound) => void;
 }
 
 interface SharedSound {
   code: string;
   audioUrl: string;
-  name: string;
-  emoji: string;
-  createdAt?: number;
+  name?: string;
+  emoji?: string;
+}
+
+/** Returned by onLookupCode when the device is offline */
+interface OfflineSignal {
+  __offline: true;
+  code: string;
 }
 
 export default function ShareSheet({
@@ -32,6 +37,7 @@ export default function ShareSheet({
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupResult, setLookupResult] = useState<SharedSound | null>(null);
   const [lookupError, setLookupError] = useState(false);
+  const [lookupOffline, setLookupOffline] = useState(false);
 
   // share mode: generate code on mount
   useEffect(() => {
@@ -49,9 +55,14 @@ export default function ShareSheet({
     if (trimmed.length < 4 || !onLookupCode) return;
     setLookupLoading(true);
     setLookupError(false);
+    setLookupOffline(false);
     setLookupResult(null);
     try {
       const result = await onLookupCode(trimmed);
+      if (result && "__offline" in result) {
+        setLookupOffline(true);
+        return;
+      }
       setLookupResult(result);
       if (!result) setLookupError(true);
     } catch {
@@ -238,6 +249,22 @@ export default function ShareSheet({
                 }}
               >
                 Code not found
+              </p>
+            )}
+
+            {lookupOffline && (
+              <p
+                style={{
+                  margin: "0 0 12px",
+                  fontSize: "0.85rem",
+                  color: "#92400E",
+                  background: "#FEF3C7",
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  textAlign: "center",
+                }}
+              >
+                You're offline — share codes need internet to look up. Try a code you've already used, or come back when you're connected.
               </p>
             )}
 
