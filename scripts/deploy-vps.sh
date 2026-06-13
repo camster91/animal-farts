@@ -99,6 +99,9 @@ for i in {1..30}; do
   sleep 1
 done
 
+echo "[deploy] re-asserting Caddy apex block (resilient against sibling deploys)…"
+bash "$(dirname "$0")/sync-caddy.sh" 2>&1 | tail -5
+
 echo "[deploy] checking live site…"
 curl -sI https://animals.ashbi.ca/ | head -3
 echo "[deploy] share-code POST as a final smoke…"
