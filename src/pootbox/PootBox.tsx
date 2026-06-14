@@ -81,6 +81,11 @@ export default function PootBox() {
       }
       setPages(updatedPages);
     },
+    // v60: confirm the recording saved. Fires AFTER the local IDB
+    // write succeeds; failure path returns early inside the hook.
+    onSaved: (bubble) => {
+      showToast(`${bubble.emoji} Saved!`);
+    },
     onUploadComplete: (bubbleId, serverAudioUrl) => {
       // The fire-and-forget server upload succeeded. Swap the bubble's
       // blobUrl + sound from the dead blob: URL to the server-issued

@@ -15,6 +15,10 @@ export interface UseRecordingParams {
   maxRecordingMs?: number;  // default 6000
   /** Called when finalizeRecording adds a new bubble to the active page */
   onBubbleAdded?: (bubble: BubbleState) => void;
+  /** Called AFTER the local IDB save succeeds + the bubble is
+   *  on the canvas. v60: lets the parent show a "🎤 Saved!" toast
+   *  so the kid knows the mic capture worked. Wired to showToast. */
+  onSaved?: (bubble: BubbleState) => void;
   /** Called when the fire-and-forget server upload of a recorded
    *  blob completes successfully. The parent can use this to swap
    *  the bubble's blobUrl + sound from the dead blob: URL to the
@@ -46,7 +50,7 @@ export interface UseRecordingResult {
 const DEFAULT_MAX_RECORDING_MS = 6000;
 
 export function useRecording(params: UseRecordingParams = {}): UseRecordingResult {
-  const { maxRecordingMs = DEFAULT_MAX_RECORDING_MS, onBubbleAdded, onUploadComplete, onError } = params;
+  const { maxRecordingMs = DEFAULT_MAX_RECORDING_MS, onBubbleAdded, onSaved, onUploadComplete, onError } = params;
 
   // ── State ────────────────────────────────────────────────────────────────
   const [recPhase, setRecPhase] = useState<RecPhase>("idle");
@@ -213,9 +217,14 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
         saveRecordingEmoji(id, emoji);
       } catch {
         onError?.("Couldn't save recording");
+        return; // v60: don't add a half-saved bubble to the canvas
       }
       // Notify parent — it owns pages/activePageId and will add the bubble
       onBubbleAdded?.(bubble);
+      // v60: show a "saved" toast so the kid knows the mic capture
+      // succeeded. Fires only on the successful-save path; an
+      // onError above prevents reaching here on save failure.
+      onSaved?.(bubble);
       // Fire-and-forget server upload. The local IDB blob is the
       // source of truth for playback; if the server push succeeds
       // we notify the parent via onUploadComplete so it can swap

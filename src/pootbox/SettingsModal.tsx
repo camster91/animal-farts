@@ -173,7 +173,14 @@ export default function SettingsModal({ settings, onChange, onClose }: SettingsM
             About
           </a>
           <button
-            onClick={() => { try { localStorage.removeItem("pootbox-firstrun-done"); } catch (e) { void e; } window.location.reload(); }}
+            onClick={() => {
+              try {
+                localStorage.removeItem("pootbox-firstrun-done");
+                localStorage.removeItem("pootbox-onboarded-v1");
+                localStorage.removeItem("pootbox-onboarded-v2");
+              } catch { /* ignore */ }
+              window.location.reload();
+            }}
             style={{ color: "#92705A", fontSize: "0.8rem", textDecoration: "underline", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit" }}
           >
             Show welcome again
