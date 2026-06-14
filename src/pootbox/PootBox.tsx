@@ -16,7 +16,7 @@ import {
   createDefaultPage,
   savePage,
 } from "./recordings";
-import { playSingle, stopAllSounds } from "./audioManager";
+import { playSingle, stopAllSounds, getCurrentBubbleId } from "./audioManager";
 import { useSettings } from "./hooks/useSettings";
 import { useToast } from "./hooks/useToast";
 import { useModalState } from "./hooks/useModalState";
@@ -220,8 +220,9 @@ export default function PootBox() {
   }, []);
 
   // ── Sound playing poll (extracted to useSoundPlaying) ─────────────────
-
-  const [soundPlaying, setSoundPlaying] = useSoundPlaying();
+  // v59: also reads the currently-playing bubble id (3rd tuple element)
+  // so BubbleCanvas can render a pulse on the bubble that is live.
+  const [soundPlaying, setSoundPlaying, currentBubbleId] = useSoundPlaying();
 
   // ── Physics loop + visual effects (extracted to usePhysicsLoop) ─────────
   const {
@@ -307,17 +308,36 @@ export default function PootBox() {
   // already stops the previous sound before playing the new one, so we
   // don't need a per-bubble debounce — kids can spam the same emoji
   // and each tap feels instant.
+  //
+  // v59: passes bubble.id so audioManager can track which bubble is
+  // currently playing (used by the canvas to show a pulse state, and
+  // by the tap handler to detect "tap the playing bubble" → stop
+  // instead of restart).
   const playFromBubble = useCallback((b: BubbleState, volume: number) => {
     try { navigator.vibrate(20); } catch { /* ignore */ }
-    playSingle(b.sound, volume);
+    playSingle(b.sound, volume, b.id);
   }, []);
 
   // Tap handler: orquestrates ripple + sound + combo + lifetime + onboarding dismiss
+  // v59: if the tapped bubble is the currently-playing one, stop the
+  // sound instead of restarting it. Lets the kid silence a specific
+  // bubble without finding the ⏹ button.
   const handleBubbleTap = useCallback((id: string, clientX: number, clientY: number) => {
     const b = bubblesRef.current.find(x => x.id === id);
     if (!b) return;
     const now = performance.now();
     b.lastTouchedAt = now;
+
+    if (getCurrentBubbleId() === id) {
+      // Tapping the playing bubble = stop it. The ripple still
+      // fires so the kid gets the tactile confirmation.
+      stopAllSounds();
+      setSoundPlaying(false);
+      spawnRipple(clientX, clientY);
+      setShowPlayedFor(id);
+      setTimeout(() => setShowPlayedFor(null), 800);
+      return;
+    }
 
     playFromBubble(b, settingsRef.current.volume);
     spawnRipple(clientX, clientY);
@@ -408,6 +428,7 @@ export default function PootBox() {
         pressedId={pressedId}
         reducedMotion={settings.reducedMotion}
         showPlayedFor={showPlayedFor}
+        playingBubbleId={currentBubbleId}
         onBubblePointerDown={onBubblePointerDown}
         onBubblePointerMove={onBubblePointerMove}
         onBubblePointerUp={onBubblePointerUp}
@@ -758,6 +779,20 @@ export default function PootBox() {
         @keyframes pootbox-pulse-stop {
           0%, 100% { transform: scale(1); }
           50% { transform: scale(1.1); }
+        }
+        /* v59: brief scale-up on tap. The "180ms ease-out" is a quick
+           pop, not a sustained animation. */
+        @keyframes pootbox-bubble-tap {
+          0% { transform: scale(0.92); }
+          60% { transform: scale(1.08); }
+          100% { transform: scale(1); }
+        }
+        /* v59: continuous pulse on the currently-playing bubble.
+           The amber ring + this 1.2s scale loop makes it obvious
+           which bubble is "live" without occluding the emoji. */
+        @keyframes pootbox-bubble-playing {
+          0%, 100% { transform: scale(1.06); }
+          50% { transform: scale(1.14); }
         }
         @keyframes pootbox-combo-star {
           0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }

@@ -7,6 +7,10 @@ interface BubbleCanvasProps {
   pressedId: string | null;
   reducedMotion: boolean;
   showPlayedFor: string | null;
+  /** v59: the bubble currently playing audio (or null). Bubbles
+   *  matching this id render with a pulsing ring + scale-up so
+   *  the kid sees which one is "live" and can tap to stop. */
+  playingBubbleId: string | null;
   onBubblePointerDown: (id: string, e: React.PointerEvent) => void;
   onBubblePointerMove: (id: string, e: React.PointerEvent) => void;
   onBubblePointerUp:   (id: string, e: React.PointerEvent) => void;
@@ -18,6 +22,7 @@ const BubbleCanvas: FC<BubbleCanvasProps> = ({
   pressedId,
   reducedMotion,
   showPlayedFor,
+  playingBubbleId,
   onBubblePointerDown,
   onBubblePointerMove,
   onBubblePointerUp,
@@ -42,6 +47,7 @@ const BubbleCanvas: FC<BubbleCanvasProps> = ({
           pressed={pressedId === b.id}
           reducedMotion={reducedMotion}
           showPlayedIndicator={showPlayedFor === b.id}
+          isPlaying={playingBubbleId === b.id}
           onPointerDown={(e) => onBubblePointerDown(b.id, e)}
           onPointerMove={(e) => onBubblePointerMove(b.id, e)}
           onPointerUp={(e) => onBubblePointerUp(b.id, e)}

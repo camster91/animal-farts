@@ -13,7 +13,7 @@ import {
   MIN_DRIFT_INTERVAL_MS,
   COLLISION_AUDIO_WINDOW_MS,
 } from "../constants";
-import { isAnySoundPlaying } from "../audioManager";
+import { isAnySoundPlaying, getCurrentBubbleId } from "../audioManager";
 
 export interface UsePhysicsLoopParams {
   bubblesRef: React.RefObject<BubbleState[]>;
@@ -202,14 +202,22 @@ export function usePhysicsLoop(params: UsePhysicsLoopParams): UsePhysicsLoopResu
 /**
  * Standalone: polls isAnySoundPlaying every 100ms and updates the consumer.
  * Lives here so the parent doesn't need to manage a setInterval.
+ *
+ * v59: also returns the currently-playing bubble id (or null). This
+ * lets BubbleCanvas render a pulse on the playing bubble. The
+ * 100ms poll is fine for a 60fps animation — the lag is ~16ms
+ * before the user sees the pulse, and the audio itself is
+ * already playing by the time the React state updates.
  */
-export function useSoundPlaying(): [boolean, (playing: boolean) => void] {
+export function useSoundPlaying(): [boolean, (playing: boolean) => void, string | null] {
   const [soundPlaying, setSoundPlaying] = useState(false);
+  const [currentBubbleId, setCurrentBubbleId] = useState<string | null>(null);
   useEffect(() => {
     const id = window.setInterval(() => {
       setSoundPlaying(isAnySoundPlaying());
+      setCurrentBubbleId(getCurrentBubbleId());
     }, 100);
     return () => window.clearInterval(id);
   }, []);
-  return [soundPlaying, setSoundPlaying];
+  return [soundPlaying, setSoundPlaying, currentBubbleId];
 }

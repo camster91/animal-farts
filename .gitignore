@@ -13,3 +13,4 @@ dist
 .env.development
 .data
 server-package-snapshot
+tests/build/

@@ -13,6 +13,10 @@ interface EmojiBubbleProps {
   onPointerUp:   (e: React.PointerEvent) => void;
   onPointerCancel: (e: React.PointerEvent) => void;
   showPlayedIndicator?: boolean;
+  /** v59: true when this is the bubble currently playing audio.
+   *  Adds a pulsing ring + slight scale-up so the kid sees which
+   *  bubble is "live" and can tap it to stop (instead of restart). */
+  isPlaying?: boolean;
 }
 
 const EmojiBubble: FC<EmojiBubbleProps> = ({
@@ -27,6 +31,7 @@ const EmojiBubble: FC<EmojiBubbleProps> = ({
   onPointerUp,
   onPointerCancel,
   showPlayedIndicator = false,
+  isPlaying = false,
 }) => {
   const size = radius * 2;
   const fontSize = Math.round(radius * 1.3);
@@ -45,7 +50,7 @@ const EmojiBubble: FC<EmojiBubbleProps> = ({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
-      aria-label={`${emoji} sound`}
+      aria-label={`${emoji} sound${isPlaying ? " (playing — tap to stop)" : ""}`}
       style={{
         position: "absolute",
         left: 0,
@@ -56,7 +61,10 @@ const EmojiBubble: FC<EmojiBubbleProps> = ({
         background: "rgba(255,255,255,0.7)",
         backdropFilter: "blur(8px)",
         WebkitBackdropFilter: "blur(8px)",
-        boxShadow: "0 6px 18px rgba(0,0,0,0.12), inset 0 0 0 1.5px rgba(255,255,255,0.5)",
+        // v59: when playing, a pulsing ring + slight scale + amber tint
+        boxShadow: isPlaying
+          ? "0 0 0 4px rgba(245,158,11,0.85), 0 0 24px rgba(245,158,11,0.4), 0 6px 18px rgba(0,0,0,0.12)"
+          : "0 6px 18px rgba(0,0,0,0.12), inset 0 0 0 1.5px rgba(255,255,255,0.5)",
         border: "none",
         cursor: "grab",
         touchAction: "none",
@@ -64,11 +72,18 @@ const EmojiBubble: FC<EmojiBubbleProps> = ({
         alignItems: "center",
         justifyContent: "center",
         // Position is set by transform only (left/top must stay 0 to avoid doubling)
-        transform: `translate(${pos.x - radius}px, ${pos.y - radius}px)`,
+        transform: `translate(${pos.x - radius}px, ${pos.y - radius}px)${
+          isPlaying && !reducedMotion ? " scale(1.06)" : ""
+        }`,
         userSelect: "none",
         WebkitUserSelect: "none",
         padding: 0,
         zIndex: 10,
+        // v59: continuous pulse on the playing bubble. Animation is
+        // suppressed under reduced-motion.
+        animation: isPlaying && !reducedMotion
+          ? "pootbox-bubble-playing 1.2s ease-in-out infinite"
+          : "none",
       }}
     >
       {/* G5: Child wrapper handles scale animation; parent keeps physics translate */}
