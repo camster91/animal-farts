@@ -7,13 +7,22 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { BubbleState } from "../types";
 import { saveBlob, saveRecordingEmoji } from "../recordings";
+import { uploadRecording } from "../lib/uploadRecording";
 
 export type RecPhase = "idle" | "recording" | "picking";
 
 export interface UseRecordingParams {
   maxRecordingMs?: number;  // default 6000
   /** Called when finalizeRecording adds a new bubble to the active page */
-  onBubbleAdded?: (b: BubbleState) => void;
+  onBubbleAdded?: (bubble: BubbleState) => void;
+  /** Called when the fire-and-forget server upload of a recorded
+   *  blob completes successfully. The parent can use this to swap
+   *  the bubble's blobUrl + sound from the dead blob: URL to the
+   *  server-issued /uploads/... path so the recording survives a
+   *  page reload. If omitted, the local IDB blob remains the
+   *  source of truth and the recording still plays for the current
+   *  session (it just won't survive reload). */
+  onUploadComplete?: (bubbleId: string, serverAudioUrl: string) => void;
   /** Called on recording errors (mic denied, getUserMedia failed, etc.) */
   onError?: (msg: string) => void;
 }
@@ -37,7 +46,7 @@ export interface UseRecordingResult {
 const DEFAULT_MAX_RECORDING_MS = 6000;
 
 export function useRecording(params: UseRecordingParams = {}): UseRecordingResult {
-  const { maxRecordingMs = DEFAULT_MAX_RECORDING_MS, onBubbleAdded, onError } = params;
+  const { maxRecordingMs = DEFAULT_MAX_RECORDING_MS, onBubbleAdded, onUploadComplete, onError } = params;
 
   // ── State ────────────────────────────────────────────────────────────────
   const [recPhase, setRecPhase] = useState<RecPhase>("idle");
@@ -207,6 +216,31 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
       }
       // Notify parent — it owns pages/activePageId and will add the bubble
       onBubbleAdded?.(bubble);
+      // Fire-and-forget server upload. The local IDB blob is the
+      // source of truth for playback; if the server push succeeds
+      // we notify the parent via onUploadComplete so it can swap
+      // the bubble's blobUrl + sound to the /uploads/... path. If
+      // it fails (offline, 4xx, 5xx) the bubble still works via
+      // the local blob: URL — the v56-5 reload-persistence gap
+      // is closed only on success.
+      const capturedBlob = pendingBlob;
+      const capturedId = id;
+      const durationSec = recordingMs / 1000;
+      uploadRecording({
+        blob: capturedBlob,
+        name: bubble.id,
+        emoji,
+        durationSec,
+        onSuccess: (rec) => {
+          onUploadComplete?.(capturedId, rec.audioUrl);
+        },
+        onError: (err) => {
+          if (err.offline) return; // expected when offline
+          if (typeof console !== "undefined" && console.warn) {
+            console.warn("recording upload failed:", err);
+          }
+        },
+      });
       // Reset
       setPendingBlob(null);
       setPendingUrl(null);

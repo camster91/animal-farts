@@ -81,6 +81,30 @@ export default function PootBox() {
       }
       setPages(updatedPages);
     },
+    onUploadComplete: (bubbleId, serverAudioUrl) => {
+      // The fire-and-forget server upload succeeded. Swap the bubble's
+      // blobUrl + sound from the dead blob: URL to the server-issued
+      // /uploads/... path so the recording survives a page reload
+      // (closes the v56-5 gap for this recording). The local IDB
+      // copy is still there as a fallback if the server file is
+      // ever moved/deleted.
+      if (!activePageId) return;
+      setPages((prev) => prev.map((p) => {
+        if (p.id !== activePageId) return p;
+        return {
+          ...p,
+          bubbles: p.bubbles.map((b) =>
+            b.id === bubbleId
+              ? { ...b, blobUrl: serverAudioUrl, sound: serverAudioUrl }
+              : b
+          ),
+        };
+      }));
+      // The pages state will be saved to IDB by the existing pages-state
+      // auto-save effect (bubbles changes trigger a save). On next page
+      // load, the bubble renders with the server URL, not the dead
+      // blob: URL.
+    },
     onError: (msg) => { showToast(msg); },
   });
 
