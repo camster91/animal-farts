@@ -128,6 +128,11 @@ export default function PootBox() {
   // Toast (extracted to useToast hook)
   const { toastMessage, showToast } = useToast();
 
+  // Lookup input prefill — set when the user taps the "self-test"
+  // link in share mode. The key on the <ShareSheet> below is
+  // derived from this so a re-mount reads the new initial value.
+  const [lookupPrefill, setLookupPrefill] = useState("");
+
   // Modal/sheet open state (extracted to useModalState hook)
   const {
     showLibrary,
@@ -513,11 +518,35 @@ export default function PootBox() {
       {/* Share sheet */}
       {(showShare === "share" || showShare === "lookup") && (
         <ShareSheet
+          // key combines mode + lookupPrefill so any change
+          // (mode flip, self-test, normal close+reopen with new
+          // prefill) remounts the sheet with fresh useState.
+          key={`${showShare}|${lookupPrefill}`}
           mode={showShare === "share" ? "share" : "lookup"}
           pageName={pages.find(p => p.id === activePageId)?.name ?? "Untitled"}
-          onClose={() => setShowShare("none")}
+          onClose={() => {
+            setShowShare("none");
+            setLookupPrefill(""); // clear the prefill so the next
+              // open in lookup mode doesn't show a stale code
+          }}
           onGenerateCode={async () => generateShareCode()}
-          onCopyCode={(c) => { try { void navigator.clipboard?.writeText(c); } catch { /* ignore */ } }}
+          lookupPrefill={lookupPrefill}
+          onCopyCode={(c) => {
+            try { void navigator.clipboard?.writeText(c); } catch { /* ignore */ }
+            // Confirm the copy to the user. The clipboard write is
+            // best-effort (iOS Safari blocks it without a user
+            // gesture, some browsers require a permission prompt)
+            // — the toast fires regardless so the user knows we tried.
+            showToast("Copied to clipboard ✓");
+          }}
+          onSelfTest={(code) => {
+            // Switch the sheet to lookup mode and pre-fill the input
+            // with the same code. The ShareSheet internal state holds
+            // the input value; we re-mount via the key prop below so
+            // the new lookupPrefill is read by useState's initializer.
+            setShowShare("lookup");
+            setLookupPrefill(code);
+          }}
           onLookupCode={async (code) => {
             if (!navigator.onLine) return { __offline: true, code };
             try {

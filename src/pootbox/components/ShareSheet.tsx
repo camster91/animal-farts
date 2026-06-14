@@ -6,6 +6,14 @@ interface ShareSheetProps {
   onClose: () => void;
   onGenerateCode?: () => Promise<string>;
   onCopyCode?: (code: string) => void;
+  /** Switch from share to lookup mode AND pre-fill the input with
+   *  the same code we just shared. Lets the kid verify their own
+   *  code works before sending it to a friend. */
+  onSelfTest?: (code: string) => void;
+  /** Initial value for the lookup input. The parent should pass a
+   *  key={...} derived from this so the sheet remounts (and reads
+   *  the new initial value) when self-test fires. */
+  lookupPrefill?: string;
   onLookupCode?: (code: string) => Promise<SharedSound | OfflineSignal | null>;
   onAddAsPage?: (data: SharedSound) => void;
 }
@@ -29,11 +37,15 @@ export default function ShareSheet({
   onClose,
   onGenerateCode,
   onCopyCode,
+  onSelfTest,
+  lookupPrefill,
   onLookupCode,
   onAddAsPage,
 }: ShareSheetProps) {
   const [code, setCode] = useState<string | null>(null);
-  const [lookupInput, setLookupInput] = useState("");
+  // Initialize lookup input from the prop. The parent changes the prop
+  // (via key prop or re-render) when self-test fires.
+  const [lookupInput, setLookupInput] = useState((lookupPrefill || "").toUpperCase().slice(0, 4));
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupResult, setLookupResult] = useState<SharedSound | null>(null);
   const [lookupError, setLookupError] = useState(false);
@@ -48,6 +60,13 @@ export default function ShareSheet({
 
   function handleCopy() {
     if (code && onCopyCode) onCopyCode(code);
+  }
+
+  /** Self-test: switch the sheet to lookup mode with the code we
+   *  just shared pre-filled in the input. */
+  function handleSelfTest() {
+    if (!code) return;
+    if (onSelfTest) onSelfTest(code);
   }
 
   async function handleLookup() {
@@ -179,7 +198,25 @@ export default function ShareSheet({
               }}
             >
               Anyone with this code can add "{pageName}" to their pages
-</p>
+            </p>
+
+            <button
+              onClick={handleSelfTest}
+              style={{
+                appearance: "none",
+                border: "none",
+                cursor: "pointer",
+                background: "transparent",
+                color: "#92705A",
+                fontSize: "0.85rem",
+                fontFamily: "inherit",
+                textDecoration: "underline",
+                marginTop: 12,
+                padding: 4,
+              }}
+            >
+              Look up the code you just shared
+            </button>
           </>
         ) : (
           <>
