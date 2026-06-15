@@ -3,13 +3,14 @@
 # with a bind-mounted /data volume, and verify.
 #
 # This is the v54+ deploy recipe. The Mac has no docker, so the build
-# happens on the VPS. Traefik on the VPS routes animals.ashbi.ca →
+# happens on the VPS. Caddy on the VPS routes animals.ashbi.ca →
 # 127.0.0.1:3015 → animal-farts:3000 inside the container.
 #
-# v60+ migration: Traefik replaced Caddy as the fleet's reverse proxy
-# on 2026-06-14. The old scripts/sync-caddy.sh is obsolete; the
-# Traefik equivalent is scripts/sync-traefik.sh, which is called at
-# the end of this script.
+# v60+ note: the fleet experimented with Traefik (2026-06-14)
+# but the public *.ashbi.ca routes still run on Caddy because
+# that's where the LE certs live. A sibling project's
+# deploy brought Caddy back to life on 2026-06-15; Traefik
+# is on :8080 only. Caddy is the active front proxy.
 #
 # Why build on VPS instead of `docker pull` from ghcr.io:
 # - The repo's build-and-push workflow is set up but the image has never
@@ -104,8 +105,8 @@ for i in {1..30}; do
   sleep 1
 done
 
-echo "[deploy] re-asserting Traefik animals block (resilient against sibling deploys)…"
-bash "$(dirname "$0")/sync-traefik.sh" 2>&1 | tail -5
+echo "[deploy] re-asserting Caddy animals block (resilient against sibling deploys)…"
+bash "$(dirname "$0")/sync-caddy.sh" 2>&1 | tail -5
 
 echo "[deploy] checking live site…"
 curl -sI https://animals.ashbi.ca/ | head -3
