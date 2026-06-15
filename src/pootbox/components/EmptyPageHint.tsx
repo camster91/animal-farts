@@ -2,6 +2,13 @@ interface EmptyPageHintProps {
   show: boolean;
 }
 
+// v62: this hint is a dead code path — the v61 default page
+// shows all 30 built-in sounds, so the page is never empty.
+// PootBox.tsx still gates the conditional so it renders for
+// non-default pages that the kid wipes empty. The copy is
+// updated for the v62 card-grid affordance: the dashed-border
+// + card at the end of the grid is the entry point (not a
+// floating + button as in v46).
 export default function EmptyPageHint({ show }: EmptyPageHintProps) {
   if (!show) return null;
 
@@ -20,7 +27,7 @@ export default function EmptyPageHint({ show }: EmptyPageHintProps) {
       }}
     >
       <div style={{ fontSize: 64, lineHeight: 1, marginBottom: 12, opacity: 0.6 }}>
-        ➕
+        ＋
       </div>
       <span
         style={{
@@ -31,7 +38,7 @@ export default function EmptyPageHint({ show }: EmptyPageHintProps) {
           opacity: 0.7,
         }}
       >
-        Tap + to add a sound
+        Tap the + card at the end of the row to add a sound
       </span>
     </div>
   );

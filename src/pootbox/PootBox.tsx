@@ -12,7 +12,6 @@ import {
   generateShareCode,
   deleteBlob,
   deleteRecordingEmoji,
-  createDefaultPage,
   savePage,
 } from "./recordings";
 import { playSingle, stopAllSounds, getCurrentBubbleId } from "./audioManager";
@@ -44,12 +43,13 @@ export default function PootBox() {
   const [size, setSize] = useState({ w: 0, h: 0 });
 
   // Pages state (extracted to usePagesState hook)
-  // v61: only `pages`, `setPages`, `savePagesDebounced` are used
-  // (the card grid is single-page; no addPage/removePage/renamePage
-  // in the visible chrome).
+  // v65: homeCategory + setHomeCategory no longer surfaced in
+  // the visible chrome (the home-category chips were removed in
+  // v65). usePagesState still owns them internally for the
+  // SoundLibrary → usePagesState → createDefaultPage wiring.
   const {
-    pages, activePageId, homeCategory,
-    setPages, setActivePageId, setHomeCategory,
+    pages, activePageId,
+    setPages, setActivePageId,
     savePagesDebounced,
   } = usePagesState();
 
@@ -589,75 +589,24 @@ export default function PootBox() {
         </div>
       </div>
 
-      {/* Home category chips — only on the default page */}
-      {activePageId === "page:default" && (
-        <div
-          style={{
-            position: "fixed",
-            top: 56,
-            left: 0,
-            right: 0,
-            zIndex: 150,
-            background: "rgba(254, 243, 199, 0.95)",
-            backdropFilter: "blur(8px)",
-            WebkitBackdropFilter: "blur(8px)",
-            padding: "8px 16px",
-            overflowX: "auto",
-            whiteSpace: "nowrap",
-            maxWidth: "100vw",
-          }}
-        >
-          <div
-            style={{
-              display: "inline-flex",
-              gap: 8,
-            }}
-          >
-            {[
-              { label: "Animals", value: "animal" },
-              { label: "Farts", value: "fart" },
-              { label: "Silly", value: "silly" },
-              { label: "Instruments", value: "instrument" },
-            ].map(({ label, value }) => {
-              const isActive = homeCategory === value;
-              return (
-                <button
-                  key={value}
-                  onClick={() => {
-                    setHomeCategory(value);
-                    // Sync default page bubbles immediately (no effect needed)
-                    setPages(prev => {
-                      const idx = prev.findIndex(p => p.id === "page:default");
-                      if (idx === -1) return prev;
-                      const updated = createDefaultPage(value);
-                      const next = [...prev];
-                      next[idx] = { ...updated, id: "page:default", createdAt: prev[idx].createdAt };
-                      void savePage(next[idx]);
-                      return next;
-                    });
-                  }}
-                  style={{
-                    height: 32,
-                    padding: "0 14px",
-                    borderRadius: 16,
-                    fontSize: "0.8rem",
-                    fontWeight: 600,
-                    fontFamily: "Fredoka, system-ui, sans-serif",
-                    cursor: "pointer",
-                    transition: "all 150ms ease",
-                    border: isActive ? "none" : "1px solid #E5E0D5",
-                    background: isActive ? "#F59E0B" : "transparent",
-                    color: isActive ? "#FFFFFF" : "#3D2C1E",
-                    flexShrink: 0,
-                  }}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* v62: home-category chips removed. The v61 default page
+          shows all 30 built-in sounds, so the kid sees every
+          card at once. The v46-era chip filter (Animals / Farts
+          / Silly / Instruments) made sense when the home page
+          had only 12 animals and the kid wanted to filter down.
+          With 30 cards in a responsive grid, the chip filter
+          was dead weight that ALSO overlapped the top of the
+          first row of cards (chips were at top:56-88, grid
+          started at top:72). Removing the chips:
+            - clears the layout collision
+            - keeps the "simple and fun" v62 surface uncluttered
+            - the kid can still pick a specific bucket by using
+              the SoundLibrary modal (which has a chip filter at
+              the top)
+          usePagesState still owns homeCategory + setHomeCategory
+          for the SoundLibrary → usePagesState → createDefaultPage
+          wiring; homeCategory is just no longer surfaced as a
+          visible UI control. */}
 
       {/* Volume slider popover */}
       <VolumeSlider

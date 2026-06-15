@@ -36,7 +36,7 @@ export default function FirstRunIntro({ show, onDone }: FirstRunIntroProps) {
           fontFamily: "Fredoka, system-ui, sans-serif",
         }}
       >
-        <div style={{ fontSize: 80, lineHeight: 1 }}>🐄</div>
+        <div style={{ fontSize: 80, lineHeight: 1 }}>💨</div>
 
         <h2
           style={{
@@ -58,7 +58,7 @@ export default function FirstRunIntro({ show, onDone }: FirstRunIntroProps) {
             textAlign: "center",
           }}
         >
-          Tap a sound to start
+          Tap any card to hear its sound. Tap the ✎ to change it, or the + to add a new one.
         </p>
 
         <button
