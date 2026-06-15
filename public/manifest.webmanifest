@@ -1,7 +1,7 @@
 {
-  "name": "\ud83d\udca8 Poot Party",
-  "short_name": "Poot Party",
-  "description": "Make your own animal noises. 4 illustrated scenes, 48 tappable things, record your own.",
+  "name": "💨 PootBox",
+  "short_name": "PootBox",
+  "description": "Tap an animal card to hear its sound. Change any card's sound from a list or record your own.",
   "start_url": "/?utm_source=pwa",
   "scope": "/",
   "id": "/?utm_source=pwa",
@@ -58,20 +58,8 @@
     {
       "name": "Play",
       "short_name": "Play",
-      "description": "Open Poot Party",
+      "description": "Open PootBox",
       "url": "/?utm_source=shortcut",
-      "icons": [
-        {
-          "src": "/icon-192.png",
-          "sizes": "192x192"
-        }
-      ]
-    },
-    {
-      "name": "Parent dashboard",
-      "short_name": "Parents",
-      "description": "Open the parent operator dashboard",
-      "url": "/parent?utm_source=shortcut",
       "icons": [
         {
           "src": "/icon-192.png",
