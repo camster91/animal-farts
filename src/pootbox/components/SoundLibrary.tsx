@@ -13,15 +13,23 @@ interface SoundLibraryProps {
 function filterSounds(
   sounds: BuiltInSound[],
   search: string,
-  bucket: string
+  bucket: string,
+  subBucket: string
 ): BuiltInSound[] {
   const q = search.trim().toLowerCase();
   return sounds.filter((s) => {
     const matchSearch =
-      q === "" || s.name.toLowerCase().includes(q);
+      q === "" || s.name.toLowerCase().includes(q) || s.key.toLowerCase().includes(q);
     const matchBucket =
       bucket === "all" || s.bucket === bucket;
-    return matchSearch && matchBucket;
+    // v70: sub-bucket filter applies ONLY when the top-level
+    // bucket is "fart". For "all" / "animal" / "silly", the
+    // sub-bucket is ignored (the kid isn't filtering farts).
+    const matchSub =
+      bucket !== "fart" ||
+      subBucket === "all" ||
+      s.subBucket === subBucket;
+    return matchSearch && matchBucket && matchSub;
   });
 }
 
@@ -32,7 +40,18 @@ const BUCKETS: { label: string; value: string }[] = [
   { label: "Animals", value: "animal" },
   { label: "Farts", value: "fart" },
   { label: "Silly", value: "silly" },
-  { label: "Instruments", value: "instrument" },
+];
+
+// v70: fart sub-buckets. The second-tier chips appear ONLY
+// when the Farts top-level filter is active.
+const FART_SUBBUCKETS: { label: string; value: string }[] = [
+  { label: "All", value: "all" },
+  { label: "Wet", value: "wet" },
+  { label: "Dry", value: "dry" },
+  { label: "Bubbly", value: "bubbly" },
+  { label: "Squeaky", value: "squeaky" },
+  { label: "Long", value: "long" },
+  { label: "Echo", value: "echo" },
 ];
 
 const SoundLibrary: FC<SoundLibraryProps> = ({
@@ -45,6 +64,11 @@ const SoundLibrary: FC<SoundLibraryProps> = ({
   const [searchRaw, setSearchRaw] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [activeBucket, setActiveBucket] = useState("all");
+  // v70: active sub-bucket (only meaningful when activeBucket
+  // === "fart"). Resets to "all" whenever the top-level bucket
+  // changes (handled by the reset-on-close in onClose + the
+  // filter chip's onClick).
+  const [activeSubBucket, setActiveSubBucket] = useState("all");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 200ms debounce on search input
@@ -58,12 +82,13 @@ const SoundLibrary: FC<SoundLibraryProps> = ({
     };
   }, [searchRaw]);
 
-  const filtered = filterSounds(builtInSounds, debouncedSearch, activeBucket);
+  const filtered = filterSounds(builtInSounds, debouncedSearch, activeBucket, activeSubBucket);
 
   const clearFilters = () => {
     setSearchRaw("");
     setDebouncedSearch("");
     setActiveBucket("all");
+    setActiveSubBucket("all");
   };
 
   return (
@@ -168,7 +193,13 @@ const SoundLibrary: FC<SoundLibraryProps> = ({
           return (
             <button
               key={value}
-              onClick={() => setActiveBucket(value)}
+              onClick={() => {
+                setActiveBucket(value);
+                // v70: when leaving the Farts top-level, reset
+                // the sub-bucket to "all" so the next time the
+                // kid opens Farts they start fresh.
+                setActiveSubBucket("all");
+              }}
               style={{
                 height: 32,
                 padding: "0 14px",
@@ -186,8 +217,52 @@ const SoundLibrary: FC<SoundLibraryProps> = ({
               {label}
             </button>
           );
-        })}
-      </div>
+          })}
+          </div>
+
+          {/* v70: fart sub-buckets (Bubbly / Dry / Echo / Long /
+          Squeaky / Wet). Rendered ONLY when the Farts top-level
+          filter is active. Slightly smaller chips than the
+          primary filter so the visual hierarchy is clear. */}
+          {activeBucket === "fart" && (
+          <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 6,
+            padding: "8px 16px 0",
+          }}
+          >
+          {FART_SUBBUCKETS.map(({ label, value }) => {
+            const isActive = activeSubBucket === value;
+            return (
+              <button
+                key={value}
+                onClick={() => setActiveSubBucket(value)}
+                style={{
+                  height: 26,
+                  padding: "0 10px",
+                  borderRadius: 13,
+                  fontSize: "0.72rem",
+                  fontWeight: 600,
+                  fontFamily: "Fredoka, system-ui, sans-serif",
+                  cursor: "pointer",
+                  transition: "all 150ms ease",
+                  border: isActive
+                    ? "none"
+                    : "1px solid rgba(245,158,11,0.3)",
+                  background: isActive
+                    ? "rgba(245,158,11,0.85)"
+                    : "transparent",
+                  color: isActive ? "#FFFFFF" : "#92705A",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+          </div>
+          )}
 
       {/* Search input */}
       <div

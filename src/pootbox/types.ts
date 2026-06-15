@@ -71,11 +71,17 @@ export interface Page {
 // --- BuiltInSound (static library metadata) ---
 
 export interface BuiltInSound {
-  key: string;    // "cow", "dog", "fart-wet", "burp"…
+  key: string;    // "cow", "fart-wet-001-3-fart-wet", "burp"…
   emoji: string;  // 🐄
-  name: string;   // "Cow"
+  name: string;   // "Cow", "3 Fart Wet", "Toilet Flush"
   file: string;   // "/sounds/cow.mp3"
-  bucket: "animal" | "fart" | "instrument" | "silly";
+  bucket: "animal" | "fart" | "silly";
+  // v70: sub-bucket for the fart directory tree. Empty string
+  // for non-fart entries. Used by the SoundLibrary filter to
+  // show a second-tier chip row (Bubbly / Dry / Echo / Long /
+  // Squeaky / Wet) when the user has the Farts top-level
+  // filter active.
+  subBucket?: string;
 }
 
 // --- Settings ---

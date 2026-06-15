@@ -3,15 +3,15 @@
 // multi-page tabs, random bubble spawn, library picker, and recording flow.
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import type { Page, BubbleState, Ripple, BuiltInSound } from "./types";
-import {
-  BUILT_IN_SOUNDS,
-} from "./constants";
+import { BUILT_IN_SOUNDS } from "./constants";
 import {
   addBubbleToPageDedup,
   removeBubbleFromPage,
   generateShareCode,
   deleteBlob,
   deleteRecordingEmoji,
+  saveRecordingName,
+  loadRecordingNames,
   savePage,
 } from "./recordings";
 import { playSingle, stopAllSounds, getCurrentBubbleId } from "./audioManager";
@@ -25,6 +25,7 @@ import { usePhysicsLoop, useSoundPlaying } from "./hooks/usePhysicsLoop";
 import { useRecording } from "./hooks/useRecording";
 import SettingsModal from "./SettingsModal";
 import CardGrid from "./components/CardGrid";
+import RenameModal from "./components/RenameModal";
 import CanvasEffects from "./components/CanvasEffects";
 import RecordSheet from "./components/RecordSheet";
 import SoundLibrary from "./components/SoundLibrary";
@@ -163,6 +164,34 @@ export default function PootBox() {
   // null = "Add" mode (no target — picker creates a new card).
   // string = "Change" mode (picker mutates this bubble's sound).
   const [changingBubbleId, setChangingBubbleId] = useState<string | null>(null);
+
+  // v69: per-recording friendly names. Loaded from localStorage
+  // at mount. The card label looks up names in this map (via
+  // the customNames prop on CardGrid). Updated when the user
+  // renames a card.
+  const [recordingNames, setRecordingNames] = useState<Record<string, string>>(() => loadRecordingNames());
+
+  // v69: which bubble the user is renaming, or null. Set
+  // when the kid taps the ✎ button on a custom card. The
+  // RenameModal reads the current name from recordingNames.
+  const [renamingBubbleId, setRenamingBubbleId] = useState<string | null>(null);
+
+  // v69: handler the RenameModal calls when the user picks
+  // a new name. Persists to localStorage + updates the React
+  // state so the card label updates immediately.
+  const handleRenameSave = useCallback((id: string, newName: string) => {
+    saveRecordingName(id, newName);
+    setRecordingNames((prev) => {
+      const next = { ...prev };
+      if (newName && newName.trim().length > 0) {
+        next[id] = newName.trim().slice(0, 24);
+      } else {
+        delete next[id];
+      }
+      return next;
+    });
+    setRenamingBubbleId(null);
+  }, []);
 
   // Refs (only the ones still used by PootBox: shake detection, drag, ripple IDs,
   // tap tracking, last-played-circle). The physics loop owns rafRef, lastFrameRef,
@@ -478,11 +507,13 @@ export default function PootBox() {
         builtInSounds={BUILT_IN_SOUNDS}
         reducedMotion={settings.reducedMotion}
         playingBubbleId={currentBubbleId}
+        customNames={new Map(Object.entries(recordingNames))}
         onTapBubble={handleBubbleTap}
         onChangeSound={(id) => {
           setChangingBubbleId(id);
           setShowLibrary(true);
         }}
+        onRenameCard={(id) => setRenamingBubbleId(id)}
         onAddCard={() => {
           setChangingBubbleId(null);
           setShowLibrary(true);
@@ -832,6 +863,27 @@ export default function PootBox() {
         />
       )}
 
+      {/* v69: Rename modal — opens when the kid taps the ✎ on
+          a custom card. Reads the current name from
+          recordingNames. Closes on Save or Cancel. */}
+      <RenameModal
+        show={renamingBubbleId !== null}
+        initialName={
+          renamingBubbleId
+            ? (recordingNames[renamingBubbleId] || "My Sound")
+            : ""
+        }
+        emoji={
+          renamingBubbleId
+            ? (bubbles.find((x) => x.id === renamingBubbleId)?.emoji || "💨")
+            : "💨"
+        }
+        onSave={(newName) => {
+          if (renamingBubbleId) handleRenameSave(renamingBubbleId, newName);
+        }}
+        onClose={() => setRenamingBubbleId(null)}
+      />
+
       {/* Stop button */}
 
       {/* Toast */}
@@ -895,6 +947,18 @@ export default function PootBox() {
         @keyframes pootbox-card-playing {
           0%, 100% { transform: scale(1.05); }
           50%      { transform: scale(1.12); }
+        }
+        /* v69: tap-pop on cards. 220ms cubic-bezier ease so
+           the card visibly "acknowledges" the tap without
+           feeling slow. Resets to 1.0 at the end so the next
+           tap can re-trigger the animation (the React re-mount
+           trick in EmojiBubble doesn't apply here since the
+           card div is a stable React node). Suppressed under
+           reduced-motion. */
+        @keyframes pootbox-card-tap {
+          0%   { transform: scale(0.94); }
+          50%  { transform: scale(1.04); }
+          100% { transform: scale(1); }
         }
         @keyframes pootbox-combo-star {
           0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }

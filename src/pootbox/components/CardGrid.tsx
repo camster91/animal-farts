@@ -26,8 +26,17 @@ interface CardGridProps {
   /** Currently-playing bubble id, polled from useSoundPlaying.
    *  Used to render a "playing" pulse on the matching card. */
   playingBubbleId: string | null;
+  /** v69: map of bubbleId → friendly name for custom
+   *  recordings. The card label uses this map first, then
+   *  falls back to the bubble's `name` field (built-in) or
+   *  "My Sound" (custom, no name). Updated when the user
+   *  renames a card via the RenameModal. */
+  customNames?: Map<string, string>;
   onTapBubble: (id: string, clientX: number, clientY: number) => void;
   onChangeSound: (bubbleId: string) => void;
+  /** v69: open the rename modal for a custom card. Only
+   *  called on custom cards. */
+  onRenameCard?: (bubbleId: string) => void;
   onAddCard: () => void;
   /** Called when the kid taps the small "delete" button on a
    *  custom-recorded card. Built-in cards can't be deleted
@@ -41,8 +50,10 @@ const CardGrid: FC<CardGridProps> = ({
   builtInSounds,
   reducedMotion,
   playingBubbleId,
+  customNames,
   onTapBubble,
   onChangeSound,
+  onRenameCard,
   onAddCard,
   onDeleteCard,
 }) => {
@@ -58,9 +69,23 @@ const CardGrid: FC<CardGridProps> = ({
       const meta = soundKeyToBuiltIn.get(b.builtinKey);
       if (meta) return { name: meta.name, isFart: meta.bucket === "fart" };
     }
-    if (b.type === "custom") return { name: "My Sound", isFart: false };
+    if (b.type === "custom") {
+      // v69: use the per-recording name from the localStorage
+      // map (the friendly name the user typed), defaulting to
+      // "My Sound" if the user hasn't renamed yet.
+      const custom = customNames?.get(b.id);
+      return { name: custom || "My Sound", isFart: false };
+    }
     return { name: "Sound", isFart: false };
   }
+
+  // v69: tap animation handled via the CSS :active pseudo-class
+  // (no React state needed). The card's transform scales down
+  // when the kid presses it, then snaps back when released.
+  // It's pure-CSS so there's no React re-mount, no race
+  // condition, and the animation fires every time without
+  // any state machinery. Suppressed under reduced-motion via
+  // the .reduce-motion class on the outer CardGrid wrapper.
 
   function handleCardTap(b: BubbleState, e: React.MouseEvent<HTMLButtonElement>) {
     try { navigator.vibrate(20); } catch { /* ignore */ }
@@ -69,11 +94,6 @@ const CardGrid: FC<CardGridProps> = ({
     // parent has a `onTapBubble` callback that fires handleBubbleTap
     // which has the playing-bubble branch.
     onTapBubble(b.id, e.clientX, e.clientY);
-  }
-
-  function handleCardChange(b: BubbleState, e: React.MouseEvent<HTMLButtonElement>) {
-    e.stopPropagation();
-    onChangeSound(b.id);
   }
 
   function handleCardDelete(b: BubbleState, e: React.MouseEvent<HTMLButtonElement>) {
@@ -90,6 +110,7 @@ const CardGrid: FC<CardGridProps> = ({
     return (
       <button
         key={b.id}
+        className="pootbox-card"
         data-bubble-id={b.id}
         onClick={(e) => handleCardTap(b, e)}
         aria-label={`${name} — tap to play${isPlaying ? " (playing — tap to stop)" : ""}`}
@@ -116,8 +137,10 @@ const CardGrid: FC<CardGridProps> = ({
           userSelect: "none",
           WebkitUserSelect: "none",
           WebkitTapHighlightColor: "transparent",
-          paddingBottom: 32, // extra room for the change-sound button
-          transition: reducedMotion ? "none" : "transform 120ms ease, background 200ms ease, box-shadow 200ms ease",
+          paddingBottom: 36, // extra room for the bottom action bar
+          // The transform transition is set in the <style> block
+          // above (.pootbox-card) so the :active state can override
+          // it. Inline `transition` here would win specificity.
           animation: isPlaying && !reducedMotion
             ? "pootbox-card-playing 1.2s ease-in-out infinite"
             : "none",
@@ -146,33 +169,83 @@ const CardGrid: FC<CardGridProps> = ({
         >
           {name}
         </span>
-        {/* Change-sound button (pencil-like) anchored to the bottom
-            of the card. Stops propagation so tapping it doesn't fire
-            the card's play handler. */}
-        <button
-          onClick={(e) => handleCardChange(b, e)}
-          aria-label={`Change ${name} sound`}
+        {/* v69: bottom action bar (rename + change-sound). Both
+            are pill-shaped with a soft-white background so the
+            kid can find them. Anchored at the bottom of the
+            card. The delete (×) button is at the top-right (a
+            red dot) — out of the way but still discoverable. */}
+        <div
           style={{
             position: "absolute",
-            bottom: 6,
-            right: 6,
-            width: 28,
-            height: 28,
-            borderRadius: "50%",
-            background: "rgba(61,44,30,0.75)",
-            border: "none",
-            color: "white",
-            fontSize: 14,
+            bottom: 4,
+            left: 0,
+            right: 0,
             display: "flex",
-            alignItems: "center",
             justifyContent: "center",
-            cursor: "pointer",
-            padding: 0,
-            lineHeight: 1,
+            alignItems: "center",
+            gap: 4,
+            padding: "0 4px",
           }}
         >
-          ✎
-        </button>
+          {isCustom && onRenameCard && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onRenameCard(b.id);
+              }}
+              aria-label={`Rename ${name}`}
+              title="Rename"
+              style={{
+                width: 26,
+                height: 22,
+                borderRadius: 11,
+                background: "rgba(255,255,255,0.95)",
+                border: "none",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
+                color: "#3D2C1E",
+                fontSize: 12,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                padding: 0,
+                lineHeight: 1,
+              }}
+            >
+              ✎
+            </button>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onChangeSound(b.id);
+            }}
+            aria-label={`Change ${name} sound`}
+            title="Change sound"
+            style={{
+              minWidth: 56,
+              height: 22,
+              borderRadius: 11,
+              background: "rgba(255,255,255,0.95)",
+              border: "none",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
+              color: "#3D2C1E",
+              fontSize: 10,
+              fontWeight: 700,
+              fontFamily: "Fredoka, system-ui, sans-serif",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              padding: "0 10px",
+              lineHeight: 1,
+              letterSpacing: "0.05em",
+              textTransform: "uppercase",
+            }}
+          >
+            Change
+          </button>
+        </div>
         {/* Delete button — only for custom (user-recorded) cards. */}
         {isCustom && onDeleteCard && (
           <button
@@ -227,6 +300,21 @@ const CardGrid: FC<CardGridProps> = ({
         touchAction: "manipulation",
       }}
     >
+      <style>{`
+        .pootbox-card {
+          transition: transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1),
+                      background 200ms ease,
+                      box-shadow 200ms ease;
+        }
+        .pootbox-card:active:not(:disabled) {
+          transform: scale(0.94) !important;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .pootbox-card:active:not(:disabled) {
+            transform: scale(1) !important;
+          }
+        }
+      `}</style>
       {bubbles.map(renderCard)}
       {/* "+ Add sound" card. Dashed border, single big "+" emoji,
           anchored at the end of the grid. */}

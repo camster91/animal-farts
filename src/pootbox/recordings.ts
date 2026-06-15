@@ -305,7 +305,7 @@ export async function removeBubbleFromPage(pageId: string, bubbleId: string): Pr
   return updatedPage;
 }
 
-// --- Emoji metadata (localStorage, reused from existing) ---
+// --- Recording emoji + name metadata (localStorage) ---
 
 export function saveRecordingEmoji(id: string, emoji: string): void {
   try {
@@ -330,5 +330,44 @@ export function deleteRecordingEmoji(id: string): void {
     const map = loadRecordingEmojis();
     delete map[id];
     localStorage.setItem("pootbox-recording-emojis", JSON.stringify(map));
+  } catch { /* ignore */ }
+}
+
+// v69: per-recording name. The bubble's `name` is derived from
+// the recording-emoji map's "name" key (if set) at display
+// time, defaulting to "My Sound" for unset names. Stored
+// separately from emojis so the user can rename without
+// re-picking the emoji.
+export function saveRecordingName(id: string, name: string): void {
+  try {
+    const raw = localStorage.getItem("pootbox-recording-names") || "{}";
+    const map = JSON.parse(raw) as Record<string, string>;
+    if (name && name.trim().length > 0) {
+      // Trim + cap to 24 chars (fits a single line of the
+      // card name slot at 0.85rem Fredoka without
+      // overflowing the 100-108px grid cell).
+      const cleaned = name.trim().slice(0, 24);
+      map[id] = cleaned;
+    } else {
+      delete map[id];
+    }
+    localStorage.setItem("pootbox-recording-names", JSON.stringify(map));
+  } catch { /* ignore */ }
+}
+
+export function loadRecordingNames(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem("pootbox-recording-names") || "{}";
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+export function deleteRecordingName(id: string): void {
+  try {
+    const map = loadRecordingNames();
+    delete map[id];
+    localStorage.setItem("pootbox-recording-names", JSON.stringify(map));
   } catch { /* ignore */ }
 }
