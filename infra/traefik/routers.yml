@@ -1,0 +1,43 @@
+http:
+  routers:
+    lull:
+      rule: "Host(`lull.ashbi.ca`)"
+      entryPoints:
+        - tls_https
+      service: lull
+      tls: {}
+    lull-relay:
+      rule: "Host(`lull-relay.ashbi.ca`)"
+      entryPoints:
+        - tls_https
+      service: lull-relay
+      tls: {}
+    splash:
+      rule: "Host(`splash.ashbi.ca`)"
+      entryPoints:
+        - tls_https
+      service: splash
+      tls: {}
+    animal-farts:
+      rule: "Host(`animals.ashbi.ca`)"
+      entryPoints:
+        - tls_https
+      service: animal-farts
+      tls: {}
+  services:
+    lull:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:3010"
+    lull-relay:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:3020"
+    splash:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:3042"
+    animal-farts:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:3015"

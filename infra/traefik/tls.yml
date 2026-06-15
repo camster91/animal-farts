@@ -1,0 +1,8 @@
+tls:
+  certificates:
+    - certFile: /etc/traefik/certs/lull.ashbi.ca.crt
+      keyFile: /etc/traefik/certs/lull.ashbi.ca.key
+    - certFile: /etc/traefik/certs/lull-relay.ashbi.ca.crt
+      keyFile: /etc/traefik/certs/lull-relay.ashbi.ca.key
+    - certFile: /etc/traefik/certs/animals.ashbi.ca.crt
+      keyFile: /etc/traefik/certs/animals.ashbi.ca.key

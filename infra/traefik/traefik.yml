@@ -1,0 +1,13 @@
+entryPoints:
+  plain_http:
+    address: ":8880"
+  tls_https:
+    address: ":8443"
+
+providers:
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+log:
+  level: INFO
