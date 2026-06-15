@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """v68: rewrite /opt/caddy/Caddyfile from a known-good curated
 template. v66's insert-into-global-blocks logic was wrong
 (it inserted the animals block inside the global options
