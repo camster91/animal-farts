@@ -105,10 +105,8 @@ for i in {1..30}; do
   sleep 1
 done
 
-echo "[deploy] re-asserting Caddy + Traefik animals blocks (resilient against sibling deploys)…"
+echo "[deploy] re-asserting Caddy animals block (resilient against sibling deploys)…"
 bash "$(dirname "$0")/sync-caddy.sh" 2>&1 | tail -3
-echo "[deploy] re-asserting Traefik animals route…"
-bash "$(dirname "$0")/sync-traefik.sh" 2>&1 | tail -3
 
 echo "[deploy] checking live site…"
 curl -sI https://animals.ashbi.ca/ | head -3
