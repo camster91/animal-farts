@@ -5,7 +5,6 @@ import { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react
 import type { Page, BubbleState, Ripple, BuiltInSound } from "./types";
 import {
   BUILT_IN_SOUNDS,
-  MAX_PAGES,
 } from "./constants";
 import {
   addBubbleToPageDedup,
@@ -26,10 +25,8 @@ import { useCanvasHandlers } from "./hooks/useCanvasHandlers";
 import { usePhysicsLoop, useSoundPlaying } from "./hooks/usePhysicsLoop";
 import { useRecording } from "./hooks/useRecording";
 import SettingsModal from "./SettingsModal";
-import BubbleCanvas from "./components/BubbleCanvas";
+import CardGrid from "./components/CardGrid";
 import CanvasEffects from "./components/CanvasEffects";
-import TopBar from "./components/TopBar";
-import AddSoundMenu from "./components/AddSoundMenu";
 import RecordSheet from "./components/RecordSheet";
 import SoundLibrary from "./components/SoundLibrary";
 import EmptyPageHint from "./components/EmptyPageHint";
@@ -47,18 +44,24 @@ export default function PootBox() {
   const [size, setSize] = useState({ w: 0, h: 0 });
 
   // Pages state (extracted to usePagesState hook)
+  // v61: only `pages`, `setPages`, `savePagesDebounced` are used
+  // (the card grid is single-page; no addPage/removePage/renamePage
+  // in the visible chrome).
   const {
     pages, activePageId, homeCategory,
     setPages, setActivePageId, setHomeCategory,
-    addPage, removePage, renamePage,
     savePagesDebounced,
   } = usePagesState();
 
   // Bubbles on active page (extracted to useCanvasState hook)
+  // v61: the card grid only needs `bubbles` + `alreadyAddedKeys` from
+  // the canvas-state slice. `bubblesRef` is still used by the
+  // physics loop + the onCollisionSound callback in
+  // usePhysicsLoop. `pressedId` + `showPlayedFor` +
+  // `setShowPlayedFor` were physics-canvas-only and are now unused.
   const {
-    bubbles, bubblesRef, setBubbles,
-    pressedId,
-    showPlayedFor, setShowPlayedFor,
+    bubbles,
+    bubblesRef,
     alreadyAddedKeys,
   } = useCanvasState({ pages, activePageId, size });
 
@@ -139,20 +142,27 @@ export default function PootBox() {
   const [lookupPrefill, setLookupPrefill] = useState("");
 
   // Modal/sheet open state (extracted to useModalState hook)
+  // v61: removed showAddMenu / setShowAddMenu (the AddSoundMenu
+  // FAB is gone; the + Add sound card in the grid opens the
+  // SoundLibrary instead). Removed showShare setter is still
+  // used for the share-modal.
   const {
     showLibrary,
     showSettings,
     showVolume,
     showShare,
-    showAddMenu,
     showFirstRun,
     setShowLibrary,
     setShowSettings,
     setShowVolume,
     setShowShare,
-    setShowAddMenu,
     setShowFirstRun,
   } = useModalState();
+
+  // v61: which bubble the user is changing the sound of.
+  // null = "Add" mode (no target — picker creates a new card).
+  // string = "Change" mode (picker mutates this bubble's sound).
+  const [changingBubbleId, setChangingBubbleId] = useState<string | null>(null);
 
   // Refs (only the ones still used by PootBox: shake detection, drag, ripple IDs,
   // tap tracking, last-played-circle). The physics loop owns rafRef, lastFrameRef,
@@ -230,12 +240,19 @@ export default function PootBox() {
   const [soundPlaying, setSoundPlaying, currentBubbleId] = useSoundPlaying();
 
   // ── Physics loop + visual effects (extracted to usePhysicsLoop) ─────────
+  // v61: the physics loop is now JUST for visual effects
+  // (ripples, sparks, combo bursts, confetti). The physics
+  // step itself is a no-op — bubbles don't move in the card
+  // grid. setBubbles is passed as a no-op since the loop
+  // expects to trigger re-renders after collision, but
+  // collisions don't happen in the grid.
+  const noopSetBubbles = useCallback((_b: BubbleState[]) => { /* no-op */ }, []);
   const {
     ripples, setRipples, sparks, comboBurst, confettiBurst, confettiParticles,
     triggerComboBurst, triggerConfetti,
   } = usePhysicsLoop({
     bubblesRef,
-    setBubbles,
+    setBubbles: noopSetBubbles,
     size,
     settingsRef,
     onCollisionSound: (b, vol) => {
@@ -260,9 +277,37 @@ export default function PootBox() {
   }, []);
 
   // ── Add built-in sound to page ────────────────────────────────────────
+  //
+  // v61 unified: works for both "Add" mode (targetBubbleId is
+  // undefined → create a new bubble) and "Change" mode (targetBubbleId
+  // is set → swap the bubble's sound + emoji + builtinKey in place).
+  // The dedup check is skipped in "Change" mode since you're picking
+  // a different sound for an existing card.
 
-  const onPickBuiltIn = useCallback(async (sound: BuiltInSound) => {
+  const onPickBuiltIn = useCallback(async (sound: BuiltInSound, targetBubbleId?: string) => {
     if (!activePageId) return;
+
+    if (targetBubbleId) {
+      // Change mode: mutate the existing bubble in place.
+      setPages((prev) => prev.map((p) => {
+        if (p.id !== activePageId) return p;
+        return {
+          ...p,
+          bubbles: p.bubbles.map((b) =>
+            b.id === targetBubbleId
+              ? { ...b, type: "built-in", emoji: sound.emoji, builtinKey: sound.key, sound: sound.file }
+              : b
+          ),
+        };
+      }));
+      setShowLibrary(false);
+      return;
+    }
+
+    // Add mode: create a new bubble. Use a stable id so the same
+    // sound can be added twice on the same page (the original
+    // addBubbleToPageDedup was strict; for the kid-facing flow,
+    // duplicates are fine).
     const bubble: BubbleState = {
       id: `b:built-in:${sound.key}:${Date.now()}`,
       type: "built-in",
@@ -276,12 +321,10 @@ export default function PootBox() {
       lastTouchedAt: -1,
       lastReleasedAt: -1,
     };
-    const { pages: updatedPages, added } = addBubbleToPageDedup(pages, activePageId, bubble);
-    if (!added) {
-      showToast("Already on this page!");
-      return;
-    }
-    setPages(updatedPages);
+    setPages((prev) => prev.map((p) => {
+      if (p.id !== activePageId) return p;
+      return { ...p, bubbles: [...p.bubbles, bubble] };
+    }));
     setShowLibrary(false);
   }, [activePageId, pages, showToast]);
 
@@ -335,19 +378,18 @@ export default function PootBox() {
 
     if (getCurrentBubbleId() === id) {
       // Tapping the playing bubble = stop it. The ripple still
-      // fires so the kid gets the tactile confirmation.
+      // fires so the kid gets the tactile confirmation. v61:
+      // the card's amber ring + pulse (driven by playingBubbleId
+      // from useSoundPlaying) is the playing-state indicator;
+      // the old ♪-badge is gone.
       stopAllSounds();
       setSoundPlaying(false);
       spawnRipple(clientX, clientY);
-      setShowPlayedFor(id);
-      setTimeout(() => setShowPlayedFor(null), 800);
       return;
     }
 
     playFromBubble(b, settingsRef.current.volume);
     spawnRipple(clientX, clientY);
-    setShowPlayedFor(id);
-    setTimeout(() => setShowPlayedFor(null), 800);
 
     // Combo (decay after 800ms idle)
     let newCombo: number;
@@ -379,12 +421,12 @@ export default function PootBox() {
     }
   }, [playFromBubble, spawnRipple, showOnboarding, triggerComboBurst, triggerConfetti]);
 
-  // The 7 pointer event handlers (extracted to useCanvasHandlers)
+  // v61: only the blank-canvas pointer handlers are still used
+  // (5-second long-press to open settings, retained as a parent
+  // affordance). The bubble pointer handlers (down/move/up/cancel)
+  // are dead — the CardGrid uses onClick + onChangeSound instead
+  // and there's no per-bubble drag.
   const {
-    onBubblePointerDown,
-    onBubblePointerMove,
-    onBubblePointerUp,
-    onBubblePointerCancel,
     onBlankPointerDown,
     onBlankPointerMove,
     onBlankPointerUp,
@@ -427,17 +469,39 @@ export default function PootBox() {
         }}
       />
 
-      {/* Bubble canvas */}
-      <BubbleCanvas
+      {/* Card grid — v61 "simple" mode. Replaces the physics canvas
+          with a static grid. Each card is a tap-to-play button; a
+          small pencil button opens the sound picker; a + card at
+          the end of the grid opens the picker to add a new sound. */}
+      <CardGrid
         bubbles={bubbles}
-        pressedId={pressedId}
+        builtInSounds={BUILT_IN_SOUNDS}
         reducedMotion={settings.reducedMotion}
-        showPlayedFor={showPlayedFor}
         playingBubbleId={currentBubbleId}
-        onBubblePointerDown={onBubblePointerDown}
-        onBubblePointerMove={onBubblePointerMove}
-        onBubblePointerUp={onBubblePointerUp}
-        onBubblePointerCancel={onBubblePointerCancel}
+        onTapBubble={handleBubbleTap}
+        onChangeSound={(id) => {
+          setChangingBubbleId(id);
+          setShowLibrary(true);
+        }}
+        onAddCard={() => {
+          setChangingBubbleId(null);
+          setShowLibrary(true);
+        }}
+        onDeleteCard={async (id) => {
+          // v61: delete a custom card. The original onRemoveBubble
+          // also revokes the blob: URL; for v61 share-imported
+          // bubbles (b:shared:*) we just leave the blobUrl alone.
+          if (!activePageId) return;
+          if (id.startsWith("b:custom:")) {
+            const b = bubbles.find(x => x.id === id);
+            if (b?.blobUrl?.startsWith("blob:")) URL.revokeObjectURL(b.blobUrl);
+            try { await deleteBlob(id); } catch { /* ignore */ }
+            try { deleteRecordingEmoji(id); } catch { /* ignore */ }
+          }
+          const updated = await removeBubbleFromPage(activePageId, id);
+          setPages(prev => prev.map(p => p.id === updated.id ? updated : p));
+          showToast("Card removed");
+        }}
       />
 
       {/* Empty page hint */}
@@ -445,20 +509,85 @@ export default function PootBox() {
         <EmptyPageHint show={true} />
       )}
 
-      {/* Page tabs */}
-      <TopBar
-        pages={pages}
-        activePageId={activePageId ?? ""}
-        onSelectPage={setActivePageId}
-        onAddPage={addPage}
-        onRenamePage={renamePage}
-        onDeletePage={removePage}
-        canDelete={pages.length > 1}
-        volume={settings.volume}
-        onVolumeClick={() => setShowVolume(true)}
-        onShareClick={() => setShowShare("share")}
-        onAddSoundClick={() => setShowAddMenu(true)}
-      />
+      {/* v61: top bar = a single settings gear + a small "💨" title.
+          No page tabs (v61 is single-page). No FAB (the + Add
+          sound card at the end of the grid is the entry point).
+          The ShareSheet is reached from the settings modal. */}
+      <div
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 56,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 16px",
+          background: "rgba(254, 243, 199, 0.92)",
+          backdropFilter: "blur(10px)",
+          WebkitBackdropFilter: "blur(10px)",
+          zIndex: 200,
+          borderBottom: "1px solid rgba(61,44,30,0.08)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontFamily: "Fredoka, system-ui, sans-serif",
+            fontSize: "1.05rem",
+            fontWeight: 700,
+            color: "#3D2C1E",
+          }}
+        >
+          <span style={{ fontSize: "1.4rem" }}>💨</span>
+          <span>PootBox</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            onClick={() => setShowShare("share")}
+            aria-label="Share"
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: "50%",
+              background: "rgba(61,44,30,0.75)",
+              border: "none",
+              cursor: "pointer",
+              color: "white",
+              fontSize: 18,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 0,
+            }}
+          >
+            🔗
+          </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            aria-label="Settings"
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: "50%",
+              background: "rgba(61,44,30,0.75)",
+              border: "none",
+              cursor: "pointer",
+              color: "white",
+              fontSize: 18,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 0,
+            }}
+          >
+            ⚙
+          </button>
+        </div>
+      </div>
 
       {/* Home category chips — only on the default page */}
       {activePageId === "page:default" && (
@@ -609,17 +738,10 @@ export default function PootBox() {
         />
       )}
 
-      {/* Add sound menu */}
-      <AddSoundMenu
-        onRecord={() => void startRecording()}
-        onPickFromLibrary={() => setShowLibrary(true)}
-        onAddNewPage={addPage}
-        onOpenSettings={() => setShowSettings(true)}
-        pagesCount={pages.length}
-        maxPages={MAX_PAGES}
-        show={showAddMenu}
-        onShowChange={setShowAddMenu}
-      />
+      {/* v61: AddSoundMenu removed. The + Add sound card in the
+          grid opens the SoundLibrary, which has a "Record your
+          own" CTA at the top. The RecordSheet still renders
+          when recPhase !== "idle". */}
 
       {/* Visual-only effects layer (ripples, sparks, combo, confetti).
           The stop button and mic-denied banner stay inline below because
@@ -727,13 +849,28 @@ export default function PootBox() {
         />
       ) : null}
 
-      {/* Sound library */}
+      {/* Sound library — v61: same modal, two modes (Add vs Change).
+          The 'alreadyAddedKeys' grey-out is suppressed in Change mode
+          so the kid can pick the same sound (no-op) or any other.
+          Also handles the "Record your own" CTA in the modal
+          header — closes the picker and starts mic capture. */}
       {showLibrary && (
         <SoundLibrary
           builtInSounds={BUILT_IN_SOUNDS}
-          alreadyAddedKeys={alreadyAddedKeys}
-          onPick={onPickBuiltIn}
-          onClose={() => setShowLibrary(false)}
+          alreadyAddedKeys={changingBubbleId ? new Set<string>() : alreadyAddedKeys}
+          onPick={(sound) => {
+            onPickBuiltIn(sound, changingBubbleId ?? undefined);
+            setChangingBubbleId(null);
+          }}
+          onRecord={() => {
+            setShowLibrary(false);
+            setChangingBubbleId(null);
+            void startRecording();
+          }}
+          onClose={() => {
+            setShowLibrary(false);
+            setChangingBubbleId(null);
+          }}
         />
       )}
 

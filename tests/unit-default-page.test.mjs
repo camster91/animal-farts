@@ -78,11 +78,19 @@ globalThis.indexedDB = {
 import { createDefaultPage } from './build/recordings.js';
 
 describe('createDefaultPage', () => {
-  it('createDefaultPage("animal") returns 12 bubbles', () => {
-    const page = createDefaultPage("animal");
-    assert.strictEqual(page.bubbles.length, 12);
+  it('createDefaultPage() defaults to "all" → 30 bubbles (v61)', () => {
+    const page = createDefaultPage();
+    // v61: the default is now "all" so the kid sees every
+    // built-in sound on the home page. 12 animals + 6 farts +
+    // 6 silly + 6 instruments = 30.
+    assert.strictEqual(page.bubbles.length, 30);
+    assert.strictEqual(page.emoji, "🏠");
   });
 
+  it('createDefaultPage("all") returns 30 bubbles (v61)', () => {
+    const page = createDefaultPage("all");
+    assert.strictEqual(page.bubbles.length, 30);
+  });
   it('createDefaultPage("fart") returns 6 bubbles', () => {
     const page = createDefaultPage("fart");
     assert.strictEqual(page.bubbles.length, 6);
@@ -98,11 +106,19 @@ describe('createDefaultPage', () => {
     assert.strictEqual(page.bubbles.length, 6);
   });
 
-  it('createDefaultPage() defaults to "animal" → 12 bubbles', () => {
+  it('createDefaultPage() defaults to "all" → 30 bubbles (v61)', () => {
     const page = createDefaultPage();
-    assert.strictEqual(page.bubbles.length, 12);
+    // v61: the default is now "all" so the kid sees every
+    // built-in sound on the home page. 12 animals + 6 farts +
+    // 6 silly + 6 instruments = 30.
+    assert.strictEqual(page.bubbles.length, 30);
+    assert.strictEqual(page.emoji, "🏠");
   });
 
+  it('createDefaultPage("all") returns 30 bubbles (v61)', () => {
+    const page = createDefaultPage("all");
+    assert.strictEqual(page.bubbles.length, 30);
+  });
   it('createDefaultPage("animal").emoji === "🏠"', () => {
     const page = createDefaultPage("animal");
     assert.strictEqual(page.emoji, "🏠");

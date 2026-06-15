@@ -38,9 +38,15 @@ const BUCKET_EMOJI: Record<string, string> = {
 
 // --- Default page factory ---
 
-export function createDefaultPage(homeCategory: string = "animal"): Page {
+export function createDefaultPage(homeCategory: string = "all"): Page {
+  // v61: "all" is the default — the kid-facing flow wants every
+  // built-in sound on the home page so they can immediately
+  // browse the library without filtering. The legacy categories
+  // ("animal" | "fart" | "silly" | "instrument") still work as
+  // filter values; pages with those filters show only the
+  // matching bucket.
   const defaultBubbles: BubbleState[] = BUILT_IN_SOUNDS
-    .filter(s => s.bucket === homeCategory)
+    .filter(s => homeCategory === "all" || s.bucket === homeCategory)
     .map(s => ({
       id: `b:built-in:${s.key}`,
       type: "built-in" as const,

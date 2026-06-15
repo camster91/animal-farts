@@ -1,112 +1,138 @@
 #!/usr/bin/env bash
-# sync-traefik.sh — re-assert the animals.ashbi.ca entry on the
-# /opt/traefik/dynamic.yml file. Idempotent. Skips the restart
-# (Traefik hot-reloads dynamic config — `traefik.flag` is
-# available if a forced restart is needed).
+# sync-traefik.sh — re-assert the animals.ashbi.ca entry in
+# /opt/traefik/dynamic.yml on the host. Idempotent.
 #
 # Why this is needed:
-#   The fleet migrated from Caddy to Traefik v2.x (started 2026-06-14).
-#   Caddy is dead (bind to :443 fails — Traefik owns the port).
-#   `/opt/traefik/dynamic.yml` is the source of truth for HTTP
-#   routing. Each project (lull, lull-relay, animal-farts, ...)
-#   has its own block there.
+#   The fleet migrated from Caddy to Traefik v2.x (2026-06-14).
+#   Traefik is bound to :80 and :443 on the host. Caddy is dead
+#   (bind fails). The animal-farts subdomain's route lives in
+#   /opt/traefik/dynamic.yml (lull + lull-relay + animal-farts).
+#   Traefik watches the file via its dynamic-file provider and
+#   hot-reloads — no restart needed.
 #
-#   This script mirrors the animal-farts block into the live
-#   dynamic.yml so the animal-farts PWA stays reachable. The
-#   first run (or a sibling team's manual edit that wipes the
-#   block) re-asserts it. Subsequent runs short-circuit when
-#   the block is already present.
+#   This script ensures the animal-farts block is present. Idempotent.
 #
 # Usage:
 #   scripts/sync-traefik.sh
-#
-# This replaces the old scripts/sync-caddy.sh. The Caddy-era
-# version of that script tried to restart the Caddy systemd
-# service after editing /opt/caddy/Caddyfile — but Caddy is
-# no longer the fleet's reverse proxy. This script does the
-# Traefik equivalent: edit /opt/traefik/dynamic.yml, no restart
-# needed (Traefik watches the file via its dynamic-file
-# provider in /opt/traefik/traefik.yml).
 
 set -euo pipefail
 
 VPS="${VPS:-hostinger}"
 LIVE_CFG="/opt/traefik/dynamic.yml"
 ANIMALS_PORT=3015
-SCRIPT_REMOTE="import re, sys
-LIVE_CFG = '$LIVE_CFG'
-ANIMALS_PORT = $ANIMALS_PORT
-HOST = 'animals.ashbi.ca'
+
+# 1. Compute the desired block in Python (avoiding heredoc escape
+# hell) and pipe it to the host.
+#
+# Strategy: read the live file, check if the block exists, and
+# if not, insert it after the lull-relay anchors.
+
+# Inline the Python via stdin pipe (not heredoc, to avoid bash
+# escaping the $ inside f-strings).
+cat <<'PYEOF' | ssh -T "$VPS" python3
+import sys
+LIVE_CFG = "/opt/traefik/dynamic.yml"
+ANIMALS_PORT = 3015
+HOST = "animals.ashbi.ca"
 
 with open(LIVE_CFG) as f:
     s = f.read()
 
-# Idempotency: if the service is already declared, no-op.
-if re.search(r'^\s+service:\s*' + re.escape(HOST.split('.')[0]), s, flags=re.MULTILINE):
-    # Check the entry: don't trust the hostname substring alone
-    pass
-
-if 'animal-farts:' in s and f'service: animal-farts' in s:
-    print('[sync-traefik] animals.ashbi.ca block already present, no-op')
+# Idempotency: check for the exact router block.
+if "rule: \"Host(`animals.ashbi.ca`)\"" in s and "service: animal-farts" in s:
+    print("[sync-traefik] animals.ashbi.ca block already present, no-op")
     sys.exit(0)
 
-# Insert the router block right after lull-relay's router,
-# and the service block right after lull-relay's service.
-# The string anchors are exact copies of the existing lull-relay
-# blocks in the file (see /opt/traefik/dynamic.yml on the host).
-ROUTER_ANCHOR = '''    lull-relay:
-      rule: \"Host(\`lull-relay.ashbi.ca\`)\"
-      entryPoints:
-        - websecure
-      service: lull-relay
-      tls:
-        certResolver: letsencrypt'''
-ROUTER_INSERT = ROUTER_ANCHOR + f'''
-    animal-farts:
-      rule: \"Host(\`{HOST}\`)\"
-      entryPoints:
-        - websecure
-      service: animal-farts
-      tls:
-        certResolver: letsencrypt'''
-SERVICE_ANCHOR = '''    lull-relay:
-      loadBalancer:
-        servers:
-          - url: \"http://127.0.0.1:3020\"'''
-SERVICE_INSERT = SERVICE_ANCHOR + f'''
-    animal-farts:
-      loadBalancer:
-        servers:
-          - url: \"http://127.0.0.1:{ANIMALS_PORT}\"'''
+# Anchors: copy the existing lull-relay router and service blocks
+# exactly. Use a multi-line literal so the spaces match.
+# Note: the live file may use either the explicit-cert form
+# (certResolver: letsencrypt) or the shorthand form (tls: {}).
+# Both are valid Traefik configs. We try the explicit form first,
+# fall back to the shorthand if not found.
+ROUTER_ANCHORS = [
+    (
+        "    lull-relay:\n"
+        "      rule: \"Host(`lull-relay.ashbi.ca`)\"\n"
+        "      entryPoints:\n"
+        "        - websecure\n"
+        "      service: lull-relay\n"
+        "      tls:\n"
+        "        certResolver: letsencrypt"
+    ),
+    (
+        "    lull-relay:\n"
+        "      rule: \"Host(`lull-relay.ashbi.ca`)\"\n"
+        "      entryPoints:\n"
+        "        - websecure\n"
+        "      service: lull-relay\n"
+        "      tls: {}"
+    ),
+]
+SERVICE_ANCHOR = (
+    "    lull-relay:\n"
+    "      loadBalancer:\n"
+    "        servers:\n"
+    "          - url: \"http://127.0.0.1:3020\""
+)
 
-if ROUTER_ANCHOR not in s:
-    print(f'[sync-traefik] anchor missing: {ROUTER_ANCHOR!r}', file=sys.stderr)
+# Idempotency: already present? Bail.
+if "rule: \"Host(`animals.ashbi.ca`)\"" in s and "service: animal-farts" in s:
+    print("[sync-traefik] animals.ashbi.ca block already present, no-op")
+    sys.exit(0)
+
+# Find which router anchor matches the live file.
+router_anchor = None
+for cand in ROUTER_ANCHORS:
+    if cand in s:
+        router_anchor = cand
+        break
+if router_anchor is None:
+    print(f"[sync-traefik] no ROUTER_ANCHOR matched in {LIVE_CFG}", file=sys.stderr)
     sys.exit(1)
 if SERVICE_ANCHOR not in s:
-    print(f'[sync-traefik] anchor missing: {SERVICE_ANCHOR!r}', file=sys.stderr)
+    print(f"[sync-traefik] SERVICE_ANCHOR not found in {LIVE_CFG}", file=sys.stderr)
     sys.exit(1)
 
-s = s.replace(ROUTER_ANCHOR, ROUTER_INSERT)
+# Match the tls form of the live file. The explicit-cert anchor has
+# the certResolver line; the shorthand anchor has "tls: {}" instead.
+# We append the matching form for the animal-farts block.
+if "certResolver: letsencrypt" in router_anchor:
+    tls_block = (
+        "      tls:\n"
+        "        certResolver: letsencrypt"
+    )
+else:
+    tls_block = "      tls: {}"
+
+ROUTER_INSERT = router_anchor + (
+    "\n"
+    "    animal-farts:\n"
+    f"      rule: \"Host(`{HOST}`)\"\n"
+    "      entryPoints:\n"
+    "        - websecure\n"
+    "      service: animal-farts\n"
+    f"{tls_block}"
+)
+SERVICE_INSERT = SERVICE_ANCHOR + (
+    "\n"
+    "    animal-farts:\n"
+    "      loadBalancer:\n"
+    "        servers:\n"
+    f"          - url: \"http://127.0.0.1:{ANIMALS_PORT}\""
+)
+
+s = s.replace(router_anchor, ROUTER_INSERT)
 s = s.replace(SERVICE_ANCHOR, SERVICE_INSERT)
 
-with open(LIVE_CFG, 'w') as f:
+with open(LIVE_CFG, "w") as f:
     f.write(s)
-print('[sync-traefik] animals.ashbi.ca block inserted, Traefik will hot-reload')
-"
-
-echo "[sync-traefik] live dynamic.yml sha256 (before): $(ssh "$VPS" "sha256sum $LIVE_CFG 2>/dev/null | cut -d' ' -f1" 2>/dev/null || echo unknown)"
-
-out=$(ssh "$VPS" "python3 - <<'PYEOF'
-$SCRIPT_REMOTE
+print("[sync-traefik] animals.ashbi.ca block inserted, Traefik will hot-reload")
 PYEOF
-" 2>&1)
-echo "$out" | head -10
 
+# 2. Probe the live site to confirm.
 echo "[sync-traefik] live dynamic.yml sha256 (after):  $(ssh "$VPS" "sha256sum $LIVE_CFG 2>/dev/null | cut -d' ' -f1" 2>/dev/null || echo unknown)"
-
-# Probe the live site
 echo "[sync-traefik] checking live site…"
-sleep 2  # give Traefik a moment to hot-reload
+sleep 2
 for path in / /api/health; do
   code=$(curl -s -o /dev/null -w "%{http_code}" -m 8 "https://animals.ashbi.ca$path" 2>&1)
   echo "  $code  GET $path"

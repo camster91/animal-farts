@@ -21,7 +21,13 @@ export function usePagesState() {
   const [pages, setPages] = useState<Page[]>([]);
   const [activePageId, setActivePageId] = useState<string | null>(null);
   const [homeCategory, setHomeCategory] = useState<string>(() => {
-    try { return localStorage.getItem("pootbox-home-category-v1") || "animal"; } catch { return "animal"; }
+    // v61: default to "all" so the home page shows every built-in
+    // sound. Legacy "animal" / "fart" / "silly" / "instrument"
+    // values still work for users who set them in a prior version.
+    try {
+      const v = localStorage.getItem("pootbox-home-category-v1");
+      return v || "all";
+    } catch { return "all"; }
   });
 
   // ── Refs ─────────────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ interface SoundLibraryProps {
   builtInSounds: BuiltInSound[];
   alreadyAddedKeys: Set<string>;
   onPick: (sound: BuiltInSound) => void;
+  onRecord: () => void; // v61: kid can record their own sound
   onClose: () => void;
 }
 
@@ -38,6 +39,7 @@ const SoundLibrary: FC<SoundLibraryProps> = ({
   builtInSounds,
   alreadyAddedKeys,
   onPick,
+  onRecord,
   onClose,
 }) => {
   const [searchRaw, setSearchRaw] = useState("");
@@ -117,6 +119,38 @@ const SoundLibrary: FC<SoundLibraryProps> = ({
           }}
         >
           ✕
+        </button>
+      </div>
+
+      {/* v61: "Record your own" CTA at the top of the picker.
+          Sits above the bucket chips so the kid sees it first
+          (most of them will reach for the record button, not
+          the filter buttons). */}
+      <div style={{ padding: "10px 16px 0" }}>
+        <button
+          onClick={() => { onRecord(); }}
+          aria-label="Record your own sound"
+          style={{
+            width: "100%",
+            minHeight: 52,
+            padding: "10px 16px",
+            borderRadius: 14,
+            background: "linear-gradient(135deg, #F59E0B 0%, #FB923C 100%)",
+            color: "white",
+            border: "none",
+            cursor: "pointer",
+            fontSize: "1rem",
+            fontWeight: 700,
+            fontFamily: "Fredoka, system-ui, sans-serif",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            boxShadow: "0 2px 8px rgba(245,158,11,0.3)",
+          }}
+        >
+          <span style={{ fontSize: 18 }}>🎤</span>
+          <span>Record your own sound</span>
         </button>
       </div>
 
