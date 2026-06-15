@@ -12,10 +12,17 @@ Brace-balanced. Robust to repeated runs.
 
 The curated template is hand-built from the live container
 state (animals on :3015, lull/lull-relay on Traefik :8443,
-splash direct, hub/markup/contractions direct, etc.) + the
-alinenasseh block extracted from the live Caddyfile (which
-has elaborate headers + log config that we don't want to
-rewrite from scratch).
+splash direct, hub/markup/contractions direct, etc.).
+The alinenasseh.com + artisan.ashbi.ca blocks from the
+prior Caddyfile state were removed in v73: the public
+A-records for those hostnames point to WP Engine, not
+this VPS, so any cert renewal via LE http-01 (the only
+challenge Caddy has configured) always fails. After 5
+failures, LE HTTP 429 rate-limits the cert acquisition
+and Caddy spends ~1 min/hour wasted on hopeless renewals.
+The alinenasseh / artisan PHP app on :8081 was never
+reachable from the public internet anyway — its block
+existed in the Caddyfile but no real traffic ever hit it.
 """
 import re, sys, pathlib, subprocess
 
@@ -82,53 +89,6 @@ contractions.ashbi.ca {
 }
 relay.ashbi.ca {
     reverse_proxy 127.0.0.1:3032
-}
-
-alinenasseh.com, www.alinenasseh.com {
-    encode gzip zstd
-    reverse_proxy 127.0.0.1:8081 {
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
-        transport http {
-            dial_timeout 30s
-            response_header_timeout 60s
-        }
-    }
-    @assets {
-        path *.css *.js *.svg *.png *.jpg *.jpeg *.webp *.woff2 *.ico
-    }
-    header @assets Cache-Control "public, max-age=31536000, immutable"
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-        X-Frame-Options "SAMEORIGIN"
-        X-Content-Type-Options "nosniff"
-        Referrer-Policy "strict-origin-when-cross-origin"
-    }
-    log {
-        output file /data/alinenasseh.com.log {
-            roll_size 50mb
-            roll_keep 5
-        }
-    }
-}
-
-artisan.ashbi.ca {
-    encode gzip zstd
-    reverse_proxy 127.0.0.1:8081 {
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
-        transport http {
-            dial_timeout 30s
-        }
-    }
-    log {
-        output file /data/artisan.ashbi.ca.log {
-            roll_size 50mb
-            roll_keep 5
-        }
-    }
 }
 """
 
