@@ -936,6 +936,17 @@ export default function PootBox() {
           0%, 100% { transform: scale(1.06); }
           50% { transform: scale(1.14); }
         }
+        /* v62: continuous pulse on the currently-playing card in
+           the new CardGrid view. Same intent as
+           pootbox-bubble-playing (above) but tuned for the
+           card-grid layout — scale slightly less aggressively
+           (1.05 vs 1.14) and start from a more neutral 1.0
+           baseline so the card doesn't "grow" off its grid
+           cell. Suppressed under reduced-motion. */
+        @keyframes pootbox-card-playing {
+          0%, 100% { transform: scale(1.05); }
+          50%      { transform: scale(1.12); }
+        }
         @keyframes pootbox-combo-star {
           0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
           100% {
