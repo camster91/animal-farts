@@ -48,8 +48,13 @@ describe('v68: sync-caddy.py robustness invariants', () => {
 
   it('contains the animals.ashbi.ca direct-to-container block', () => {
     const src = readFileSync(PY, 'utf8');
-    assert.ok(/animals\.ashbi\.ca \{[\s\S]*?127\.0\.0\.1:3015/.test(src),
-      'canonical template must include animals → 127.0.0.1:3015');
+    // v74 cutover: animals.ashbi.ca forwards to Traefik on :8443
+    // (which then forwards to the container on :3015). The
+    // direct-to-:3015 path was the v62-v73 form; v74 routes
+    // through Traefik so the cert + routing is consistent
+    // with lull + lull-relay + splash.
+    assert.ok(/animals\.ashbi\.ca \{[\s\S]*?https:\/\/127\.0\.0\.1:8443/.test(src),
+      'canonical template must include animals → Traefik :8443 (HTTPS)');
   });
 
   it('does NOT include the Traefik-via-:8880 hop', () => {
@@ -61,12 +66,27 @@ describe('v68: sync-caddy.py robustness invariants', () => {
       'v68 must not include any reference to Traefik :8880');
   });
 
-  it('includes alinenasseh + artisan blocks (live sites)', () => {
+  it('does NOT include alinenasseh / artisan blocks (v73 removed them)', () => {
+    // v73 removed the alinenasseh + artisan blocks because
+    // the public A-records for those hostnames point to
+    // WP Engine (not this VPS) — cert renewals always failed
+    // and LE rate-limited Caddy. The PHP app on :8081 is
+    // still running but no longer has a public route.
     const src = readFileSync(PY, 'utf8');
-    assert.ok(/alinenasseh\.com, www\.alinenasseh\.com \{/.test(src));
-    assert.ok(/artisan\.ashbi\.ca \{/.test(src));
-    assert.ok(/127\.0\.0\.1:8081/.test(src),
-      'both alinenasseh + artisan go to 127.0.0.1:8081');
+    assert.ok(!/alinenasseh\.com, www\.alinenasseh\.com \{/.test(src),
+      'alinenasseh block should be removed');
+    assert.ok(!/artisan\.ashbi\.ca \{/.test(src),
+      'artisan block should be removed');
+    assert.ok(!/127\.0\.0\.1:8081/.test(src),
+      'no route should go to 127.0.0.1:8081');
+  });
+
+  it('animals.ashbi.ca forwards to Traefik on :8443 (v74 cutover)', () => {
+    const src = readFileSync(PY, 'utf8');
+    assert.ok(/animals\.ashbi\.ca \{[\s\S]*?https:\/\/127\.0\.0\.1:8443/.test(src),
+      'animals block should forward to Traefik :8443 (HTTPS)');
+    assert.ok(/tls_insecure_skip_verify/.test(src),
+      'animals block should use tls_insecure_skip_verify (loopback)');
   });
 
   it('includes lull + lull-relay on Traefik :8443', () => {

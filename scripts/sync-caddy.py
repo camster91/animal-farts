@@ -23,6 +23,15 @@ and Caddy spends ~1 min/hour wasted on hopeless renewals.
 The alinenasseh / artisan PHP app on :8081 was never
 reachable from the public internet anyway — its block
 existed in the Caddyfile but no real traffic ever hit it.
+
+v74: animals.ashbi.ca forwards to Traefik on :8443 (loopback
+HTTPS, tls_insecure_skip_verify) instead of the container
+on :3015. Traefik handles TLS termination using the existing
+LE cert (which the operator copied to /opt/traefik/certs/).
+The other 9 blocks still go directly to their containers.
+Traefik was previously dormant (the prior rm nuke deleted
+the container + image); it's now running again as a
+sidecar.
 """
 import re, sys, pathlib, subprocess
 
@@ -30,7 +39,12 @@ PATH = pathlib.Path("/opt/caddy/Caddyfile")
 
 canonical = """\
 animals.ashbi.ca {
-  reverse_proxy 127.0.0.1:3015
+  reverse_proxy https://127.0.0.1:8443 {
+    header_up Host {host}
+    transport http {
+      tls_insecure_skip_verify
+    }
+  }
 }
 
 photogen.ashbi.ca, status.photogen.ashbi.ca {
