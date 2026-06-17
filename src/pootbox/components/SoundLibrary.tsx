@@ -35,6 +35,14 @@ function filterSounds(
 
 const COLS = 6;
 
+// v71: cap the unfiltered grid at 30 tiles by default. With ~376 sounds in
+// the library (per v70 auto-discover), mounting 376 buttons in a 6-col grid
+// on every modal open is 12x the DOM/JSX work and visibly janky on mid-range
+// Android. The category chips + search box narrow the filtered list, and
+// the "Show all" button below the grid reveals the rest. Tiles per row is
+// 6 on a phone, so 30 = 5 full rows, fits without scrolling the grid area.
+const DEFAULT_PAGE_LIMIT = 30;
+
 const BUCKETS: { label: string; value: string }[] = [
   { label: "All", value: "all" },
   { label: "Animals", value: "animal" },
@@ -69,6 +77,10 @@ const SoundLibrary: FC<SoundLibraryProps> = ({
   // changes (handled by the reset-on-close in onClose + the
   // filter chip's onClick).
   const [activeSubBucket, setActiveSubBucket] = useState("all");
+  // v71: when the user explicitly wants the full filtered list, "Show all"
+  // toggles this. Resets to false on any filter change so a fresh search
+  // returns to the 30-tile default.
+  const [showAll, setShowAll] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 200ms debounce on search input
@@ -83,12 +95,21 @@ const SoundLibrary: FC<SoundLibraryProps> = ({
   }, [searchRaw]);
 
   const filtered = filterSounds(builtInSounds, debouncedSearch, activeBucket, activeSubBucket);
+  const filteredTotal = filtered.length;
+  const visible = showAll ? filtered : filtered.slice(0, DEFAULT_PAGE_LIMIT);
+  // When the user changes filters, drop the "show all" override so the
+  // 30-tile default applies to the new filtered set. (Otherwise a search
+  // that returns 400 matches would still render all 400.)
+  useEffect(() => {
+    setShowAll(false);
+  }, [debouncedSearch, activeBucket, activeSubBucket]);
 
   const clearFilters = () => {
     setSearchRaw("");
     setDebouncedSearch("");
     setActiveBucket("all");
     setActiveSubBucket("all");
+    setShowAll(false);
   };
 
   return (
@@ -338,7 +359,7 @@ const SoundLibrary: FC<SoundLibraryProps> = ({
           alignContent: "start",
         }}
       >
-        {filtered.length === 0 ? (
+        {filteredTotal === 0 ? (
           <div
             style={{
               gridColumn: `1 / -1`,
@@ -371,7 +392,7 @@ const SoundLibrary: FC<SoundLibraryProps> = ({
             </button>
           </div>
         ) : (
-          filtered.map((sound) => {
+          visible.map((sound) => {
             const isAdded = alreadyAddedKeys.has(sound.key);
             return (
               <button
@@ -415,6 +436,42 @@ const SoundLibrary: FC<SoundLibraryProps> = ({
           })
         )}
       </div>
+      {/* v71: Show-all affordance — only when the cap is actually hiding
+          tiles. When the filtered set is at or under 30 (today's library
+          size) the button is hidden entirely. */}
+      {filteredTotal > DEFAULT_PAGE_LIMIT && (
+        <div
+          style={{
+            padding: "12px 16px 16px",
+            borderTop: "1px solid rgba(255,255,255,0.1)",
+            display: "flex",
+            justifyContent: "center",
+          }}
+        >
+          <button
+            onClick={() => setShowAll((v) => !v)}
+            aria-expanded={showAll}
+            style={{
+              background: showAll ? "rgba(255,255,255,0.08)" : "#F59E0B",
+              border: "none",
+              borderRadius: 22,
+              padding: "10px 22px",
+              fontSize: "0.9rem",
+              fontWeight: 700,
+              fontFamily: "Fredoka, system-ui, sans-serif",
+              cursor: "pointer",
+              color: showAll ? "rgba(255,255,255,0.85)" : "#FFFFFF",
+              minHeight: 44, // iOS HIG tap target
+              minWidth: 180,
+              transition: "background 150ms ease",
+            }}
+          >
+            {showAll
+              ? `Showing all ${filteredTotal} — collapse`
+              : `Show all ${filteredTotal} sounds`}
+          </button>
+        </div>
+      )}
     </div>
   );
 };
