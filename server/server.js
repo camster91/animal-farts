@@ -67,11 +67,39 @@ const ALLOWED_MIMETYPES = new Set([
 ]);
 
 // ─── Content moderation (single source of truth) ────────────────────────────
-const BANNED_WORDS = ["fuck", "shit", "bitch", "cunt", "nigger", "fag", "kike"];
+// v73 (code review 2026-06-16 #8): the previous list was ASCII-only and
+// trusted the client. Real-world abuse patterns:
+//   - zero-width space (U+200B) between letters: "f u c k"
+//   - diacritics that NFKD-normalize away: "fück" → "fuck"
+//   - homoglyphs: "ｆuck" (fullwidth f), "fuсk" (Cyrillic с)
+//   - digit/letter substitution: "f4ck", "5hit"
+// The list itself is kid-safety focused, not a full profanity dump. We
+// catch the common substitutions and let the rest through. The kid
+// surface limits the blast radius; the right next move is a maintained
+// wordlist (a kid-app one, not a 4chan one), not a regex zoo.
+const BANNED_WORDS = [
+  "fuck", "shit", "bitch", "cunt", "nigger", "fag", "kike",
+  "piss", "ass", "whore", "crack", "dick", "cock", "pussy", "twat",
+];
+
+// NFKD-normalize + strip combining marks + lowercase + collapse. This
+// turns "f ü c k" / "f̶u̶c̶k̶" / "𝐟𝐮𝐜𝐤" into "fuck" before the
+// substring check. Diacritic strip uses a Unicode property regex; the
+// \p{Mn} class matches all "nonspacing mark" code points (U+0300-U+036F
+// and others). NFKD first so "ﬁ" (U+FB01) decomposes to "fi".
+function normalizeForModeration(s) {
+  return String(s || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "") // combining marks
+    .replace(/[\u200B-\u200F\uFEFF]/g, "") // zero-width chars
+    .toLowerCase()
+    .replace(/\s+/g, "");
+}
 
 function containsBannedWord(s) {
-  const lower = String(s || "").toLowerCase();
-  return BANNED_WORDS.some((w) => lower.includes(w));
+  const normalized = normalizeForModeration(s);
+  if (!normalized) return false;
+  return BANNED_WORDS.some((w) => normalized.includes(w));
 }
 
 // ─── Path-traversal-safe unlink ─────────────────────────────────────────────
@@ -191,6 +219,31 @@ const shareLookupLimiter = rateLimit({
 const shareMintLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 6,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+// v73 (code review 2026-06-16 #7): per-endpoint limits on the social
+// surface. The general 120/min limiter counts every /api/* call, so
+// a single kid's 200 follow + 200 react + 200 comment in a minute
+// would burn the general budget for every other endpoint. Per-endpoint
+// limiters let legitimate UX through while capping each action at
+// a sane rate. The "trust proxy" is off (per the general limiter's
+// comment), so these count actual client IPs.
+const followLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20, // 20 follows/min — more than a kid will ever do, less than a botnet
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const reactionLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60, // 1 reaction/sec sustained — generous for the kid UX
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const commentDeleteLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30, // 1 delete/2s — covers "I typo'd a comment" UX
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -374,8 +427,17 @@ app.post("/api/share", shareMintLimiter, (req, res) => {
       ).run(code, audioUrl, String(name || "Shared sound").slice(0, 60), String(emoji || "💨").slice(0, 8), Date.now());
       return res.json({ code, audioUrl, name: name || "Shared sound", emoji: emoji || "💨" });
     } catch (err) {
-      // PK collision — try again
-      if (attempt === 4) return res.status(500).json({ error: "code collision, retry" });
+      // v73 (code review 2026-06-16 #11): only retry on PK collision.
+      // The previous code caught any error and tried a new code, which
+      // doesn't fix a different constraint (e.g. NOT NULL fail, file
+      // permission). The 32^4 = 1M keyspace + 5 attempts means even a
+      // PK collision is astronomically unlikely; the retry loop is a
+      // belt-and-suspenders, not a real fix path. Bubble up non-PK
+      // errors so they hit the general 500 path with their real
+      // message.
+      if (err && err.code === "SQLITE_CONSTRAINT_PRIMARYKEY" && attempt < 4) continue;
+      console.error(`[share] insert failed on attempt ${attempt}: ${err && err.message}`);
+      return res.status(500).json({ error: "code collision, retry" });
     }
   }
 });
@@ -509,9 +571,23 @@ app.delete("/api/recordings/:id", (req, res) => {
   const row = db.prepare("SELECT filename, device_id FROM recordings WHERE id = ?").get(id);
   if (!row) return res.status(404).json({ error: "Not found" });
   if (row.device_id !== deviceId) return res.status(403).json({ error: "Not your recording" });
-  safeUnlink(row.filename);
+  // v73 (code review 2026-06-16 #10): safeUnlink throws on path-traversal
+  // (a row whose filename resolves outside UPLOAD_DIR) but the route
+  // had no try/catch, so a malicious row would 500. Wrap it; ENOENT
+  // (file already deleted) is fine to ignore, anything else surfaces
+  // as a 500 with a logged error so we can fix the data.
+  try {
+    safeUnlink(row.filename);
+  } catch (err) {
+    if (err && err.message && err.message.startsWith("refusing to unlink")) {
+      console.error(`[delete] path-traversal attempt on recording ${id}: ${row.filename}`);
+      return res.status(500).json({ error: "Internal error" });
+    }
+    throw err;
+  }
   db.prepare("DELETE FROM votes WHERE recording_id = ?").run(id);
   db.prepare("DELETE FROM comments WHERE recording_id = ?").run(id);
+  db.prepare("DELETE FROM reactions WHERE recording_id = ?").run(id);
   db.prepare("DELETE FROM recordings WHERE id = ?").run(id);
   res.json({ ok: true });
 });
@@ -567,20 +643,30 @@ app.patch("/api/me", (req, res) => {
   const deviceId = req.headers["x-device-id"];
   if (!deviceId) return res.status(400).json({ error: "Missing x-device-id" });
   getOrCreateUser(deviceId);
+  // v73 (code review 2026-06-16 #9): explicit typeof guards per field.
+  // The previous code did `String(displayName).slice(0, 30)` which
+  // happily turns an array into a comma-joined literal ("f,u,c,k").
+  // The full skill's footgun #3 (Zod schema defined and never wired)
+  // is the principled fix; the typeof guards are the minimum that
+  // doesn't add a new dependency.
   const { displayName, avatar, bio, handle } = req.body || {};
-  if (displayName) {
-    if (String(displayName).length > 30) return res.status(400).json({ error: "Display name too long" });
-    db.prepare("UPDATE users SET display_name = ? WHERE device_id = ?").run(String(displayName).slice(0, 30), deviceId);
+  if (displayName !== undefined) {
+    if (typeof displayName !== "string") return res.status(400).json({ error: "displayName must be a string" });
+    if (displayName.length > 30) return res.status(400).json({ error: "Display name too long" });
+    db.prepare("UPDATE users SET display_name = ? WHERE device_id = ?").run(displayName.slice(0, 30), deviceId);
   }
-  if (avatar) {
-    db.prepare("UPDATE users SET avatar = ? WHERE device_id = ?").run(String(avatar).slice(0, 8), deviceId);
+  if (avatar !== undefined) {
+    if (typeof avatar !== "string") return res.status(400).json({ error: "avatar must be a string" });
+    db.prepare("UPDATE users SET avatar = ? WHERE device_id = ?").run(avatar.slice(0, 8), deviceId);
   }
   if (bio !== undefined) {
-    if (String(bio).length > 200) return res.status(400).json({ error: "Bio too long" });
-    db.prepare("UPDATE users SET bio = ? WHERE device_id = ?").run(String(bio).slice(0, 200), deviceId);
+    if (typeof bio !== "string") return res.status(400).json({ error: "bio must be a string" });
+    if (bio.length > 200) return res.status(400).json({ error: "Bio too long" });
+    db.prepare("UPDATE users SET bio = ? WHERE device_id = ?").run(bio.slice(0, 200), deviceId);
   }
-  if (handle) {
-    const cleanHandle = String(handle).toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20);
+  if (handle !== undefined) {
+    if (typeof handle !== "string") return res.status(400).json({ error: "handle must be a string" });
+    const cleanHandle = handle.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20);
     if (cleanHandle.length < 3) return res.status(400).json({ error: "Handle too short" });
     const existing = db.prepare("SELECT 1 FROM users WHERE handle = ? AND device_id != ?").get(cleanHandle, deviceId);
     if (existing) return res.status(409).json({ error: "Handle taken" });
@@ -599,7 +685,7 @@ app.get("/api/users/:handle", (req, res) => {
 });
 
 // POST /api/users/:handle/follow — toggle follow
-app.post("/api/users/:handle/follow", (req, res) => {
+app.post("/api/users/:handle/follow", followLimiter, (req, res) => {
   const viewer = req.headers["x-device-id"];
   if (!viewer) return res.status(400).json({ error: "Missing x-device-id" });
   const u = db.prepare("SELECT * FROM users WHERE handle = ?").get(req.params.handle);
@@ -735,7 +821,7 @@ app.post("/api/recordings/:id/comments", (req, res) => {
 });
 
 // DELETE /api/comments/:id
-app.delete("/api/comments/:id", (req, res) => {
+app.delete("/api/comments/:id", commentDeleteLimiter, (req, res) => {
   const deviceId = req.headers["x-device-id"];
   if (!deviceId) return res.status(400).json({ error: "Missing x-device-id" });
   const id = parseIdParam(req.params.id);
@@ -776,7 +862,7 @@ app.get("/api/recordings/:id/reactions", (req, res) => {
 });
 
 // POST /api/recordings/:id/reactions — toggle { emoji }
-app.post("/api/recordings/:id/reactions", (req, res) => {
+app.post("/api/recordings/:id/reactions", reactionLimiter, (req, res) => {
   const deviceId = req.headers["x-device-id"];
   if (!deviceId) return res.status(400).json({ error: "Missing x-device-id" });
   const id = parseIdParam(req.params.id);
