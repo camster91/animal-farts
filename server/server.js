@@ -326,6 +326,18 @@ app.post("/api/feedback", (req, res) => {
   res.json({ ok: true });
 });
 
+// v72 (code review 2026-06-16 #2): every :id route uses parseInt, which
+// returns NaN for non-numeric input. NaN is a valid SQL value (no
+// FOREIGN KEY constraint on comments/reactions, so INSERTs succeed
+// silently and create orphan rows). The shared helper below asserts
+// the id is a positive integer so all 4 routes can reject bad input
+// with a 400 before any DB work.
+function parseIdParam(value) {
+  const n = parseInt(value, 10);
+  if (!Number.isInteger(n) || n <= 0) return null;
+  return n;
+}
+
 // === Share codes (4-character) ===
 // Anyone can mint a code for a public recording URL. Anyone with the
 // code can fetch the audio. No accounts, no follows, no profiles.
@@ -383,7 +395,7 @@ app.get("/api/recordings", (req, res) => {
   const deviceId = req.headers["x-device-id"] || "";
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   const rows = db.prepare(`
-    SELECT r.id, r.name, r.emoji, r.kid_name, r.duration_sec, r.upvotes, r.created_at, r.filename,
+    SELECT r.id, r.name, r.emoji, r.duration_sec, r.upvotes, r.created_at, r.filename,
            (SELECT COUNT(*) FROM votes WHERE recording_id = r.id AND device_id = ?) as user_voted
     FROM recordings r
     ORDER BY r.upvotes DESC, r.created_at DESC
@@ -394,7 +406,6 @@ app.get("/api/recordings", (req, res) => {
       id: r.id,
       name: r.name,
       emoji: r.emoji,
-      kidName: r.kid_name,
       durationSec: r.duration_sec,
       upvotes: r.upvotes,
       userVoted: r.user_voted > 0,
@@ -471,10 +482,10 @@ app.post("/api/recordings", uploadLimiter, (req, res, next) => {
 
 // Upvote (idempotent — toggles vote on/off per device)
 app.post("/api/recordings/:id/upvote", (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseIdParam(req.params.id);
+  if (id === null) return res.status(400).json({ error: "Invalid id" });
   const deviceId = req.headers["x-device-id"];
   if (!deviceId) return res.status(400).json({ error: "Missing x-device-id header" });
-  if (!id) return res.status(400).json({ error: "Invalid id" });
 
   const existing = db.prepare("SELECT 1 FROM votes WHERE recording_id = ? AND device_id = ?").get(id, deviceId);
   if (existing) {
@@ -491,7 +502,8 @@ app.post("/api/recordings/:id/upvote", (req, res) => {
 
 // Delete (only by original creator's device id)
 app.delete("/api/recordings/:id", (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseIdParam(req.params.id);
+  if (id === null) return res.status(400).json({ error: "Invalid id" });
   const deviceId = req.headers["x-device-id"];
   if (!deviceId) return res.status(400).json({ error: "Missing x-device-id header" });
   const row = db.prepare("SELECT filename, device_id FROM recordings WHERE id = ?").get(id);
@@ -638,7 +650,7 @@ app.get("/api/users/:handle/recordings", (req, res) => {
   if (!u) return res.status(404).json({ error: "Not found" });
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   const rows = db.prepare(`
-    SELECT r.id, r.name, r.emoji, r.kid_name, r.duration_sec, r.upvotes, r.created_at, r.filename, r.device_id,
+    SELECT r.id, r.name, r.emoji, r.duration_sec, r.upvotes, r.created_at, r.filename, r.device_id,
            (SELECT COUNT(*) FROM votes WHERE recording_id = r.id AND device_id = ?) as user_voted
     FROM recordings r
     WHERE r.device_id = ?
@@ -647,7 +659,7 @@ app.get("/api/users/:handle/recordings", (req, res) => {
   `).all(deviceId, u.device_id, limit);
   res.json({
     recordings: rows.map((r) => ({
-      id: r.id, name: r.name, emoji: r.emoji, kidName: r.kid_name,
+      id: r.id, name: r.name, emoji: r.emoji,
       durationSec: r.duration_sec, upvotes: r.upvotes, userVoted: r.user_voted > 0,
       createdAt: r.created_at, audioUrl: `/uploads/${r.filename}`,
       author: userToPublic(u, deviceId),
@@ -662,7 +674,7 @@ app.get("/api/feed", (req, res) => {
   // Make sure the user exists
   if (deviceId) getOrCreateUser(deviceId);
   const rows = db.prepare(`
-    SELECT r.id, r.name, r.emoji, r.kid_name, r.duration_sec, r.upvotes, r.created_at, r.filename, r.device_id,
+    SELECT r.id, r.name, r.emoji, r.duration_sec, r.upvotes, r.created_at, r.filename, r.device_id,
            (SELECT COUNT(*) FROM votes WHERE recording_id = r.id AND device_id = ?) as user_voted
     FROM recordings r
     WHERE r.device_id = ?
@@ -678,7 +690,7 @@ app.get("/api/feed", (req, res) => {
       authorMap.set(r.device_id, { author: userToPublic(u, deviceId), recordings: [] });
     }
     authorMap.get(r.device_id).recordings.push({
-      id: r.id, name: r.name, emoji: r.emoji, kidName: r.kid_name,
+      id: r.id, name: r.name, emoji: r.emoji,
       durationSec: r.duration_sec, upvotes: r.upvotes, userVoted: r.user_voted > 0,
       createdAt: r.created_at, audioUrl: `/uploads/${r.filename}`,
     });
@@ -688,7 +700,8 @@ app.get("/api/feed", (req, res) => {
 
 // GET /api/recordings/:id/comments
 app.get("/api/recordings/:id/comments", (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseIdParam(req.params.id);
+  if (id === null) return res.status(400).json({ error: "Invalid id" });
   const rows = db.prepare(`
     SELECT c.id, c.body, c.created_at, c.device_id, u.handle, u.display_name, u.avatar
     FROM comments c
@@ -707,7 +720,8 @@ app.get("/api/recordings/:id/comments", (req, res) => {
 app.post("/api/recordings/:id/comments", (req, res) => {
   const deviceId = req.headers["x-device-id"];
   if (!deviceId) return res.status(400).json({ error: "Missing x-device-id" });
-  const id = parseInt(req.params.id);
+  const id = parseIdParam(req.params.id);
+  if (id === null) return res.status(400).json({ error: "Invalid id" });
   const body = (req.body && req.body.body || "").toString().trim();
   if (!body) return res.status(400).json({ error: "Empty comment" });
   if (body.length > 280) return res.status(400).json({ error: "Comment too long (max 280)" });
@@ -724,7 +738,8 @@ app.post("/api/recordings/:id/comments", (req, res) => {
 app.delete("/api/comments/:id", (req, res) => {
   const deviceId = req.headers["x-device-id"];
   if (!deviceId) return res.status(400).json({ error: "Missing x-device-id" });
-  const id = parseInt(req.params.id);
+  const id = parseIdParam(req.params.id);
+  if (id === null) return res.status(400).json({ error: "Invalid id" });
   const c = db.prepare("SELECT device_id FROM comments WHERE id = ?").get(id);
   if (!c) return res.status(404).json({ error: "Not found" });
   if (c.device_id !== deviceId) return res.status(403).json({ error: "Not your comment" });
@@ -746,7 +761,8 @@ function sanitizeEmoji(s) {
 
 // GET /api/recordings/:id/reactions — { counts: {emoji:n}, mine: [emoji] }
 app.get("/api/recordings/:id/reactions", (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseIdParam(req.params.id);
+  if (id === null) return res.status(400).json({ error: "Invalid id" });
   const deviceId = req.headers["x-device-id"];
   const rows = db.prepare(
     "SELECT emoji, COUNT(*) AS n FROM reactions WHERE recording_id = ? GROUP BY emoji"
@@ -763,7 +779,8 @@ app.get("/api/recordings/:id/reactions", (req, res) => {
 app.post("/api/recordings/:id/reactions", (req, res) => {
   const deviceId = req.headers["x-device-id"];
   if (!deviceId) return res.status(400).json({ error: "Missing x-device-id" });
-  const id = parseInt(req.params.id);
+  const id = parseIdParam(req.params.id);
+  if (id === null) return res.status(400).json({ error: "Invalid id" });
   const emoji = sanitizeEmoji(req.body && req.body.emoji);
   if (!emoji) return res.status(400).json({ error: "Invalid emoji" });
   const exists = db.prepare(

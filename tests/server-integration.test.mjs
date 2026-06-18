@@ -217,6 +217,66 @@ describe("server integration: security gates", () => {
   });
 });
 
+describe("server integration: :id route validation (v72)", () => {
+  // v72 (code review 2026-06-16 #2): every :id route used parseInt, which
+  // returns NaN for non-numeric input. The POST mutations (comments,
+  // reactions) silently created orphan rows because (a) the recordings
+  // table has no FOREIGN KEY constraint and (b) the handlers didn't
+  // validate. These tests pin the 400-on-non-numeric behavior for all
+  // 4 mutating endpoints.
+  it("rejects POST /api/recordings/foo/comments with 400 (no orphan row)", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("POST", "/api/recordings/foo/comments", {
+      headers: {
+        "x-device-id": "v72-test",
+        "content-type": "application/json",
+        "content-length": "20",
+      },
+      body: JSON.stringify({ body: "should not insert" }),
+    });
+    assert.strictEqual(r.status, 400, "non-numeric :id must be 400, got " + r.status);
+    const body = JSON.parse(r.text);
+    assert.match(body.error, /invalid id/i);
+  });
+
+  it("rejects POST /api/recordings/foo/reactions with 400", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("POST", "/api/recordings/foo/reactions", {
+      headers: {
+        "x-device-id": "v72-test",
+        "content-type": "application/json",
+        "content-length": "20",
+      },
+      body: JSON.stringify({ emoji: "👍" }),
+    });
+    assert.strictEqual(r.status, 400);
+    const body = JSON.parse(r.text);
+    assert.match(body.error, /invalid id/i);
+  });
+
+  it("rejects POST /api/recordings/-1/upvote with 400 (negative not allowed)", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("POST", "/api/recordings/-1/upvote", {
+      headers: { "x-device-id": "v72-test" },
+    });
+    assert.strictEqual(r.status, 400, "negative :id must be 400");
+  });
+
+  it("rejects DELETE /api/comments/0 with 400 (zero not allowed)", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("DELETE", "/api/comments/0", {
+      headers: { "x-device-id": "v72-test" },
+    });
+    assert.strictEqual(r.status, 400);
+  });
+
+  it("rejects GET /api/recordings/foo/comments with 400 (silent-empty was a bug)", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("GET", "/api/recordings/foo/comments");
+    assert.strictEqual(r.status, 400, "GET should also reject — was silently returning empty");
+  });
+});
+
 describe("server integration: SPA + privacy/about", () => {
   it("serves /, /sw.js, /privacy.html, /about.html with 200", async (t) => {
     if (!started) return t.skip();

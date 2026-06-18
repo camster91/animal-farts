@@ -28,6 +28,16 @@ const RenameModal: FC<RenameModalProps> = ({
 
   useEffect(() => {
     if (show) {
+      // v72 (code review 2026-06-16 #6): legitimate setState-in-effect —
+      // syncing the controlled input to a new `initialName` prop when
+      // the modal opens (e.g. user renames card A, closes, then taps
+      // rename on card B with a different name). The "right" fix per
+      // the new react-hooks plugin is to lift the input into a child
+      // component keyed by initialName so React remounts on change,
+      // but that requires lifting focus/select into the child and
+      // adds a layer. The current pattern works; the lint disable
+      // documents why.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setValue(initialName);
       // Auto-focus the input on open + select all so the user
       // can either type a fresh name (replaces selection) or

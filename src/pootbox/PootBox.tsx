@@ -48,10 +48,11 @@ export default function PootBox() {
   // the visible chrome (the home-category chips were removed in
   // v65). usePagesState still owns them internally for the
   // SoundLibrary → usePagesState → createDefaultPage wiring.
+  // v72: savePagesDebounced is no longer used (was passed to
+  // useCanvasHandlers for the dead bubble-drag path).
   const {
     pages, activePageId,
     setPages, setActivePageId,
-    savePagesDebounced,
   } = usePagesState();
 
   // Bubbles on active page (extracted to useCanvasState hook)
@@ -226,6 +227,17 @@ export default function PootBox() {
 
   // ── Shake detection ───────────────────────────────────────────────────
 
+  // v72 (code review 2026-06-16 #1): `useSoundPlaying` must be declared
+  // BEFORE the devicemotion useEffect below — the handler at line 246
+  // calls `setSoundPlaying(false)`, which the new react-hooks plugin
+  // flags as "accessed before declared" if the hook order is reversed.
+  // Runtime works either way (closures resolve at call-time), but the
+  // declaration order is the documented hook contract. The hook is
+  // called ONCE here and the same tuple is reused below; only the
+  // references change (the devicemotion handler closes over the
+  // setter, the JSX consumer reads the boolean).
+  const [soundPlaying, setSoundPlaying, currentBubbleId] = useSoundPlaying();
+
   useEffect(() => {
     const handler = (e: DeviceMotionEvent) => {
       const acc = e.acceleration;
@@ -266,7 +278,10 @@ export default function PootBox() {
   // ── Sound playing poll (extracted to useSoundPlaying) ─────────────────
   // v59: also reads the currently-playing bubble id (3rd tuple element)
   // so BubbleCanvas can render a pulse on the bubble that is live.
-  const [soundPlaying, setSoundPlaying, currentBubbleId] = useSoundPlaying();
+  // v72: the hook is now declared above the devicemotion useEffect so
+  // the handler can reference setSoundPlaying without crossing the
+  // temporal-decl boundary. (The hook is called once; the references
+  // are reused here and in the JSX below.)
 
   // ── Physics loop + visual effects (extracted to usePhysicsLoop) ─────────
   // v61: the physics loop is now JUST for visual effects
@@ -275,7 +290,11 @@ export default function PootBox() {
   // grid. setBubbles is passed as a no-op since the loop
   // expects to trigger re-renders after collision, but
   // collisions don't happen in the grid.
-  const noopSetBubbles = useCallback((_b: BubbleState[]) => { /* no-op */ }, []);
+  // v72 (code review 2026-06-16 #3): dropped the unused _b param.
+  // The v52-era signature required setBubbles to be (Bubbles) => void,
+  // but in v61+ the physics loop is a no-op for ripples/sparks only,
+  // so the callback can be void.
+  const noopSetBubbles = useCallback(() => { /* no-op */ }, []);
   const {
     ripples, setRipples, sparks, comboBurst, confettiBurst, confettiParticles,
     triggerComboBurst, triggerConfetti,
@@ -357,19 +376,12 @@ export default function PootBox() {
     setShowLibrary(false);
   }, [activePageId, pages, showToast]);
 
-  // ── Remove bubble ─────────────────────────────────────────────────────
-
-  const onRemoveBubble = useCallback(async (id: string) => {
-    if (!activePageId) return;
-    if (id.startsWith("b:custom:")) {
-      const b = bubbles.find(x => x.id === id);
-      if (b?.blobUrl) URL.revokeObjectURL(b.blobUrl);
-      await deleteBlob(id);
-      deleteRecordingEmoji(id);
-    }
-    const updated = await removeBubbleFromPage(activePageId, id);
-    setPages(prev => prev.map(p => p.id === updated.id ? updated : p));
-  }, [activePageId, bubbles]);
+  // v72 (code review 2026-06-16 #5): removed the dead onRemoveBubble
+  // callback. The v52-era code had it as a separate useCallback that
+  // deleted a bubble (custom + blob cleanup, built-in + page removal).
+  // v61's CardGrid replaced this with the inline onDeleteCard callback
+  // at the JSX render site (~line 544), which does the same thing
+  // without the indirection. onRemoveBubble is no longer referenced.
 
   // ── Canvas pointer handlers + drag + 5s long-press (extracted to useCanvasHandlers) ──
 
@@ -455,18 +467,14 @@ export default function PootBox() {
   // affordance). The bubble pointer handlers (down/move/up/cancel)
   // are dead — the CardGrid uses onClick + onChangeSound instead
   // and there's no per-bubble drag.
+  // v72: useCanvasHandlers now takes only `onSettingsOpen` (the dead
+  // options for the bubble-drag path were trimmed along with the
+  // 4 dead exports and the 7-field DragState interface).
   const {
     onBlankPointerDown,
     onBlankPointerMove,
     onBlankPointerUp,
   } = useCanvasHandlers({
-    canvasRef,
-    bubblesRef,
-    activePageId,
-    setPages,
-    onRemoveBubble,
-    savePagesDebounced,
-    onBubbleTap: handleBubbleTap,
     onSettingsOpen: () => setShowSettings(true),
   });
 

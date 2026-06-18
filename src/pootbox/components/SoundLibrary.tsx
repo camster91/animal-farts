@@ -97,10 +97,15 @@ const SoundLibrary: FC<SoundLibraryProps> = ({
   const filtered = filterSounds(builtInSounds, debouncedSearch, activeBucket, activeSubBucket);
   const filteredTotal = filtered.length;
   const visible = showAll ? filtered : filtered.slice(0, DEFAULT_PAGE_LIMIT);
-  // When the user changes filters, drop the "show all" override so the
+  // v72 (code review 2026-06-16 #6): legitimate setState-in-effect —
+  // when the user changes filters, drop the "show all" override so the
   // 30-tile default applies to the new filtered set. (Otherwise a search
-  // that returns 400 matches would still render all 400.)
+  // that returns 400 matches would still render all 400.) The "right"
+  // fix is to derive `showAll` from props via a memo, but that requires
+  // the parent to manage the toggle state. The current pattern works;
+  // the lint disable documents why.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setShowAll(false);
   }, [debouncedSearch, activeBucket, activeSubBucket]);
 
