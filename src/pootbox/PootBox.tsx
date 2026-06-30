@@ -580,7 +580,6 @@ export default function PootBox() {
               setServerRecordingIds((prev) => {
                 if (!(id in prev)) return prev;
                 const next = { ...prev };
-                // eslint-disable-next-line @typescript-eslint/no-unused-vars
                 delete next[id];
                 return next;
               });
@@ -1047,9 +1046,9 @@ export default function PootBox() {
            the card visibly "acknowledges" the tap without
            feeling slow. Resets to 1.0 at the end so the next
            tap can re-trigger the animation (the React re-mount
-           trick in EmojiBubble doesn't apply here since the
-           card div is a stable React node). Suppressed under
-           reduced-motion. */
+           trick that EmojiBubble used in v52-v60 doesn't apply
+           here since the card div is a stable React node).
+           Suppressed under reduced-motion. */
         @keyframes pootbox-card-tap {
           0%   { transform: scale(0.94); }
           50%  { transform: scale(1.04); }

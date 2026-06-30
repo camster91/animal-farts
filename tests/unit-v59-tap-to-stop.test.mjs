@@ -4,7 +4,9 @@
 //   - playSingle's 3rd-arg (bubbleId) flow
 //   - getCurrentBubbleId's null-when-no-sound rule
 //   - the "tap-the-playing-bubble" branching in handleBubbleTap
-//   - the playing-bubble props passed to EmojiBubble / BubbleCanvas
+//   - the isPlaying prop logic (was on BubbleCanvas / EmojiBubble
+//     before v61; the CardGrid now owns it inline; tests pin the
+//     pure logic that both rendered before)
 //
 // The actual audio playback requires a browser; covered by manual
 // smoke testing on the live site.
@@ -133,9 +135,11 @@ describe("v59: tap-playing-bubble-to-stop — handleBubbleTap branch", () => {
   });
 });
 
-describe("v59: BubbleCanvas passes isPlaying only to the playing bubble", () => {
-  // The pure logic from BubbleCanvas — for each bubble in the list,
-  // determine if it should render the isPlaying state.
+describe("v59: isPlaying flag is true only for the playing bubble", () => {
+  // Pure logic that used to live in BubbleCanvas. For each bubble
+  // in the list, determine if it should render the isPlaying
+  // state. (v76: the source component is gone but the rule the
+  // rules of the rendering are still pinned here.)
   function computeIsPlayingFlags({ bubbles, playingBubbleId }) {
     return bubbles.map((b) => ({
       id: b.id,
@@ -164,9 +168,11 @@ describe("v59: BubbleCanvas passes isPlaying only to the playing bubble", () => 
   });
 });
 
-describe("v59: EmojiBubble isPlaying prop shapes the boxShadow", () => {
-  // The pure logic from EmojiBubble — when isPlaying, the
-  // boxShadow is the amber ring; otherwise the standard ring.
+describe("v59: card boxShadow depends on isPlaying", () => {
+  // Pure logic that used to live in EmojiBubble (deleted in v76).
+  // When isPlaying, the boxShadow is the amber ring; otherwise
+  // the standard ring. The CardGrid now inlines this same rule
+  // on each card div, so this test pins the value shape.
   function getBoxShadow({ isPlaying }) {
     return isPlaying
       ? "0 0 0 4px rgba(245,158,11,0.85), 0 0 24px rgba(245,158,11,0.4), 0 6px 18px rgba(0,0,0,0.12)"

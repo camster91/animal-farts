@@ -101,8 +101,8 @@ const CardGrid: FC<CardGridProps> = ({
     onDeleteCard?.(b.id);
   }
 
-  // Render a single card. Inline-styled for now (the rest of the
-  // app uses inline styles too — see EmojiBubble.tsx, AddSoundMenu.tsx).
+  // Inline styles here (no Tailwind) — the rest of the
+  // app uses inline styles too (e.g. PootBox, SoundLibrary, etc.).
   function renderCard(b: BubbleState) {
     const isPlaying = playingBubbleId === b.id;
     const isCustom = b.type === "custom";
