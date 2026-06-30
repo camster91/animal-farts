@@ -553,6 +553,171 @@ describe("server integration: POST /api/recordings/:id/reactions (v78)", () => {
   });
 });
 
+describe("server integration: comments (v78)", () => {
+  // v78: the CommentsSheet calls GET/POST/DELETE on comments
+  // endpoints. These tests pin the server contract: list, post,
+  // delete-own, reject-delete-others, banned-words, length limit.
+  it("comments: list empty → post → list has 1 → delete → list empty", async (t) => {
+    if (!started) return t.skip();
+    // Upload a fresh recording.
+    const webm = Buffer.from("v78-comments-test");
+    const mp = multipartAudio("audio", webm, "v78-cmt.webm", "audio/webm");
+    const up = await http("POST", "/api/recordings", {
+      headers: {
+        "x-device-id": "v78-cmt-A",
+        "content-type": mp.contentType,
+        "content-length": String(mp.body.length),
+      },
+      body: mp.body,
+    });
+    assert.strictEqual(up.status, 200);
+    const { id } = JSON.parse(up.text);
+
+    // 1. Empty list initially.
+    const list0 = await http("GET", `/api/recordings/${id}/comments`);
+    assert.strictEqual(list0.status, 200);
+    assert.deepStrictEqual(JSON.parse(list0.text).comments, []);
+
+    // 2. Post a comment.
+    const post1 = await http("POST", `/api/recordings/${id}/comments`, {
+      headers: {
+        "x-device-id": "v78-cmt-A",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ body: "cute!" }),
+    });
+    assert.strictEqual(post1.status, 200);
+    const post1Body = JSON.parse(post1.text);
+    assert.ok(typeof post1Body.id === "number");
+    assert.strictEqual(post1Body.body, "cute!");
+
+    // 3. List now has 1.
+    const list1 = await http("GET", `/api/recordings/${id}/comments`);
+    assert.strictEqual(JSON.parse(list1.text).comments.length, 1);
+
+    // 4. Post a second comment from a different device.
+    const post2 = await http("POST", `/api/recordings/${id}/comments`, {
+      headers: {
+        "x-device-id": "v78-cmt-B",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ body: "love it" }),
+    });
+    assert.strictEqual(post2.status, 200);
+
+    // 5. List has 2, both visible.
+    const list2 = await http("GET", `/api/recordings/${id}/comments`);
+    const list2Body = JSON.parse(list2.text);
+    assert.strictEqual(list2Body.comments.length, 2);
+    const bodies = list2Body.comments.map((c) => c.body);
+    assert.ok(bodies.includes("cute!"));
+    assert.ok(bodies.includes("love it"));
+
+    // 6. Delete own comment (device A's).
+    const del = await http("DELETE", `/api/comments/${post1Body.id}`, {
+      headers: { "x-device-id": "v78-cmt-A" },
+    });
+    assert.strictEqual(del.status, 200);
+
+    // 7. List has 1 (only B's comment left).
+    const list3 = await http("GET", `/api/recordings/${id}/comments`);
+    assert.strictEqual(JSON.parse(list3.text).comments.length, 1);
+
+    // Clean up.
+    await http("DELETE", `/api/recordings/${id}`, {
+      headers: { "x-device-id": "v78-cmt-A" },
+    });
+  });
+
+  it("comments: empty body returns 400", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("POST", "/api/recordings/1/comments", {
+      headers: {
+        "x-device-id": "v78-cmt",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ body: "" }),
+    });
+    assert.strictEqual(r.status, 400);
+  });
+
+  it("comments: 281-char body returns 400 (over 280 limit)", async (t) => {
+    if (!started) return t.skip();
+    const long = "a".repeat(281);
+    const r = await http("POST", "/api/recordings/1/comments", {
+      headers: {
+        "x-device-id": "v78-cmt",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ body: long }),
+    });
+    assert.strictEqual(r.status, 400);
+  });
+
+  it("comments: banned words return 400 (v73 moderation)", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("POST", "/api/recordings/1/comments", {
+      headers: {
+        "x-device-id": "v78-cmt",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ body: "f u c k" }),
+    });
+    assert.strictEqual(r.status, 400);
+    assert.match(JSON.parse(r.text).error, /blocked/i);
+  });
+
+  it("comments: missing x-device-id returns 400", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("POST", "/api/recordings/1/comments", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ body: "hi" }),
+    });
+    assert.strictEqual(r.status, 400);
+  });
+
+  it("comments: cannot delete someone else's comment (403)", async (t) => {
+    if (!started) return t.skip();
+    // Upload + post as device A
+    const webm = Buffer.from("v78-cmt-auth");
+    const mp = multipartAudio("audio", webm, "v78-auth.webm", "audio/webm");
+    const up = await http("POST", "/api/recordings", {
+      headers: {
+        "x-device-id": "v78-cmt-A2",
+        "content-type": mp.contentType,
+        "content-length": String(mp.body.length),
+      },
+      body: mp.body,
+    });
+    assert.strictEqual(up.status, 200);
+    const { id } = JSON.parse(up.text);
+    const post = await http("POST", `/api/recordings/${id}/comments`, {
+      headers: { "x-device-id": "v78-cmt-A2", "content-type": "application/json" },
+      body: JSON.stringify({ body: "mine" }),
+    });
+    assert.strictEqual(post.status, 200);
+    const commentId = JSON.parse(post.text).id;
+    // Try to delete as device B.
+    const theft = await http("DELETE", `/api/comments/${commentId}`, {
+      headers: { "x-device-id": "v78-cmt-B2" },
+    });
+    assert.strictEqual(theft.status, 403, "wrong-device delete must 403");
+    // Cleanup as device A.
+    await http("DELETE", `/api/comments/${commentId}`, {
+      headers: { "x-device-id": "v78-cmt-A2" },
+    });
+    await http("DELETE", `/api/recordings/${id}`, {
+      headers: { "x-device-id": "v78-cmt-A2" },
+    });
+  });
+
+  it("comments: list on non-numeric id returns 400", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("GET", "/api/recordings/foo/comments");
+    assert.strictEqual(r.status, 400);
+  });
+});
+
 describe("server integration: SPA + privacy/about", () => {
   it("serves /, /sw.js, /privacy.html, /about.html with 200", async (t) => {
     if (!started) return t.skip();

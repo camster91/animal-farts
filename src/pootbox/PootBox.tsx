@@ -29,6 +29,7 @@ import RenameModal from "./components/RenameModal";
 import CanvasEffects from "./components/CanvasEffects";
 import RecordSheet from "./components/RecordSheet";
 import SoundLibrary from "./components/SoundLibrary";
+import CommentsSheet from "./components/CommentsSheet";
 import EmptyPageHint from "./components/EmptyPageHint";
 import FirstRunIntro from "./components/FirstRunIntro";
 import ShareSheet from "./components/ShareSheet";
@@ -231,6 +232,11 @@ export default function PootBox() {
   // null = "Add" mode (no target — picker creates a new card).
   // string = "Change" mode (picker mutates this bubble's sound).
   const [changingBubbleId, setChangingBubbleId] = useState<string | null>(null);
+
+  // v78: comments sheet open state. Single-target — one bubble
+  // at a time. commentsBubbleId stores the bubble whose comments
+  // are being shown (we then look up its server recording id).
+  const [commentsBubbleId, setCommentsBubbleId] = useState<string | null>(null);
 
   // v69: per-recording friendly names. Loaded from localStorage
   // at mount. The card label looks up names in this map (via
@@ -645,6 +651,8 @@ export default function PootBox() {
             showToast("Reaction failed — are you online?");
           }
         }}
+        // v78: open the comments sheet for a bubble.
+        onOpenComments={(id) => setCommentsBubbleId(id)}
         onDeleteCard={async (id) => {
           // v61: delete a custom card. The original onRemoveBubble
           // also revokes the blob: URL; for v61 share-imported
@@ -899,6 +907,45 @@ export default function PootBox() {
             setShowShare("none");
           }}
         />
+      )}
+
+      {/* v78: Comments sheet — opens when the kid taps the 💬
+          button on a card. Looks up the server recording id from
+          the v76 serverRecordingIds map; if it's not there (the
+          upload hasn't completed yet), the sheet shows an error
+          and the kid can't post. The key is commentsBubbleId so
+          the sheet remounts with fresh state when the kid opens
+          a different recording's comments. */}
+      {commentsBubbleId && (
+        (() => {
+          const serverId = serverRecordingIds[commentsBubbleId];
+          if (typeof serverId !== "number") {
+            // Shouldn't happen if the 💬 button is correctly gated
+            // by upvoteEligible, but defensive.
+            return null;
+          }
+          // Look up the bubble so we can show the kid which sound
+          // they're commenting on. Try (in order):
+          //   1. user-renamed name from recordingNames (custom cards)
+          //   2. built-in sound's name from BUILT_IN_SOUNDS[builtinKey]
+          //   3. fallback "your sound"
+          const page = pages.find(p => p.id === activePageId);
+          const bubble = page?.bubbles.find(b => b.id === commentsBubbleId);
+          const customName = recordingNames[commentsBubbleId];
+          const builtIn = bubble?.builtinKey
+            ? BUILT_IN_SOUNDS.find((s) => s.key === bubble.builtinKey)
+            : null;
+          const recordingName = customName ?? builtIn?.name ?? "your sound";
+          return (
+            <CommentsSheet
+              key={commentsBubbleId}
+              show={true}
+              recordingId={serverId}
+              recordingName={recordingName}
+              onClose={() => setCommentsBubbleId(null)}
+            />
+          );
+        })()
       )}
 
       {/* v61: AddSoundMenu removed. The + Add sound card in the

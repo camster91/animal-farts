@@ -60,6 +60,12 @@ interface CardGridProps {
    *  server's response. Like upvote, only fired for cards in
    *  upvoteEligible (uploaded custom recordings). */
   onReactBubble?: (bubbleId: string, emoji: string) => void;
+  /** v78: called when the kid taps the small 💬 button to open
+   *  the comments sheet. PootBox opens <CommentsSheet> for the
+   *  matching recording. Like the other social buttons, only
+   *  wired for cards in upvoteEligible (uploaded custom
+   *  recordings). */
+  onOpenComments?: (bubbleId: string) => void;
   /** v78: called when the kid taps the small "delete" button on a
     *  custom-recorded card. Built-in cards can't be deleted
     *  (changing their sound is the equivalent — kid can swap
@@ -82,6 +88,7 @@ const CardGrid: FC<CardGridProps> = ({
   upvoteEligible,
   reactions,
   onReactBubble,
+  onOpenComments,
 }) => {
   // Build a lookup: bubbleId → builtInKey (for the "Animal"/"Fart"
   // label under the emoji). The "Fart" label is shown in a slightly
@@ -362,6 +369,36 @@ const CardGrid: FC<CardGridProps> = ({
               }}
             >
               👍
+            </button>
+          )}
+          {/* v78: comments button — opens the CommentsSheet. Same
+              gating as upvote (only for uploaded custom cards). */}
+          {isCustom && onOpenComments && upvoteEligible && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenComments(b.id);
+              }}
+              aria-label={`Comments on ${name}`}
+              title="Comments"
+              style={{
+                width: 26,
+                height: 22,
+                borderRadius: 11,
+                background: "rgba(255,255,255,0.95)",
+                border: "none",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
+                color: "#3D2C1E",
+                fontSize: 12,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                padding: 0,
+                lineHeight: 1,
+              }}
+            >
+              💬
             </button>
           )}
         </div>
