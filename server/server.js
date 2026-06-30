@@ -608,6 +608,54 @@ function getOrCreateUser(deviceId) {
   return user;
 }
 
+// v74 (pass 3, 2026-06-18): batched N+1 fix for /api/users list. The
+// previous code called userToPublic() per user, which ran 4 queries
+// each (follower count, following count, recording count, isFollowing).
+// With 4 users that's 16 queries; with 200 (the cap) that's 800. We
+// keep userToPublic for the single-user endpoints (cheaper, fewer
+// queries than the join) and add usersToPublicBatch for the list
+// endpoint. Single SQL, 4 left joins, returns the same shape as
+// userToPublic but for N users in 1 query.
+function usersToPublicBatch(users, viewerDeviceId) {
+  if (!users || users.length === 0) return [];
+  // One query with subqueries for the 3 counts + a LEFT JOIN for
+  // the isFollowing flag (per-viewer). The COUNT subqueries are
+  // correlated to the outer user via u.device_id.
+  const placeholders = users.map(() => "?").join(",");
+  const sql = `
+    SELECT u.*,
+      (SELECT COUNT(*) FROM follows WHERE followee_device_id = u.device_id) AS follower_count,
+      (SELECT COUNT(*) FROM follows WHERE follower_device_id = u.device_id) AS following_count,
+      (SELECT COUNT(*) FROM recordings WHERE device_id = u.device_id) AS recording_count,
+      CASE WHEN ? IS NULL OR ? = '' THEN 0
+           ELSE (SELECT COUNT(*) FROM follows
+                 WHERE follower_device_id = ? AND followee_device_id = u.device_id)
+      END AS is_following
+    FROM users u
+    WHERE u.device_id IN (${placeholders})
+  `;
+  const params = [viewerDeviceId || "", viewerDeviceId || "", viewerDeviceId || "", ...users.map((u) => u.device_id)];
+  const rows = db.prepare(sql).all(...params);
+  // Preserve input order (the SQL is IN-clause, order is preserved
+  // by SQLite, but be defensive).
+  const byId = new Map(rows.map((r) => [r.device_id, r]));
+  return users.map((u) => {
+    const r = byId.get(u.device_id);
+    return {
+      handle: r.handle,
+      displayName: r.display_name,
+      avatar: r.avatar,
+      bio: r.bio,
+      createdAt: r.created_at,
+      followerCount: r.follower_count,
+      followingCount: r.following_count,
+      recordingCount: r.recording_count,
+      isFollowing: !!r.is_following,
+      isMe: viewerDeviceId === u.device_id,
+    };
+  });
+}
+
 function userToPublic(u, viewerDeviceId) {
   if (!u) return null;
   const followerCount = db.prepare("SELECT COUNT(*) as n FROM follows WHERE followee_device_id = ?").get(u.device_id).n;
@@ -712,7 +760,8 @@ app.get("/api/users/:handle/followers", (req, res) => {
     ORDER BY follows.created_at DESC
     LIMIT 200
   `).all(u.device_id);
-  res.json({ users: rows.map((r) => userToPublic(r, req.headers["x-device-id"])) });
+  // v74: batched (was userToPublic.map → 4 queries per follower)
+  res.json({ users: usersToPublicBatch(rows, req.headers["x-device-id"]) });
 });
 
 // GET /api/users/:handle/following
@@ -726,7 +775,8 @@ app.get("/api/users/:handle/following", (req, res) => {
     ORDER BY follows.created_at DESC
     LIMIT 200
   `).all(u.device_id);
-  res.json({ users: rows.map((r) => userToPublic(r, req.headers["x-device-id"])) });
+  // v74: batched (was userToPublic.map → 4 queries per followee)
+  res.json({ users: usersToPublicBatch(rows, req.headers["x-device-id"]) });
 });
 
 // GET /api/users/:handle/recordings — recordings by a user
@@ -898,7 +948,10 @@ app.get("/api/users", (req, res) => {
   const viewer = req.headers["x-device-id"] || "";
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   const rows = db.prepare("SELECT * FROM users ORDER BY created_at DESC LIMIT ?").all(limit);
-  res.json({ users: rows.map((u) => userToPublic(u, viewer)) });
+  // v74: batched usersToPublicBatch (1 SQL query) replaces the
+  // previous userToPublic.map() loop (4 queries per user). Drops
+  // O(N) round-trips to O(1).
+  res.json({ users: usersToPublicBatch(rows, viewer) });
 });
 
 app.listen(PORT, "0.0.0.0")
