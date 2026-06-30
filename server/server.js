@@ -642,6 +642,7 @@ function usersToPublicBatch(users, viewerDeviceId) {
   return users.map((u) => {
     const r = byId.get(u.device_id);
     return {
+      deviceId: u.device_id,
       handle: r.handle,
       displayName: r.display_name,
       avatar: r.avatar,
@@ -665,6 +666,7 @@ function userToPublic(u, viewerDeviceId) {
     ? !!db.prepare("SELECT 1 FROM follows WHERE follower_device_id = ? AND followee_device_id = ?").get(viewerDeviceId, u.device_id)
     : false;
   return {
+    deviceId: u.device_id,
     handle: u.handle,
     displayName: u.display_name,
     avatar: u.avatar,
@@ -818,20 +820,40 @@ app.get("/api/feed", (req, res) => {
     ORDER BY r.created_at DESC
     LIMIT ?
   `).all(deviceId, deviceId, deviceId, limit);
+  // v79: batched author lookup. The previous code called
+  // userToPublic() per author, which ran 4 queries per author
+  // (follower count, following count, recording count,
+  // isFollowing) — the same N+1 v74 fixed in /api/users.
+  // With 50 authors in a feed that was 200 queries; now 1.
+  const authorIds = [...new Set(rows.map(r => r.device_id))];
+  const authorRows = authorIds.length === 0
+    ? []
+    : db.prepare(`SELECT * FROM users WHERE device_id IN (${authorIds.map(() => "?").join(",")})`).all(...authorIds);
+  const authorMap = usersToPublicBatch(authorRows, deviceId);
+  // authorMap is in the same order as authorRows, which is the
+  // same order as authorIds. Build by device_id.
+  const byDeviceId = new Map();
+  for (let i = 0; i < authorIds.length; i++) {
+    byDeviceId.set(authorIds[i], authorMap[i]);
+  }
   // Group by author for Instagram-style feed (one post per author with their most recent)
-  const authorMap = new Map();
+  const groupOrder = [];
+  const groupMap = new Map();
   for (const r of rows) {
-    if (!authorMap.has(r.device_id)) {
-      const u = db.prepare("SELECT * FROM users WHERE device_id = ?").get(r.device_id);
-      authorMap.set(r.device_id, { author: userToPublic(u, deviceId), recordings: [] });
+    if (!groupMap.has(r.device_id)) {
+      groupOrder.push(r.device_id);
+      groupMap.set(r.device_id, {
+        author: byDeviceId.get(r.device_id),
+        recordings: [],
+      });
     }
-    authorMap.get(r.device_id).recordings.push({
+    groupMap.get(r.device_id).recordings.push({
       id: r.id, name: r.name, emoji: r.emoji,
       durationSec: r.duration_sec, upvotes: r.upvotes, userVoted: r.user_voted > 0,
       createdAt: r.created_at, audioUrl: `/uploads/${r.filename}`,
     });
   }
-  res.json({ groups: Array.from(authorMap.values()) });
+  res.json({ groups: groupOrder.map(id => groupMap.get(id)) });
 });
 
 // GET /api/recordings/:id/comments
