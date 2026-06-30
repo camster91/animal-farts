@@ -90,13 +90,22 @@ export default function PootBox() {
     onSaved: (bubble) => {
       showToast(`${bubble.emoji} Saved!`);
     },
-    onUploadComplete: (bubbleId, serverAudioUrl) => {
+    onUploadComplete: (bubbleId, serverAudioUrl, serverRecordingId) => {
       // The fire-and-forget server upload succeeded. Swap the bubble's
       // blobUrl + sound from the dead blob: URL to the server-issued
       // /uploads/... path so the recording survives a page reload
       // (closes the v56-5 gap for this recording). The local IDB
       // copy is still there as a fallback if the server file is
       // ever moved/deleted.
+      // v76: also persist the server recording id so onDeleteCard
+      // can DELETE /api/recordings/:id (otherwise the upload row
+      // orphans on every kid delete). Map is localStorage-backed so
+      // it survives reloads — without it, a kid who records, reloads,
+      // then deletes would leave an orphan anyway.
+      setServerRecordingIds((prev) => {
+        if (prev[bubbleId] === serverRecordingId) return prev;
+        return { ...prev, [bubbleId]: serverRecordingId };
+      });
       if (!activePageId) return;
       setPages((prev) => prev.map((p) => {
         if (p.id !== activePageId) return p;
@@ -141,6 +150,28 @@ export default function PootBox() {
   // link in share mode. The key on the <ShareSheet> below is
   // derived from this so a re-mount reads the new initial value.
   const [lookupPrefill, setLookupPrefill] = useState("");
+
+  // v76: bubbleId → serverRecordingId map. Populated when the
+  // fire-and-forget upload completes, consulted on CardGrid delete
+  // so DELETE /api/recordings/:id can be called. localStorage-
+  // backed so the map survives page reloads — without persistence,
+  // a kid who records, reloads, then deletes would orphan the
+  // server row anyway (the in-memory state would be gone).
+  const SERVER_RECORDING_IDS_KEY = "pootbox-server-recording-ids-v1";
+  const [serverRecordingIds, setServerRecordingIds] = useState<Record<string, number>>(() => {
+    try {
+      const raw = localStorage.getItem(SERVER_RECORDING_IDS_KEY);
+      return raw ? (JSON.parse(raw) as Record<string, number>) : {};
+    } catch { return {}; }
+  });
+  // Convenience: keep the localStorage copy in sync whenever the
+  // map changes. Cheap because the map is small (one entry per
+  // uploaded recording).
+  useEffect(() => {
+    try {
+      localStorage.setItem(SERVER_RECORDING_IDS_KEY, JSON.stringify(serverRecordingIds));
+    } catch { /* ignore */ }
+  }, [serverRecordingIds]);
 
   // Modal/sheet open state (extracted to useModalState hook)
   // v61: removed showAddMenu / setShowAddMenu (the AddSoundMenu
@@ -529,12 +560,31 @@ export default function PootBox() {
           // v61: delete a custom card. The original onRemoveBubble
           // also revokes the blob: URL; for v61 share-imported
           // bubbles (b:shared:*) we just leave the blobUrl alone.
+          // v76: also DELETE the server-side recording so the upload
+          // row doesn't orphan. Look up the server recording id in
+          // the localStorage-backed map (populated by onUploadComplete).
+          // We never block the local delete on this — if the server
+          // call fails (offline, 404, 403), the local row is still
+          // gone and we just log. The map entry is cleaned up too.
           if (!activePageId) return;
           if (id.startsWith("b:custom:")) {
             const b = bubbles.find(x => x.id === id);
             if (b?.blobUrl?.startsWith("blob:")) URL.revokeObjectURL(b.blobUrl);
             try { await deleteBlob(id); } catch { /* ignore */ }
             try { deleteRecordingEmoji(id); } catch { /* ignore */ }
+            const serverId = serverRecordingIds[id];
+            if (typeof serverId === "number") {
+              try {
+                await fetch(`/api/recordings/${serverId}`, { method: "DELETE" });
+              } catch { /* offline — server row will orphan, acceptable trade */ }
+              setServerRecordingIds((prev) => {
+                if (!(id in prev)) return prev;
+                const next = { ...prev };
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                delete next[id];
+                return next;
+              });
+            }
           }
           const updated = await removeBubbleFromPage(activePageId, id);
           setPages(prev => prev.map(p => p.id === updated.id ? updated : p));

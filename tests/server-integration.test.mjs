@@ -277,6 +277,79 @@ describe("server integration: :id route validation (v72)", () => {
   });
 });
 
+describe("server integration: DELETE /api/recordings/:id (v76 orphan fix)", () => {
+  // v76: CardGrid's onDeleteCard now calls DELETE /api/recordings/:id
+  // when a custom bubble with an uploaded server recording is removed.
+  // Without this, every upload persisted an orphan server row.
+  // These tests pin the round-trip: upload → delete → gone.
+  it("deletes an uploaded recording end-to-end (no orphan)", async (t) => {
+    if (!started) return t.skip();
+    // 1. Upload a recording.
+    const webm = Buffer.from("v76-orphan-fix-test-bytes");
+    const mp = multipartAudio("audio", webm, "v76-orphan-test.webm", "audio/webm");
+    const up = await http("POST", "/api/recordings", {
+      headers: {
+        "x-device-id": "v76-delete-test",
+        "content-type": mp.contentType,
+        "content-length": String(mp.body.length),
+      },
+      body: mp.body,
+    });
+    assert.strictEqual(up.status, 200, `upload should succeed, got ${up.status}`);
+    const { id, audioUrl } = JSON.parse(up.text);
+    assert.ok(id, "upload should return a numeric id");
+    assert.match(audioUrl, /^\/uploads\//, "audioUrl should be a /uploads/ path");
+
+    // 2. Verify it's reachable (the /api/recordings/:id/audio endpoint).
+    const before = await http("GET", audioUrl);
+    assert.strictEqual(before.status, 200, "uploaded file should be reachable");
+
+    // 3. DELETE it.
+    const del = await http("DELETE", `/api/recordings/${id}`, {
+      headers: { "x-device-id": "v76-delete-test" },
+    });
+    assert.strictEqual(del.status, 200, `DELETE should succeed, got ${del.status} body=${del.text}`);
+
+    // 4. Verify the audio file is gone (not just the DB row).
+    const after = await http("GET", audioUrl);
+    assert.strictEqual(after.status, 404, "audio file should be gone after DELETE");
+
+    // 5. Verify the DB row is gone (404 on /api/recordings/:id/upvote).
+    const upvote = await http("POST", `/api/recordings/${id}/upvote`, {
+      headers: { "x-device-id": "v76-delete-test" },
+    });
+    assert.strictEqual(upvote.status, 404, "upvote on deleted recording should 404");
+  });
+
+  it("rejects DELETE /api/recordings/:id for wrong device (no auth bypass)", async (t) => {
+    if (!started) return t.skip();
+    // Upload as device A
+    const webm = Buffer.from("v76-auth-test");
+    const mp = multipartAudio("audio", webm, "v76-auth.webm", "audio/webm");
+    const up = await http("POST", "/api/recordings", {
+      headers: {
+        "x-device-id": "v76-auth-A",
+        "content-type": mp.contentType,
+        "content-length": String(mp.body.length),
+      },
+      body: mp.body,
+    });
+    assert.strictEqual(up.status, 200);
+    const { id } = JSON.parse(up.text);
+
+    // Try to delete as device B — must 403, not 200.
+    const theft = await http("DELETE", `/api/recordings/${id}`, {
+      headers: { "x-device-id": "v76-auth-B" },
+    });
+    assert.strictEqual(theft.status, 403, "wrong device must 403, got " + theft.status);
+
+    // Clean up as the original device.
+    await http("DELETE", `/api/recordings/${id}`, {
+      headers: { "x-device-id": "v76-auth-A" },
+    });
+  });
+});
+
 describe("server integration: SPA + privacy/about", () => {
   it("serves /, /sw.js, /privacy.html, /about.html with 200", async (t) => {
     if (!started) return t.skip();

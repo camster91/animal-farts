@@ -26,7 +26,11 @@ export interface UseRecordingParams {
    *  page reload. If omitted, the local IDB blob remains the
    *  source of truth and the recording still plays for the current
    *  session (it just won't survive reload). */
-  onUploadComplete?: (bubbleId: string, serverAudioUrl: string) => void;
+  // v76: serverRecordingId added so PootBox can DELETE the server
+  // recording when the kid removes the bubble (closes the orphan
+  // upload row that accumulates every time a recording is uploaded
+  // and then deleted client-side).
+  onUploadComplete?: (bubbleId: string, serverAudioUrl: string, serverRecordingId: number) => void;
   /** Called on recording errors (mic denied, getUserMedia failed, etc.) */
   onError?: (msg: string) => void;
 }
@@ -241,7 +245,7 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
         emoji,
         durationSec,
         onSuccess: (rec) => {
-          onUploadComplete?.(capturedId, rec.audioUrl);
+          onUploadComplete?.(capturedId, rec.audioUrl, rec.id);
         },
         onError: (err) => {
           if (err.offline) return; // expected when offline
