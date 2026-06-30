@@ -14,6 +14,7 @@ import {
   savePage,
 } from "./recordings";
 import { playSingle, stopAllSounds, getCurrentBubbleId } from "./audioManager";
+import { getOrCreateDeviceId } from "./lib/deviceId";
 import { useSettings } from "./hooks/useSettings";
 import { useToast } from "./hooks/useToast";
 import { useModalState } from "./hooks/useModalState";
@@ -555,6 +556,25 @@ export default function PootBox() {
         onAddCard={() => {
           setChangingBubbleId(null);
           setShowLibrary(true);
+        }}
+        // v78: upvote. Only custom cards whose server upload
+        // completed (= id is in serverRecordingIds) get the 👍.
+        // The server endpoint is idempotent (POST toggles the
+        // device's vote on/off per the votes table), so we don't
+        // need client-side state. Just fire and toast.
+        upvoteEligible={new Set(Object.keys(serverRecordingIds))}
+        onUpvoteBubble={async (id) => {
+          const serverId = serverRecordingIds[id];
+          if (typeof serverId !== "number") return;
+          try {
+            const r = await fetch(`/api/recordings/${serverId}/upvote`, {
+              method: "POST",
+              headers: { "x-device-id": getOrCreateDeviceId() },
+            });
+            showToast(r.ok ? "👍" : "Upvote failed");
+          } catch {
+            showToast("Upvote failed — are you online?");
+          }
         }}
         onDeleteCard={async (id) => {
           // v61: delete a custom card. The original onRemoveBubble

@@ -350,6 +350,90 @@ describe("server integration: DELETE /api/recordings/:id (v76 orphan fix)", () =
   });
 });
 
+describe("server integration: POST /api/recordings/:id/upvote (v78)", () => {
+  // v78: CardGrid now has a 👍 button on uploaded custom cards.
+  // The server endpoint is idempotent per (device_id, recording_id).
+  // First call: upvote count +1, userVoted=true. Second call: toggle off.
+  it("upvote toggles per device (200, count goes up then down)", async (t) => {
+    if (!started) return t.skip();
+    // Upload a fresh recording.
+    const webm = Buffer.from("v78-upvote-test");
+    const mp = multipartAudio("audio", webm, "v78-upvote.webm", "audio/webm");
+    const up = await http("POST", "/api/recordings", {
+      headers: {
+        "x-device-id": "v78-upvoter-1",
+        "content-type": mp.contentType,
+        "content-length": String(mp.body.length),
+      },
+      body: mp.body,
+    });
+    assert.strictEqual(up.status, 200);
+    const { id } = JSON.parse(up.text);
+
+    // Get initial count from /api/recordings (which includes userVoted
+    // for the requesting device).
+    const initial = JSON.parse((await http("GET", "/api/recordings")).text);
+    const seed = initial.recordings.find((r) => r.id === id);
+    assert.ok(seed, "uploaded recording should be in /api/recordings");
+    const baseUpvotes = seed.upvotes;
+    assert.strictEqual(seed.userVoted, false, "fresh device should not have voted yet");
+
+    // First upvote from device 1: count goes to base+1, userVoted=true.
+    const v1 = await http("POST", `/api/recordings/${id}/upvote`, {
+      headers: { "x-device-id": "v78-upvoter-1" },
+    });
+    assert.strictEqual(v1.status, 200);
+    const body1 = JSON.parse(v1.text);
+    assert.strictEqual(body1.upvotes, baseUpvotes + 1, "first upvote increments");
+    assert.strictEqual(body1.userVoted, true);
+
+    // Second upvote from same device: count goes back to base, userVoted=false.
+    const v1b = await http("POST", `/api/recordings/${id}/upvote`, {
+      headers: { "x-device-id": "v78-upvoter-1" },
+    });
+    assert.strictEqual(v1b.status, 200);
+    const body1b = JSON.parse(v1b.text);
+    assert.strictEqual(body1b.upvotes, baseUpvotes, "second upvote toggles off");
+    assert.strictEqual(body1b.userVoted, false);
+
+    // Upvote from a DIFFERENT device: count goes to base+1 again.
+    const v2 = await http("POST", `/api/recordings/${id}/upvote`, {
+      headers: { "x-device-id": "v78-upvoter-2" },
+    });
+    assert.strictEqual(v2.status, 200);
+    const body2 = JSON.parse(v2.text);
+    assert.strictEqual(body2.upvotes, baseUpvotes + 1, "different device counts separately");
+    assert.strictEqual(body2.userVoted, true);
+
+    // Upvote from device 3: count goes to base+2.
+    const v3 = await http("POST", `/api/recordings/${id}/upvote`, {
+      headers: { "x-device-id": "v78-upvoter-3" },
+    });
+    assert.strictEqual(v3.status, 200);
+    assert.strictEqual(JSON.parse(v3.text).upvotes, baseUpvotes + 2, "third upvote increments again");
+
+    // Clean up.
+    await http("DELETE", `/api/recordings/${id}`, {
+      headers: { "x-device-id": "v78-upvoter-1" },
+    });
+  });
+
+  it("upvote without x-device-id returns 400 (missing header)", async (t) => {
+    if (!started) return t.skip();
+    // Use any valid id; the header check fails first.
+    const r = await http("POST", "/api/recordings/1/upvote");
+    assert.strictEqual(r.status, 400, "missing x-device-id must 400");
+  });
+
+  it("upvote on non-numeric id returns 400 (v72 :id validation)", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("POST", "/api/recordings/foo/upvote", {
+      headers: { "x-device-id": "v78-upvoter" },
+    });
+    assert.strictEqual(r.status, 400);
+  });
+});
+
 describe("server integration: SPA + privacy/about", () => {
   it("serves /, /sw.js, /privacy.html, /about.html with 200", async (t) => {
     if (!started) return t.skip();

@@ -38,6 +38,18 @@ interface CardGridProps {
    *  called on custom cards. */
   onRenameCard?: (bubbleId: string) => void;
   onAddCard: () => void;
+  /** v78: called when the kid taps the small 👍 button on an
+   *  uploaded custom card. The parent (PootBox) looks up the
+   *  server recording id in its localStorage-backed map and
+   *  POSTs /api/recordings/:id/upvote. The button is only
+   *  rendered for custom cards in `upvoteEligible` (i.e. the
+   *  upload fire-and-forget completed). */
+  onUpvoteBubble?: (bubbleId: string) => void;
+  /** v78: bubbleIds whose server recording id is known (upload
+   *  completed). The 👍 button only shows when the card's id
+   *  is in this set. Built-in sounds and not-yet-uploaded
+   *  recordings are excluded. */
+  upvoteEligible?: Set<string>;
   /** Called when the kid taps the small "delete" button on a
    *  custom-recorded card. Built-in cards can't be deleted
    *  (changing their sound is the equivalent — kid can swap
@@ -56,6 +68,8 @@ const CardGrid: FC<CardGridProps> = ({
   onRenameCard,
   onAddCard,
   onDeleteCard,
+  onUpvoteBubble,
+  upvoteEligible,
 }) => {
   // Build a lookup: bubbleId → builtInKey (for the "Animal"/"Fart"
   // label under the emoji). The "Fart" label is shown in a slightly
@@ -245,6 +259,39 @@ const CardGrid: FC<CardGridProps> = ({
           >
             Change
           </button>
+          {/* v78: upvote button — only rendered if PootBox wired
+              onUpvoteBubble AND the parent computed that this
+              bubble has a server recording id (i.e. we know the
+              upvote can actually reach the server). The parent
+              passes hasUpvote = true via the upvote-eligible set. */}
+          {isCustom && onUpvoteBubble && upvoteEligible && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onUpvoteBubble(b.id);
+              }}
+              aria-label={`Upvote ${name}`}
+              title="Upvote"
+              style={{
+                width: 26,
+                height: 22,
+                borderRadius: 11,
+                background: "rgba(255,255,255,0.95)",
+                border: "none",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
+                color: "#B45309",
+                fontSize: 12,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                padding: 0,
+                lineHeight: 1,
+              }}
+            >
+              👍
+            </button>
+          )}
         </div>
         {/* Delete button — only for custom (user-recorded) cards. */}
         {isCustom && onDeleteCard && (
