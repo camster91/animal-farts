@@ -105,8 +105,7 @@ for i in {1..30}; do
   sleep 1
 done
 
-echo "[deploy] re-asserting Caddy animals block (resilient against sibling deploys)…"
-bash "$(dirname "$0")/sync-caddy.sh" 2>&1 | tail -3
+echo "[deploy] skipping legacy Caddy re-assertion (Caddy is gone — Traefik is the front proxy)"
 
 echo "[deploy] checking live site…"
 curl -sI https://animals.ashbi.ca/ | head -3
