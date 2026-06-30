@@ -174,6 +174,41 @@ export default function PootBox() {
     } catch { /* ignore */ }
   }, [serverRecordingIds]);
 
+  // v78: reactions (👍/😂/💀) keyed by bubbleId. Populated by
+  // the batch-fetch effect below and updated optimistically when
+  // a reaction is toggled. Not persisted to localStorage —
+  // a reload means a fresh fetch (cheap, ~50ms for 50 recordings).
+  type ReactionsState = { counts: Record<string, number>; mine: string[] };
+  const [reactions, setReactions] = useState<Map<string, ReactionsState>>(new Map());
+  // Batch-fetch reactions for every uploaded server recording when
+  // the serverRecordingIds map changes. Uses Promise.all to fan
+  // out in parallel; errors are caught per-recording so one
+  // network hiccup doesn't lose the rest.
+  useEffect(() => {
+    const ids = Object.entries(serverRecordingIds);
+    if (ids.length === 0) return;
+    const deviceId = getOrCreateDeviceId();
+    let cancelled = false;
+    Promise.all(
+      ids.map(async ([bubbleId, serverId]) => {
+        try {
+          const r = await fetch(`/api/recordings/${serverId}/reactions`, {
+            headers: { "x-device-id": deviceId },
+          });
+          if (!r.ok) return;
+          const data = await r.json();
+          if (cancelled) return;
+          setReactions((prev) => {
+            const next = new Map(prev);
+            next.set(bubbleId, { counts: data.counts, mine: data.mine });
+            return next;
+          });
+        } catch { /* offline for this one — skip */ }
+      }),
+    );
+    return () => { cancelled = true; };
+  }, [serverRecordingIds]);
+
   // Modal/sheet open state (extracted to useModalState hook)
   // v61: removed showAddMenu / setShowAddMenu (the AddSoundMenu
   // FAB is gone; the + Add sound card in the grid opens the
@@ -574,6 +609,40 @@ export default function PootBox() {
             showToast(r.ok ? "👍" : "Upvote failed");
           } catch {
             showToast("Upvote failed — are you online?");
+          }
+        }}
+        // v78: emoji reactions (👍/😂/💀). Same gating as upvote:
+        // only for uploaded custom cards. reactions is a Map of
+        // bubbleId → {counts, mine}, populated by the batch-fetch
+        // effect above and updated optimistically when the kid
+        // taps an emoji. The CardGrid renders 3 emoji buttons in
+        // a row above the action bar.
+        reactions={reactions}
+        onReactBubble={async (id, emoji) => {
+          const serverId = serverRecordingIds[id];
+          if (typeof serverId !== "number") return;
+          try {
+            const r = await fetch(`/api/recordings/${serverId}/reactions`, {
+              method: "POST",
+              headers: {
+                "x-device-id": getOrCreateDeviceId(),
+                "content-type": "application/json",
+              },
+              body: JSON.stringify({ emoji }),
+            });
+            if (!r.ok) {
+              showToast("Reaction failed");
+              return;
+            }
+            const data = await r.json();
+            // Optimistic update from the server response.
+            setReactions((prev) => {
+              const next = new Map(prev);
+              next.set(id, { counts: data.counts, mine: data.mine });
+              return next;
+            });
+          } catch {
+            showToast("Reaction failed — are you online?");
           }
         }}
         onDeleteCard={async (id) => {

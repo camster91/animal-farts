@@ -434,6 +434,125 @@ describe("server integration: POST /api/recordings/:id/upvote (v78)", () => {
   });
 });
 
+describe("server integration: POST /api/recordings/:id/reactions (v78)", () => {
+  // v78: CardGrid now has 👍/😂/💀 reactions on uploaded custom
+  // recordings. The endpoint toggles per (device_id, recording_id,
+  // emoji) and returns {counts, mine, added}.
+  it("reactions toggle per (device, emoji) with counts and 'mine'", async (t) => {
+    if (!started) return t.skip();
+    // Upload a fresh recording.
+    const webm = Buffer.from("v78-reactions-test");
+    const mp = multipartAudio("audio", webm, "v78-react.webm", "audio/webm");
+    const up = await http("POST", "/api/recordings", {
+      headers: {
+        "x-device-id": "v78-react-A",
+        "content-type": mp.contentType,
+        "content-length": String(mp.body.length),
+      },
+      body: mp.body,
+    });
+    assert.strictEqual(up.status, 200);
+    const { id } = JSON.parse(up.text);
+
+    // Initial state: zero reactions, mine empty.
+    const get0 = await http("GET", `/api/recordings/${id}/reactions`, {
+      headers: { "x-device-id": "v78-react-A" },
+    });
+    assert.strictEqual(get0.status, 200);
+    const initial = JSON.parse(get0.text);
+    assert.deepStrictEqual(initial.counts, {}, "fresh recording has no reactions");
+    assert.deepStrictEqual(initial.mine, [], "fresh device has not reacted");
+
+    // Device A reacts with 👍: count 1, mine [👍], added=true.
+    const r1 = await http("POST", `/api/recordings/${id}/reactions`, {
+      headers: {
+        "x-device-id": "v78-react-A",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ emoji: "👍" }),
+    });
+    assert.strictEqual(r1.status, 200);
+    const body1 = JSON.parse(r1.text);
+    assert.strictEqual(body1.counts["👍"], 1);
+    assert.deepStrictEqual(body1.mine, ["👍"]);
+    assert.strictEqual(body1.added, true);
+
+    // Device A reacts with 👍 again: toggles off. count 0, mine [].
+    const r1b = await http("POST", `/api/recordings/${id}/reactions`, {
+      headers: {
+        "x-device-id": "v78-react-A",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ emoji: "👍" }),
+    });
+    assert.strictEqual(r1b.status, 200);
+    const body1b = JSON.parse(r1b.text);
+    assert.strictEqual(body1b.counts["👍"], 0);
+    assert.deepStrictEqual(body1b.mine, []);
+    assert.strictEqual(body1b.added, false);
+
+    // Device A reacts with 👍, then 😂. Both mine.
+    await http("POST", `/api/recordings/${id}/reactions`, {
+      headers: { "x-device-id": "v78-react-A", "content-type": "application/json" },
+      body: JSON.stringify({ emoji: "👍" }),
+    });
+    await http("POST", `/api/recordings/${id}/reactions`, {
+      headers: { "x-device-id": "v78-react-A", "content-type": "application/json" },
+      body: JSON.stringify({ emoji: "😂" }),
+    });
+
+    // Device B reacts with 👍. Count is 2 (A + B), A's mine shows
+    // [👍, 😂], B's mine shows [👍].
+    await http("POST", `/api/recordings/${id}/reactions`, {
+      headers: { "x-device-id": "v78-react-B", "content-type": "application/json" },
+      body: JSON.stringify({ emoji: "👍" }),
+    });
+    const aView = await http("GET", `/api/recordings/${id}/reactions`, {
+      headers: { "x-device-id": "v78-react-A" },
+    });
+    const aData = JSON.parse(aView.text);
+    assert.strictEqual(aData.counts["👍"], 2);
+    assert.strictEqual(aData.counts["😂"], 1);
+    assert.deepStrictEqual(aData.mine.sort(), ["👍", "😂"].sort());
+    const bView = await http("GET", `/api/recordings/${id}/reactions`, {
+      headers: { "x-device-id": "v78-react-B" },
+    });
+    const bData = JSON.parse(bView.text);
+    assert.strictEqual(bData.counts["👍"], 2);
+    assert.deepStrictEqual(bData.mine, ["👍"]);
+
+    // Invalid emoji: 400 (REACTION_EMOJIS allowlist).
+    const bad = await http("POST", `/api/recordings/${id}/reactions`, {
+      headers: { "x-device-id": "v78-react-A", "content-type": "application/json" },
+      body: JSON.stringify({ emoji: "💩" }),
+    });
+    assert.strictEqual(bad.status, 400, "invalid emoji must 400");
+
+    // Clean up.
+    await http("DELETE", `/api/recordings/${id}`, {
+      headers: { "x-device-id": "v78-react-A" },
+    });
+  });
+
+  it("reactions without x-device-id returns 400", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("POST", "/api/recordings/1/reactions", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ emoji: "👍" }),
+    });
+    assert.strictEqual(r.status, 400);
+  });
+
+  it("reactions on non-numeric id returns 400", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("POST", "/api/recordings/foo/reactions", {
+      headers: { "x-device-id": "v78-react", "content-type": "application/json" },
+      body: JSON.stringify({ emoji: "👍" }),
+    });
+    assert.strictEqual(r.status, 400);
+  });
+});
+
 describe("server integration: SPA + privacy/about", () => {
   it("serves /, /sw.js, /privacy.html, /about.html with 200", async (t) => {
     if (!started) return t.skip();

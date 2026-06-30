@@ -50,10 +50,20 @@ interface CardGridProps {
    *  is in this set. Built-in sounds and not-yet-uploaded
    *  recordings are excluded. */
   upvoteEligible?: Set<string>;
-  /** Called when the kid taps the small "delete" button on a
-   *  custom-recorded card. Built-in cards can't be deleted
-   *  (changing their sound is the equivalent — kid can swap
-   *  to any other built-in or record their own over). */
+  /** v78: reactions map (👍/😂/💀) keyed by bubbleId. Each
+   *  entry is {counts, mine}. Populated by PootBox's batch-fetch
+   *  effect on the serverRecordingIds map. */
+  reactions?: Map<string, { counts: Record<string, number>; mine: string[] }>;
+  /** v78: called when the kid taps one of the 3 reaction emoji
+   *  (👍/😂/💀). PootBox POSTs /api/recordings/:id/reactions
+   *  with the emoji and updates the reactions state from the
+   *  server's response. Like upvote, only fired for cards in
+   *  upvoteEligible (uploaded custom recordings). */
+  onReactBubble?: (bubbleId: string, emoji: string) => void;
+  /** v78: called when the kid taps the small "delete" button on a
+    *  custom-recorded card. Built-in cards can't be deleted
+    *  (changing their sound is the equivalent — kid can swap
+    *  to any other built-in or record their own over). */
   onDeleteCard?: (bubbleId: string) => void;
 }
 
@@ -70,6 +80,8 @@ const CardGrid: FC<CardGridProps> = ({
   onDeleteCard,
   onUpvoteBubble,
   upvoteEligible,
+  reactions,
+  onReactBubble,
 }) => {
   // Build a lookup: bubbleId → builtInKey (for the "Animal"/"Fart"
   // label under the emoji). The "Fart" label is shown in a slightly
@@ -183,6 +195,66 @@ const CardGrid: FC<CardGridProps> = ({
         >
           {name}
         </span>
+        {/* v78: emoji reaction row. Renders 3 tiny emoji + count
+            buttons (👍/😂/💀). Only shown on cards in upvoteEligible
+            (uploaded custom recordings with a known server id).
+            The "mine" set shows which ones the current device has
+            already reacted with — filled background vs outlined.
+            Pure presentation; no internal state. */}
+        {upvoteEligible?.has(b.id) && onReactBubble && (
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              gap: 4,
+              padding: "2px 4px",
+              marginTop: 2,
+            }}
+          >
+            {(["👍", "😂", "💀"] as const).map((emoji) => {
+              const r = reactions?.get(b.id);
+              const count = r?.counts[emoji] ?? 0;
+              const mine = r?.mine.includes(emoji) ?? false;
+              return (
+                <button
+                  key={emoji}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReactBubble(b.id, emoji);
+                  }}
+                  aria-label={`React ${emoji} on ${name}`}
+                  title={mine ? `Remove your ${emoji}` : `React ${emoji}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 2,
+                    minWidth: 30,
+                    height: 22,
+                    borderRadius: 11,
+                    background: mine
+                      ? "rgba(245,158,11,0.85)"
+                      : "rgba(255,255,255,0.75)",
+                    border: mine ? "none" : "1px solid rgba(0,0,0,0.08)",
+                    color: mine ? "#FFFFFF" : "#3D2C1E",
+                    fontFamily: "Fredoka, system-ui, sans-serif",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: count || mine ? "pointer" : "default",
+                    lineHeight: 1,
+                  }}
+                >
+                  <span style={{ fontSize: 13, lineHeight: 1 }}>{emoji}</span>
+                  {count > 0 && (
+                    <span style={{ fontSize: 10, lineHeight: 1 }}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {/* v69: bottom action bar (rename + change-sound). Both
             are pill-shaped with a soft-white background so the
             kid can find them. Anchored at the bottom of the
