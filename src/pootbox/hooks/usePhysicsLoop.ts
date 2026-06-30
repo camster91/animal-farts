@@ -1,6 +1,18 @@
-// usePhysicsLoop.ts — extracted from PootBox.tsx in v52-6
-// Owns: the raf tick, bubble physics step, collision events (ripples, sparks, audio
-// on user-driven collision), soundPlaying poll, comboBurst + confettiBurst + confettiParticles.
+// usePhysicsLoop.ts — extracted from PootBox.tsx in v52-6.
+//
+// v72 note: in v61+ (CardGrid), bubbles don't move on the canvas.
+// PootBox passes a no-op setBubbles, so the physics step's state write
+// is discarded — collisions are still detected (so the spark/ripple
+// effects fire), but the bubble positions never persist. So the hook
+// is a misnomer: it computes collisions for the visual effects layer
+// and owns the combo burst + confetti triggers. The physics imports
+// stay because the math is identical — we just don't apply the
+// post-collision setBubbles update.
+//
+// Owns: the raf tick (a no-op write, kept to keep the same loop shape),
+// collision detection (ripples, sparks, audio on user-driven
+// collision), soundPlaying poll, comboBurst + confettiBurst +
+// confettiParticles.
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { BubbleState, Ripple, Spark, Settings } from "../types";

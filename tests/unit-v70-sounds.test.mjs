@@ -7,11 +7,14 @@
 //  - all farts have a subBucket
 //  - all keys are filesystem-safe (lowercase, hyphenated, no
 //    spaces, no special chars)
+//  - v75: the scanner output matches the committed file (no drift)
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, existsSync, readdirSync, mkdtempSync, cpSync, rmSync, statSync, readFile } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 
 const CONSTANTS = new URL('../src/pootbox/constants.ts', import.meta.url).pathname;
 const SOUNDS = new URL('../public/sounds/', import.meta.url).pathname;
@@ -143,6 +146,63 @@ describe('v70: scan-sounds output invariants', () => {
       const m = e.match(/bucket:\s*"([^"]+)"/);
       assert.ok(m, `entry missing bucket: ${e}`);
       assert.ok(valid.has(m[1]), `invalid bucket value "${m[1]}" in: ${e}`);
+    }
+  });
+
+  // v75: pin "no drift" — the committed constants.ts must match
+  // what scan-sounds.py would produce right now. If a developer
+  // hand-edits constants.ts and forgets to re-run the scanner,
+  // or adds a .mp3 to public/sounds/ without re-scanning, this
+  // catches it. The scan is fast (~150ms for 376 files).
+  it('v75: scanner output matches the committed constants.ts (no drift)', () => {
+    if (!existsSync(new URL('../scripts/scan-sounds.py', import.meta.url).pathname)) {
+      return; // scanner missing — earlier test already asserts that
+    }
+    // Skip if python3 isn't available (the Dockerfile is alpine
+    // and the build pipeline doesn't depend on it, but the dev
+    // machine should have it). The v60 era docs say "Don't add
+    // python3 to the Docker build" — same rule applies here: the
+    // test runs in dev/test only, not in the Docker build.
+    let pyRes;
+    try {
+      pyRes = spawnSync('python3', ['--version'], { encoding: 'utf8' });
+    } catch {
+      return; // python3 not on PATH
+    }
+    if (pyRes.status !== 0) return;
+
+    // Copy public/sounds/, scripts/scan-sounds.py, and the
+    // current src/pootbox/constants.ts into a tmp dir. The scanner
+    // walks public/sounds/, reads constants.ts as a template,
+    // and rewrites the BUILT_IN_SOUNDS array. Running it on the
+    // copy and diffing against the original catches drift.
+    const tmp = mkdtempSync(join(tmpdir(), 'af-scan-'));
+    try {
+      const tmpRoot = join(tmp, 'project');
+      cpSync(join(import.meta.dirname, '..'), tmpRoot, { recursive: true });
+      // Skip node_modules / dist / .git — they're not inputs.
+      rmSync(join(tmpRoot, 'node_modules'), { recursive: true, force: true });
+      rmSync(join(tmpRoot, 'dist'), { recursive: true, force: true });
+      rmSync(join(tmpRoot, '.git'), { recursive: true, force: true });
+
+      const res = spawnSync('python3', ['scripts/scan-sounds.py'], {
+        cwd: tmpRoot,
+        encoding: 'utf8',
+        timeout: 30000,
+      });
+      assert.strictEqual(res.status, 0, `scanner exited non-zero: ${res.stderr}`);
+
+      const original = readFileSync(CONSTANTS, 'utf8');
+      const regenerated = readFileSync(join(tmpRoot, 'src/pootbox/constants.ts'), 'utf8');
+      assert.strictEqual(
+        regenerated,
+        original,
+        'constants.ts drifted from what scan-sounds.py would produce. ' +
+        'Either re-run the scanner and commit its output, or fix the scanner. ' +
+        '(See REVIEW-2026-06-16.md Tier-3 #13.)',
+      );
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
     }
   });
 });
