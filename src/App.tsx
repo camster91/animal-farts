@@ -10,15 +10,23 @@
 // shared). State lives in this file; the view selection is
 // persisted to localStorage so the kid lands where they left
 // off on reload.
+//
+// v79+: a "public profile" sub-state inside profile. When
+// profileHandle is non-null, the profile view renders the
+// OTHER user's profile (PublicProfile). When null, it renders
+// the kid's own profile (Profile). Triggered by tapping an
+// author header in the Feed.
 
 import { useState, useEffect } from "react";
 import PootBox from "./pootbox/PootBox";
 import Feed from "./pootbox/components/Feed";
 import Profile from "./pootbox/components/Profile";
+import PublicProfile from "./pootbox/components/PublicProfile";
 
 type View = "play" | "feed" | "profile";
 
 const VIEW_KEY = "pootbox-current-view-v1";
+const PROFILE_HANDLE_KEY = "pootbox-profile-handle-v1";
 
 export default function App() {
   const [view, setView] = useState<View>(() => {
@@ -28,17 +36,47 @@ export default function App() {
     } catch { /* ignore */ }
     return "play";
   });
+  // When view === "profile" and this is set, render PublicProfile.
+  // When view === "profile" and this is null, render own Profile.
+  const [profileHandle, setProfileHandle] = useState<string | null>(() => {
+    try { return localStorage.getItem(PROFILE_HANDLE_KEY); } catch { return null; }
+  });
 
   // Persist view on change so the kid lands where they left off.
   useEffect(() => {
     try { localStorage.setItem(VIEW_KEY, view); } catch { /* ignore */ }
   }, [view]);
+  useEffect(() => {
+    try {
+      if (profileHandle) localStorage.setItem(PROFILE_HANDLE_KEY, profileHandle);
+      else localStorage.removeItem(PROFILE_HANDLE_KEY);
+    } catch { /* ignore */ }
+  }, [profileHandle]);
+
+  function openPublicProfile(handle: string) {
+    setProfileHandle(handle);
+    setView("profile");
+  }
+  function backToOwnProfile() {
+    setProfileHandle(null);
+  }
 
   return (
     <div style={{ minHeight: "100vh", position: "relative" }}>
-      {view === "play" && <PootBox />}
-      {view === "feed" && <Feed onBack={() => setView("play")} />}
-      {view === "profile" && <Profile onBack={() => setView("play")} />}
+      {view === "play" && (
+        <PootBox />
+      )}
+      {view === "feed" && (
+        <Feed
+          onBack={() => setView("play")}
+          onOpenProfile={(handle) => openPublicProfile(handle)}
+        />
+      )}
+      {view === "profile" && (
+        profileHandle
+          ? <PublicProfile handle={profileHandle} onBack={backToOwnProfile} onOpenFeed={() => setView("feed")} />
+          : <Profile onBack={() => setView("play")} />
+      )}
 
       {/* v79: bottom tab bar. Fixed to the bottom of the viewport
           with safe-area-inset padding for iOS notches. The
@@ -72,19 +110,19 @@ export default function App() {
           label="Play"
           icon="🎵"
           active={view === "play"}
-          onClick={() => setView("play")}
+          onClick={() => { setProfileHandle(null); setView("play"); }}
         />
         <TabButton
           label="Friends"
           icon="👥"
           active={view === "feed"}
-          onClick={() => setView("feed")}
+          onClick={() => { setProfileHandle(null); setView("feed"); }}
         />
         <TabButton
           label="Me"
           icon="🙂"
-          active={view === "profile"}
-          onClick={() => setView("profile")}
+          active={view === "profile" && profileHandle === null}
+          onClick={() => { setProfileHandle(null); setView("profile"); }}
         />
       </nav>
     </div>

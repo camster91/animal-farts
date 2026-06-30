@@ -55,9 +55,12 @@ function formatRelative(ms: number): string {
 
 interface FeedProps {
   onBack: () => void;
+  /** v79: called when the kid taps an author header in the feed.
+   *  The parent (App.tsx) navigates to the public profile view. */
+  onOpenProfile?: (handle: string) => void;
 }
 
-export default function Feed({ onBack }: FeedProps) {
+export default function Feed({ onBack, onOpenProfile }: FeedProps) {
   const [groups, setGroups] = useState<FeedGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -237,11 +240,24 @@ export default function Feed({ onBack }: FeedProps) {
           >
             {/* Author header */}
             <div
+              onClick={() => {
+                if (a.handle && onOpenProfile && !a.isMe) onOpenProfile(a.handle);
+              }}
+              role={a.handle && onOpenProfile && !a.isMe ? "button" : undefined}
+              tabIndex={a.handle && onOpenProfile && !a.isMe ? 0 : undefined}
+              onKeyDown={(e) => {
+                if (!a.handle || !onOpenProfile || a.isMe) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onOpenProfile(a.handle);
+                }
+              }}
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: 10,
                 marginBottom: 10,
+                cursor: a.handle && onOpenProfile && !a.isMe ? "pointer" : "default",
               }}
             >
               <div
