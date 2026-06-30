@@ -7,7 +7,6 @@ import { BUILT_IN_SOUNDS } from "./constants";
 import {
   addBubbleToPageDedup,
   removeBubbleFromPage,
-  generateShareCode,
   deleteBlob,
   deleteRecordingEmoji,
   saveRecordingName,
@@ -672,7 +671,45 @@ export default function PootBox() {
             setLookupPrefill(""); // clear the prefill so the next
               // open in lookup mode doesn't show a stale code
           }}
-          onGenerateCode={async () => generateShareCode()}
+          onGenerateCode={async () => {
+            // v76: actually mint a server-side share code. The previous
+            // code generated a 4-char code locally and never told the
+            // server about it, so the lookup endpoint always 404'd.
+            // Flow: pick the first bubble on the active page whose
+            // audioUrl is a /uploads/... path (the recording must be
+            // on the server; built-in /sounds/* paths aren't shareable
+            // via /api/share because the server only accepts /uploads/
+            // paths), then POST /api/share. Return the server's code.
+            const page = pages.find(p => p.id === activePageId);
+            const shareable = page?.bubbles.find(b =>
+              typeof b.sound === "string" && b.sound.startsWith("/uploads/")
+            );
+            if (!shareable) {
+              showToast("Record a sound first to share it");
+              return "";
+            }
+            try {
+              const r = await fetch("/api/share", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  audioUrl: shareable.sound,
+                  name: page?.name ?? "Shared sound",
+                  emoji: shareable.emoji,
+                }),
+              });
+              if (!r.ok) {
+                const body = await r.json().catch(() => ({}));
+                showToast(body.error || `Share failed (${r.status})`);
+                return "";
+              }
+              const data = await r.json();
+              return data.code ?? "";
+            } catch {
+              showToast("Share failed — are you online?");
+              return "";
+            }
+          }}
           lookupPrefill={lookupPrefill}
           onCopyCode={(c) => {
             try { void navigator.clipboard?.writeText(c); } catch { /* ignore */ }
