@@ -355,35 +355,23 @@ export default function PootBox() {
   // temporal-decl boundary. (The hook is called once; the references
   // are reused here and in the JSX below.)
 
-  // ── Physics loop + visual effects (extracted to usePhysicsLoop) ─────────
-  // v61: the physics loop is now JUST for visual effects
-  // (ripples, sparks, combo bursts, confetti). The physics
-  // step itself is a no-op — bubbles don't move in the card
-  // grid. setBubbles is passed as a no-op since the loop
-  // expects to trigger re-renders after collision, but
-  // collisions don't happen in the grid.
-  // v72 (code review 2026-06-16 #3): dropped the unused _b param.
-  // The v52-era signature required setBubbles to be (Bubbles) => void,
-  // but in v61+ the physics loop is a no-op for ripples/sparks only,
-  // so the callback can be void.
-  const noopSetBubbles = useCallback(() => { /* no-op */ }, []);
+  // ── Visual effects (combo burst, confetti, ripples) — extracted
+  //  to usePhysicsLoop. v80: the raf tick is gone (it was creating
+  //  1000+ WebMediaPlayer instances per second on first load, hitting
+  //  Chromium's limit, breaking all kid audio). The trigger functions
+  //  are still wired up so PootBox's tap handler can call them —
+  //  they update state, but no raf consumer reads that state now.
+  //  Triggers are no-ops visually until we wire them to a new
+  //  event-driven visual layer.
   const {
     ripples, setRipples, sparks, comboBurst, confettiBurst, confettiParticles,
     triggerComboBurst, triggerConfetti,
   } = usePhysicsLoop({
     bubblesRef,
-    setBubbles: noopSetBubbles,
+    setBubbles: () => {},
     size,
     settingsRef,
-    onCollisionSound: (b, vol) => {
-      // Play the more-recently-touched bubble's sound (the one the user was holding)
-      const other = bubblesRef.current.find(x => x.id !== b.id);
-      if (other && other.lastTouchedAt > b.lastTouchedAt) {
-        playSingle(other.sound, vol);
-      } else {
-        playSingle(b.sound, vol);
-      }
-    },
+    onCollisionSound: () => {},
   });
 
   // ── Cleanup ────────────────────────────────────────────────────────────

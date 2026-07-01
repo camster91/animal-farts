@@ -1,39 +1,49 @@
-// usePhysicsLoop.ts — extracted from PootBox.tsx in v52-6.
+// usePhysicsLoop.ts — v80: the raf physics tick is REMOVED.
 //
-// v72 note: in v61+ (CardGrid), bubbles don't move on the canvas.
-// PootBox passes a no-op setBubbles, so the physics step's state write
-// is discarded — collisions are still detected (so the spark/ripple
-// effects fire), but the bubble positions never persist. So the hook
-// is a misnomer: it computes collisions for the visual effects layer
-// and owns the combo burst + confetti triggers. The physics imports
-// stay because the math is identical — we just don't apply the
-// post-collision setBubbles update.
+// History:
+//   v52-6 — extracted raf loop + collision detection from PootBox.
+//   v61   — CardGrid replaced the physics canvas with a static
+//            grid. The raf tick kept running but its setBubbles
+//            write was a no-op (the parent passes a setter that
+//            discards), so it was dead code for the bubble motion.
+//            But onCollisionSound still fired on every collision.
+//   v72   — Code review flagged the dead write but didn't kill
+//            the loop itself. ~3,000 lines of physics code kept
+//            running in production.
+//   v80   — User reports "None of the buttons seem to work" —
+//            investigation via headless Chromium shows the loop
+//            is creating 1000+ HTMLAudioElement instances in 5
+//            seconds on first load, hitting Chromium's
+//            WebMediaPlayer limit, silently breaking all kid
+//            audio. Root cause: the default page creates 30
+//            bubbles (BUILT_IN_SOUNDS) at position (0, 0) — all
+//            overlapping. stepPhysics() returns collisions for
+//            every pair every frame; userDriven sometimes flips
+//            true via first-tap, the audio system creates a new
+//            <audio> per collision, and the browser chokes.
 //
-// Owns: the raf tick (a no-op write, kept to keep the same loop shape),
-// collision detection (ripples, sparks, audio on user-driven
-// collision), soundPlaying poll, comboBurst + confettiBurst +
-// confettiParticles.
+// This v80 file keeps the hook's PUBLIC API (comboBurst,
+// confettiBurst, triggerComboBurst, triggerConfetti, ripples)
+// so PootBox callers don't break, but the raf tick is gone.
+// The audio system is now driven solely by audioManager.ts
+// (called from PootBox's handleBubbleTap on each card click).
+// The visual effects (ripples, sparks, confetti) are also
+// dormant — CardGrid doesn't bubble events. They're kept as
+// state hooks so the React tree doesn't break, but no events
+// are emitted.
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { BubbleState, Ripple, Spark, Settings } from "../types";
-import { stepPhysics } from "../physics";
-import {
-  FRICTION,
-  WALL_BOUNCE,
-  COLLISION_BOUNCE,
-  DRIFT_FORCE_MAX,
-  MIN_DRIFT_INTERVAL_MS,
-  COLLISION_AUDIO_WINDOW_MS,
-} from "../constants";
+import type { Ripple, Spark, Settings } from "../types";
 import { isAnySoundPlaying, getCurrentBubbleId } from "../audioManager";
 
 export interface UsePhysicsLoopParams {
-  bubblesRef: React.RefObject<BubbleState[]>;
-  setBubbles: (b: BubbleState[]) => void;
+  bubblesRef: React.RefObject<unknown[]>;
+  setBubbles: (b: unknown[]) => void;
   size: { w: number; h: number };
   settingsRef: React.RefObject<Settings>;
-  /** Called when a user-driven collision happens (the bubble.lastTouchedAt is recent) */
-  onCollisionSound: (b: BubbleState, volume: number) => void;
+  /** Kept for API compatibility but no longer called — the
+   *  physics tick that would call this is gone. */
+  onCollisionSound: (b: unknown, volume: number) => void;
 }
 
 export interface UsePhysicsLoopResult {
@@ -44,38 +54,35 @@ export interface UsePhysicsLoopResult {
   confettiBurst: number;
   confettiParticles: { dx: number; dy: number; color: string }[];
 
-  // Combo + confetti triggers (called by the tap handler in PootBox)
+  // Combo + confetti triggers (kept for API compat — PootBox calls
+  // these on tap, they fire a visual effect). Without the physics
+  // tick the visual effect isn't connected to anything, but the
+  // setters are still safe to call.
   triggerComboBurst: (x: number, y: number, n: number) => void;
   triggerConfetti: () => void;
 }
 
-const SPARK_COUNT_PER_COLLISION = 5;
-const SPARK_LIFETIME_MS = 600;
-const RIPPLE_LIFETIME_MS = 700;
-const COMBO_BURST_LIFETIME_MS = 700;
 const CONFETTI_PARTICLE_COUNT = 24;
 const CONFETTI_LIFETIME_MS = 1200;
 
 export function usePhysicsLoop(params: UsePhysicsLoopParams): UsePhysicsLoopResult {
   const { bubblesRef, setBubbles, size, settingsRef, onCollisionSound } = params;
 
-  // ── Visual effect state ──────────────────────────────────────────────
+  // ── Visual effect state (kept for API compat) ──────────────────────
   const [ripples, setRipples] = useState<Ripple[]>([]);
-  const [sparks, setSparks] = useState<Spark[]>([]);
   const [comboBurst, setComboBurst] = useState<{ x: number; y: number; n: number; particles: { dx: number; dy: number }[] } | null>(null);
   const [confettiBurst, setConfettiBurst] = useState(0);
   const [confettiParticles, setConfettiParticles] = useState<{ dx: number; dy: number; color: string }[]>([]);
 
-  // ── Refs owned by this hook ──────────────────────────────────────────
-  const rafRef = useRef<number | null>(null);
-  const lastFrameRef = useRef(0);
-  const lastDriftNudgeAtRef = useRef(0);
-  const collisionCooldownRef = useRef<Map<string, number>>(new Map());
-  const sparkIdRef = useRef(0);
-  const rippleIdRef = useRef(0);
+  // Suppress unused warnings on parameters kept for API compat
+  void bubblesRef;
+  void setBubbles;
+  void settingsRef;
+  void onCollisionSound;
+
+  // ── Combo + confetti triggers ──────────────────────────────────────
   const comboBurstTimeoutRef = useRef<number | null>(null);
 
-  // ── Trigger combo burst at a tap location ───────────────────────────
   const triggerComboBurst = useCallback((x: number, y: number, n: number) => {
     const particles = Array.from({ length: 8 }, () => {
       const angle = Math.random() * Math.PI * 2;
@@ -84,10 +91,9 @@ export function usePhysicsLoop(params: UsePhysicsLoopParams): UsePhysicsLoopResu
     });
     setComboBurst({ x, y, n, particles });
     if (comboBurstTimeoutRef.current) window.clearTimeout(comboBurstTimeoutRef.current);
-    comboBurstTimeoutRef.current = window.setTimeout(() => setComboBurst(null), COMBO_BURST_LIFETIME_MS);
+    comboBurstTimeoutRef.current = window.setTimeout(() => setComboBurst(null), 700);
   }, []);
 
-  // ── Trigger confetti (every 10 taps) ─────────────────────────────────
   const triggerConfetti = useCallback(() => {
     const colors = ["#FF5252", "#FFD740", "#69F0AE", "#40C4FF", "#B388FF"];
     const particles = Array.from({ length: CONFETTI_PARTICLE_COUNT }, () => {
@@ -104,100 +110,22 @@ export function usePhysicsLoop(params: UsePhysicsLoopParams): UsePhysicsLoopResu
     setTimeout(() => setConfettiParticles([]), CONFETTI_LIFETIME_MS);
   }, []);
 
-  // ── Emit a ripple visual at a tap location (called from PootBox's tap handler) ──
-  const spawnRipple = useCallback((x: number, y: number, color = "rgba(255,255,255,0.5)") => {
-    const id = ++rippleIdRef.current;
-    setRipples(prev => [...prev, { id, x, y, color }]);
-    setTimeout(() => setRipples(prev => prev.filter(r => r.id !== id)), RIPPLE_LIFETIME_MS);
-  }, []);
-
-  // Expose the raf loop to the rest of the app via a custom event the bubble
-  // pointer handler can listen to. The hook itself owns the physics tick.
-
-  // ── The main raf tick ────────────────────────────────────────────────
-  useEffect(() => {
-    if (size.w === 0 || size.h === 0) return;
-    let mounted = true;
-
-    const tick = (now: number) => {
-      if (!mounted) return;
-      const dt = lastFrameRef.current === 0 ? 16.67 : now - lastFrameRef.current;
-      lastFrameRef.current = now;
-      const clampedDt = Math.min(dt, 50);
-
-      const collisions = stepPhysics(
-        bubblesRef.current,
-        {
-          friction: FRICTION,
-          wallBounce: WALL_BOUNCE,
-          collisionBounce: COLLISION_BOUNCE,
-          driftIntervalMs: MIN_DRIFT_INTERVAL_MS,
-          driftForceMax: DRIFT_FORCE_MAX,
-          viewportWidth: size.w,
-          viewportHeight: size.h,
-          collisionAudioWindowMs: COLLISION_AUDIO_WINDOW_MS,
-        },
-        now,
-        clampedDt,
-        lastDriftNudgeAtRef,
-        collisionCooldownRef
-      );
-
-      // Handle collision events: emit sparks, play sound if user-driven
-      const newSparks: Spark[] = [];
-      for (const ev of collisions) {
-        if (ev.shouldPlaySound) {
-          const a = bubblesRef.current.find(b => b.id === (ev.a as { id?: string }).id);
-          const b = bubblesRef.current.find(b => b.id === (ev.b as { id?: string }).id);
-          if (a && b) onCollisionSound(a, settingsRef.current.volume);
-        }
-        const sx = ((ev.a as { pos: { x: number } }).pos.x + (ev.b as { pos: { x: number } }).pos.x) / 2;
-        const sy = ((ev.a as { pos: { y: number } }).pos.y + (ev.b as { pos: { y: number } }).pos.y) / 2;
-        for (let i = 0; i < SPARK_COUNT_PER_COLLISION; i++) {
-          const angle = (i / SPARK_COUNT_PER_COLLISION) * Math.PI * 2 + Math.random() * 0.5;
-          const speed = 2 + Math.random() * 3;
-          newSparks.push({
-            id: ++sparkIdRef.current,
-            x: sx,
-            y: sy,
-            dx: Math.cos(angle) * speed,
-            dy: Math.sin(angle) * speed,
-            color: "rgba(255,255,255,0.6)",
-            life: SPARK_LIFETIME_MS,
-          });
-        }
-      }
-      if (newSparks.length > 0) {
-        setSparks(prev => [...prev, ...newSparks]);
-        setTimeout(() => {
-          setSparks(prev => prev.filter(s => !newSparks.find(ns => ns.id === s.id)));
-        }, SPARK_LIFETIME_MS);
-      }
-
-      // Re-render with new bubble positions
-      setBubbles([...bubblesRef.current]);
-      rafRef.current = requestAnimationFrame(tick);
-    };
-
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      mounted = false;
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
-  }, [bubblesRef, setBubbles, size, settingsRef, onCollisionSound]);
-
-  // ── Expose spawnRipple as a side effect so the parent can call it via ref ──
-  // (Alternative: pass it through params from the tap handler, but the raf loop
-  //  and tap handler both need it, so a ref-based approach is cleaner.)
-  const spawnRippleRef = useRef(spawnRipple);
-  useEffect(() => { spawnRippleRef.current = spawnRipple; });
-
-  // ── Cleanup on unmount ───────────────────────────────────────────────
+  // ── Cleanup on unmount ────────────────────────────────────────────
   useEffect(() => {
     return () => {
       if (comboBurstTimeoutRef.current) window.clearTimeout(comboBurstTimeoutRef.current);
     };
   }, []);
+
+  // Sparks is part of the public API (CanvasEffects reads it) but
+  // the raf tick that populated it is gone. Return an empty array
+  // — no sparks will ever render until the visual layer is
+  // rewired.
+  const sparks: Spark[] = [];
+
+  // Suppress unused warnings on the size dep that the noop
+  // tick used to depend on
+  void size;
 
   return {
     ripples,
@@ -212,14 +140,13 @@ export function usePhysicsLoop(params: UsePhysicsLoopParams): UsePhysicsLoopResu
 }
 
 /**
- * Standalone: polls isAnySoundPlaying every 100ms and updates the consumer.
- * Lives here so the parent doesn't need to manage a setInterval.
+ * useSoundPlaying — polls audioManager for the playing state.
+ * Extracted from PootBox in v52-6. Returns a 3-tuple so the
+ * tap handler can detect "tap the playing bubble".
  *
- * v59: also returns the currently-playing bubble id (or null). This
- * lets BubbleCanvas render a pulse on the playing bubble. The
- * 100ms poll is fine for a 60fps animation — the lag is ~16ms
- * before the user sees the pulse, and the audio itself is
- * already playing by the time the React state updates.
+ * v80: this hook is independent of the raf physics tick that
+ * used to call it. The poll alone is still useful for the
+ * playing-state UI (the CardGrid's "playing" pulse animation).
  */
 export function useSoundPlaying(): [boolean, (playing: boolean) => void, string | null] {
   const [soundPlaying, setSoundPlaying] = useState(false);
