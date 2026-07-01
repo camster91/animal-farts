@@ -573,7 +573,16 @@ export default function PootBox() {
       <FirstRunIntro
         show={showFirstRun}
         onDone={() => {
-          localStorage.setItem("pootbox-firstrun-done", "1");
+          // v80: write BOTH keys so the modal stays dismissed
+          // across reloads. The useModalState hook reads
+          // pootbox-firstrun-done (its own key); PootBox's
+          // unrelated `showOnboarding` state reads
+          // pootbox-onboarded-v2. Writing both is cheap and
+          // ensures the modal never reappears from a stale state.
+          try {
+            localStorage.setItem("pootbox-firstrun-done", "1");
+            localStorage.setItem("pootbox-onboarded-v2", "1");
+          } catch { /* ignore */ }
           setShowFirstRun(false);
         }}
       />

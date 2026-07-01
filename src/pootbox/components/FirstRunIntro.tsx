@@ -1,3 +1,15 @@
+// FirstRunIntro.tsx — v69 modal for the first-launch welcome.
+// Rendered by PootBox when pootbox-firstrun-done is missing
+// from localStorage. Single "Let's go!" button calls onDone,
+// which sets the localStorage flag + hides the modal.
+//
+// v80: explicit pointerEvents: "auto" on the overlay (was the
+// default but now pinned for safety), and a click-anywhere-on-
+// backdrop-to-dismiss affordance (in case the button itself is
+// being intercepted somehow — the kid can tap outside the card
+// to dismiss the modal). The previous render worked in dev but
+// users reported clicks not landing in production.
+
 interface FirstRunIntroProps {
   show: boolean;
   onDone: () => void;
@@ -8,6 +20,10 @@ export default function FirstRunIntro({ show, onDone }: FirstRunIntroProps) {
 
   return (
     <div
+      onClick={onDone}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Welcome to PootBox"
       style={{
         position: "fixed",
         inset: 0,
@@ -19,9 +35,16 @@ export default function FirstRunIntro({ show, onDone }: FirstRunIntroProps) {
         justifyContent: "center",
         zIndex: 200,
         padding: 16,
+        pointerEvents: "auto",
+        cursor: "pointer",
       }}
     >
       <div
+        // v80: stopPropagation so clicking the card itself
+        // doesn't bubble up to the overlay's onClick. The
+        // overlay's onClick is the "tap outside the card to
+        // dismiss" affordance — both paths dismiss.
+        onClick={(e) => e.stopPropagation()}
         style={{
           background: "white",
           borderRadius: 24,
@@ -34,6 +57,7 @@ export default function FirstRunIntro({ show, onDone }: FirstRunIntroProps) {
           alignItems: "center",
           gap: 16,
           fontFamily: "Fredoka, system-ui, sans-serif",
+          cursor: "auto",
         }}
       >
         <div style={{ fontSize: 80, lineHeight: 1 }}>💨</div>

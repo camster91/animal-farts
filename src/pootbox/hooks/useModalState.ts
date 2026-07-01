@@ -12,7 +12,15 @@ export function useModalState() {
   const [showShare, setShowShare] = useState<ShareMode>("none");
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [showFirstRun, setShowFirstRun] = useState(
-    () => !localStorage.getItem("pootbox-firstrun-done"),
+    () => {
+      // v80: check both keys so the dismiss-time write to
+      // pootbox-onboarded-v2 is honored. The FirstRunIntro's
+      // onDone writes BOTH keys to be safe.
+      try {
+        return !(localStorage.getItem("pootbox-firstrun-done") ||
+                  localStorage.getItem("pootbox-onboarded-v2"));
+      } catch { return true; }
+    },
   );
 
   const closeAll = useCallback(() => {
