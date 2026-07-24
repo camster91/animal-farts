@@ -46,7 +46,6 @@ export default function Profile({ onBack }: ProfileProps) {
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setError(null);
     fetch("/api/me", { headers: { "x-device-id": getOrCreateDeviceId() } })
       .then(async (r) => {

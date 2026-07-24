@@ -73,7 +73,6 @@ const CommentsSheet: FC<CommentsSheetProps> = ({
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setError(null);
     fetch(`/api/recordings/${recordingId}/comments`)
       .then(async (r) => {
