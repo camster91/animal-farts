@@ -15,6 +15,7 @@ import {
 } from "./recordings";
 import { playSingle, stopAllSounds, getCurrentBubbleId } from "./audioManager";
 import { getOrCreateDeviceId } from "./lib/deviceId";
+import { kidSafeError } from "./lib/kidSafeError";
 import { useSettings } from "./hooks/useSettings";
 import { useToast } from "./hooks/useToast";
 import { useModalState } from "./hooks/useModalState";
@@ -853,7 +854,7 @@ export default function PootBox() {
               });
               if (!r.ok) {
                 const body = await r.json().catch(() => ({}));
-                showToast(body.error || `Share failed (${r.status})`);
+                showToast(kidSafeError(body.error, "Share failed — try again!"));
                 return "";
               }
               const data = await r.json();

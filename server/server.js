@@ -33,6 +33,7 @@ import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import rateLimit from "express-rate-limit";
 import { containsBannedWord } from "./moderation.js";
+import { verifyAudioMagic } from "./audioMagic.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 5174;
@@ -189,6 +190,22 @@ const app = express();
 // with a custom x-device-id and exercise the full social graph + uploads.
 app.use(express.json({ limit: "1mb" })); // for social endpoints (users, follows, comments)
 
+// Baseline security headers for every response (API + static + SPA).
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader(
+    "Permissions-Policy",
+    "microphone=(self), camera=(), geolocation=(), payment=()",
+  );
+  // API responses are JSON only — lock down any accidental HTML embedding.
+  if (req.path.startsWith("/api")) {
+    res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+  }
+  next();
+});
+
 // Production sits behind Traefik → docker. Without trust proxy, every client
 // shares one rate-limit bucket (the proxy's IP). Trust one hop so
 // X-Forwarded-For from the edge is used.
@@ -343,11 +360,35 @@ const upload = multer({
   },
 });
 
-// Health check
+// Health check — keep it cheap (Docker probes this every 30s). No COUNT(*) /
+// uptime leakage on the public path.
 app.get("/api/health", (req, res) => {
-  const count = db.prepare("SELECT COUNT(*) as n FROM recordings").get();
-  res.json({ ok: true, recordings: count.n, uptime: process.uptime() });
+  try {
+    db.prepare("SELECT 1").get();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[health] db ping failed:", err && err.message);
+    res.status(503).json({ ok: false });
+  }
 });
+
+// Retention: share codes expire after 30 days. Orphan codes without a live
+// upload also get cleaned. Runs once at boot and hourly.
+const SHARE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const MAX_RECORDINGS_PER_DEVICE = 40;
+function cleanupExpiredShareCodes() {
+  try {
+    const cutoff = Date.now() - SHARE_TTL_MS;
+    const expired = db.prepare("DELETE FROM share_codes WHERE created_at < ?").run(cutoff);
+    if (expired.changes > 0) {
+      console.log(`[retention] deleted ${expired.changes} expired share codes`);
+    }
+  } catch (err) {
+    console.error("[retention] share cleanup failed:", err && err.message);
+  }
+}
+cleanupExpiredShareCodes();
+setInterval(cleanupExpiredShareCodes, 60 * 60 * 1000).unref();
 
 // v29: lightweight self-hosted error monitoring (logs to stderr). All
 // user-supplied fields are run through sanitizeLogValue so a crafted payload
@@ -395,6 +436,25 @@ function parseDeviceId(value) {
   const id = value.trim();
   if (!/^[a-zA-Z0-9_-]{4,64}$/.test(id)) return null;
   return id;
+}
+
+// Cursor pagination: opaque "createdAt:id" token for created_at DESC lists.
+function encodeCursor(createdAt, id) {
+  return `${createdAt}:${id}`;
+}
+function parseCursor(raw) {
+  if (typeof raw !== "string" || !raw) return null;
+  const m = /^(\d+):(\d+)$/.exec(raw.trim());
+  if (!m) return null;
+  const createdAt = Number(m[1]);
+  const id = Number(m[2]);
+  if (!Number.isFinite(createdAt) || !Number.isInteger(id) || id <= 0) return null;
+  return { createdAt, id };
+}
+function parseLimit(raw, fallback = 50, max = 100) {
+  const n = parseInt(String(raw ?? ""), 10);
+  if (!Number.isInteger(n) || n <= 0) return fallback;
+  return Math.min(n, max);
 }
 
 // Existence check for the write endpoints that reference a recording.
@@ -485,19 +545,23 @@ app.get("/api/share/:code", shareLookupLimiter, (req, res) => {
   res.json({ code, audioUrl: row.audio_url, name: row.name, emoji: row.emoji, createdAt: row.created_at });
 });
 
-// List recordings (sorted by upvotes desc, then recency)
+// List recordings (sorted by upvotes desc, then recency). Offset pagination
+// because the primary sort is not a unique timestamp cursor.
 app.get("/api/recordings", (req, res) => {
   const deviceId = parseDeviceId(req.headers["x-device-id"]) || "";
-  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const limit = parseLimit(req.query.limit, 50, 100);
+  const offset = Math.max(0, Math.min(parseInt(String(req.query.offset ?? "0"), 10) || 0, 5000));
   const rows = db.prepare(`
     SELECT r.id, r.name, r.emoji, r.duration_sec, r.upvotes, r.created_at, r.filename,
            (SELECT COUNT(*) FROM votes WHERE recording_id = r.id AND device_id = ?) as user_voted
     FROM recordings r
-    ORDER BY r.upvotes DESC, r.created_at DESC
-    LIMIT ?
-  `).all(deviceId, limit);
+    ORDER BY r.upvotes DESC, r.created_at DESC, r.id DESC
+    LIMIT ? OFFSET ?
+  `).all(deviceId, limit + 1, offset);
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
   res.json({
-    recordings: rows.map((r) => ({
+    recordings: page.map((r) => ({
       id: r.id,
       name: r.name,
       emoji: r.emoji,
@@ -507,6 +571,7 @@ app.get("/api/recordings", (req, res) => {
       createdAt: r.created_at,
       audioUrl: `/uploads/${r.filename}`,
     })),
+    nextOffset: hasMore ? offset + limit : null,
   });
 });
 
@@ -519,7 +584,7 @@ app.post("/api/recordings", uploadLimiter, (req, res, next) => {
     // "almost worked" — they didn't, but the error page was HTML.
     if (err) {
       const msg = err.message || "Upload failed";
-      const status = /file too large/i.test(msg) ? 413 : 400;
+      const status = /file too large|File too large/i.test(msg) ? 413 : 400;
       return res.status(status).json({ error: msg });
     }
     next();
@@ -544,6 +609,23 @@ app.post("/api/recordings", uploadLimiter, (req, res, next) => {
     if (containsBannedWord(name) || containsBannedWord(emoji)) {
       if (req.file) safeUnlink(req.file.filename);
       return res.status(400).json({ error: "Name or emoji contains blocked words" });
+    }
+    // Per-device quota — caps unbounded disk growth from a single identity.
+    const owned = db.prepare(
+      "SELECT COUNT(*) AS n FROM recordings WHERE device_id = ?"
+    ).get(deviceId).n;
+    if (owned >= MAX_RECORDINGS_PER_DEVICE) {
+      if (req.file) safeUnlink(req.file.filename);
+      return res.status(429).json({
+        error: `Recording limit reached (${MAX_RECORDINGS_PER_DEVICE}). Delete an old one first.`,
+      });
+    }
+    // Magic-byte check — Content-Type alone is not enough.
+    const ext = path.extname(req.file.filename).slice(1).toLowerCase();
+    const magic = verifyAudioMagic(path.join(UPLOAD_DIR, req.file.filename), ext);
+    if (!magic.ok) {
+      if (req.file) safeUnlink(req.file.filename);
+      return res.status(400).json({ error: magic.error || "Invalid audio file" });
     }
     // Only store a finite numeric duration. A non-numeric string used to
     // parseFloat to NaN and get bound to SQLite as-is.
@@ -813,30 +895,42 @@ app.post("/api/users/:handle/follow", followLimiter, (req, res) => {
 app.get("/api/users/:handle/followers", (req, res) => {
   const u = db.prepare("SELECT * FROM users WHERE handle = ?").get(req.params.handle);
   if (!u) return res.status(404).json({ error: "Not found" });
+  const limit = parseLimit(req.query.limit, 50, 100);
+  const offset = Math.max(0, Math.min(parseInt(String(req.query.offset ?? "0"), 10) || 0, 5000));
   const rows = db.prepare(`
     SELECT users.* FROM follows
     JOIN users ON users.device_id = follows.follower_device_id
     WHERE follows.followee_device_id = ?
     ORDER BY follows.created_at DESC
-    LIMIT 200
-  `).all(u.device_id);
-  // v74: batched (was userToPublic.map → 4 queries per follower)
-  res.json({ users: usersToPublicBatch(rows, parseDeviceId(req.headers["x-device-id"]) || "") });
+    LIMIT ? OFFSET ?
+  `).all(u.device_id, limit + 1, offset);
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  res.json({
+    users: usersToPublicBatch(page, parseDeviceId(req.headers["x-device-id"]) || ""),
+    nextOffset: hasMore ? offset + limit : null,
+  });
 });
 
 // GET /api/users/:handle/following
 app.get("/api/users/:handle/following", (req, res) => {
   const u = db.prepare("SELECT * FROM users WHERE handle = ?").get(req.params.handle);
   if (!u) return res.status(404).json({ error: "Not found" });
+  const limit = parseLimit(req.query.limit, 50, 100);
+  const offset = Math.max(0, Math.min(parseInt(String(req.query.offset ?? "0"), 10) || 0, 5000));
   const rows = db.prepare(`
     SELECT users.* FROM follows
     JOIN users ON users.device_id = follows.followee_device_id
     WHERE follows.follower_device_id = ?
     ORDER BY follows.created_at DESC
-    LIMIT 200
-  `).all(u.device_id);
-  // v74: batched (was userToPublic.map → 4 queries per followee)
-  res.json({ users: usersToPublicBatch(rows, parseDeviceId(req.headers["x-device-id"]) || "") });
+    LIMIT ? OFFSET ?
+  `).all(u.device_id, limit + 1, offset);
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  res.json({
+    users: usersToPublicBatch(page, parseDeviceId(req.headers["x-device-id"]) || ""),
+    nextOffset: hasMore ? offset + limit : null,
+  });
 });
 
 // GET /api/users/:handle/recordings — recordings by a user
@@ -844,60 +938,91 @@ app.get("/api/users/:handle/recordings", (req, res) => {
   const deviceId = parseDeviceId(req.headers["x-device-id"]) || "";
   const u = db.prepare("SELECT * FROM users WHERE handle = ?").get(req.params.handle);
   if (!u) return res.status(404).json({ error: "Not found" });
-  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
-  const rows = db.prepare(`
-    SELECT r.id, r.name, r.emoji, r.duration_sec, r.upvotes, r.created_at, r.filename, r.device_id,
-           (SELECT COUNT(*) FROM votes WHERE recording_id = r.id AND device_id = ?) as user_voted
-    FROM recordings r
-    WHERE r.device_id = ?
-    ORDER BY r.created_at DESC
-    LIMIT ?
-  `).all(deviceId, u.device_id, limit);
+  const limit = parseLimit(req.query.limit, 50, 100);
+  const cursor = parseCursor(req.query.cursor);
+  let rows;
+  if (cursor) {
+    rows = db.prepare(`
+      SELECT r.id, r.name, r.emoji, r.duration_sec, r.upvotes, r.created_at, r.filename, r.device_id,
+             (SELECT COUNT(*) FROM votes WHERE recording_id = r.id AND device_id = ?) as user_voted
+      FROM recordings r
+      WHERE r.device_id = ?
+        AND (r.created_at < ? OR (r.created_at = ? AND r.id < ?))
+      ORDER BY r.created_at DESC, r.id DESC
+      LIMIT ?
+    `).all(deviceId, u.device_id, cursor.createdAt, cursor.createdAt, cursor.id, limit + 1);
+  } else {
+    rows = db.prepare(`
+      SELECT r.id, r.name, r.emoji, r.duration_sec, r.upvotes, r.created_at, r.filename, r.device_id,
+             (SELECT COUNT(*) FROM votes WHERE recording_id = r.id AND device_id = ?) as user_voted
+      FROM recordings r
+      WHERE r.device_id = ?
+      ORDER BY r.created_at DESC, r.id DESC
+      LIMIT ?
+    `).all(deviceId, u.device_id, limit + 1);
+  }
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  const last = page[page.length - 1];
   res.json({
-    recordings: rows.map((r) => ({
+    recordings: page.map((r) => ({
       id: r.id, name: r.name, emoji: r.emoji,
       durationSec: r.duration_sec, upvotes: r.upvotes, userVoted: r.user_voted > 0,
       createdAt: r.created_at, audioUrl: `/uploads/${r.filename}`,
       author: userToPublic(u, deviceId),
     })),
+    nextCursor: hasMore && last ? encodeCursor(last.created_at, last.id) : null,
   });
 });
 
 // GET /api/feed — recordings from people you follow + your own
 app.get("/api/feed", (req, res) => {
   const deviceId = parseDeviceId(req.headers["x-device-id"]) || "";
-  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const limit = parseLimit(req.query.limit, 50, 100);
+  const cursor = parseCursor(req.query.cursor);
   // Make sure the user exists
   if (deviceId) getOrCreateUser(deviceId);
-  const rows = db.prepare(`
-    SELECT r.id, r.name, r.emoji, r.duration_sec, r.upvotes, r.created_at, r.filename, r.device_id,
-           (SELECT COUNT(*) FROM votes WHERE recording_id = r.id AND device_id = ?) as user_voted
-    FROM recordings r
-    WHERE r.device_id = ?
-       OR r.device_id IN (SELECT followee_device_id FROM follows WHERE follower_device_id = ?)
-    ORDER BY r.created_at DESC
-    LIMIT ?
-  `).all(deviceId, deviceId, deviceId, limit);
-  // v79: batched author lookup. The previous code called
-  // userToPublic() per author, which ran 4 queries per author
-  // (follower count, following count, recording count,
-  // isFollowing) — the same N+1 v74 fixed in /api/users.
-  // With 50 authors in a feed that was 200 queries; now 1.
-  const authorIds = [...new Set(rows.map(r => r.device_id))];
+  let rows;
+  if (cursor) {
+    rows = db.prepare(`
+      SELECT r.id, r.name, r.emoji, r.duration_sec, r.upvotes, r.created_at, r.filename, r.device_id,
+             (SELECT COUNT(*) FROM votes WHERE recording_id = r.id AND device_id = ?) as user_voted
+      FROM recordings r
+      WHERE (r.device_id = ?
+         OR r.device_id IN (SELECT followee_device_id FROM follows WHERE follower_device_id = ?))
+        AND (r.created_at < ? OR (r.created_at = ? AND r.id < ?))
+      ORDER BY r.created_at DESC, r.id DESC
+      LIMIT ?
+    `).all(deviceId, deviceId, deviceId, cursor.createdAt, cursor.createdAt, cursor.id, limit + 1);
+  } else {
+    rows = db.prepare(`
+      SELECT r.id, r.name, r.emoji, r.duration_sec, r.upvotes, r.created_at, r.filename, r.device_id,
+             (SELECT COUNT(*) FROM votes WHERE recording_id = r.id AND device_id = ?) as user_voted
+      FROM recordings r
+      WHERE r.device_id = ?
+         OR r.device_id IN (SELECT followee_device_id FROM follows WHERE follower_device_id = ?)
+      ORDER BY r.created_at DESC, r.id DESC
+      LIMIT ?
+    `).all(deviceId, deviceId, deviceId, limit + 1);
+  }
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  const last = page[page.length - 1];
+  // v79: batched author lookup. Key by the row's device_id — SQLite IN (...)
+  // does not preserve authorIds order, so never zip authorMap[i] with authorIds[i].
+  const authorIds = [...new Set(page.map(r => r.device_id))];
   const authorRows = authorIds.length === 0
     ? []
     : db.prepare(`SELECT * FROM users WHERE device_id IN (${authorIds.map(() => "?").join(",")})`).all(...authorIds);
   const authorMap = usersToPublicBatch(authorRows, deviceId);
-  // Key by the row's device_id — SQLite IN (...) does not preserve
-  // authorIds order, so never zip authorMap[i] with authorIds[i].
   const byDeviceId = new Map();
   for (let i = 0; i < authorRows.length; i++) {
     byDeviceId.set(authorRows[i].device_id, authorMap[i]);
   }
-  // Group by author for Instagram-style feed (one post per author with their most recent)
+  // Group by author for Instagram-style feed
   const groupOrder = [];
   const groupMap = new Map();
-  for (const r of rows) {
+  for (const r of page) {
     if (!groupMap.has(r.device_id)) {
       groupOrder.push(r.device_id);
       groupMap.set(r.device_id, {
@@ -911,25 +1036,49 @@ app.get("/api/feed", (req, res) => {
       createdAt: r.created_at, audioUrl: `/uploads/${r.filename}`,
     });
   }
-  res.json({ groups: groupOrder.map(id => groupMap.get(id)) });
+  res.json({
+    groups: groupOrder.map(id => groupMap.get(id)),
+    nextCursor: hasMore && last ? encodeCursor(last.created_at, last.id) : null,
+  });
 });
 
 // GET /api/recordings/:id/comments
 app.get("/api/recordings/:id/comments", (req, res) => {
   const id = parseIdParam(req.params.id);
   if (id === null) return res.status(400).json({ error: "Invalid id" });
-  const rows = db.prepare(`
-    SELECT c.id, c.body, c.created_at, c.device_id, u.handle, u.display_name, u.avatar
-    FROM comments c
-    LEFT JOIN users u ON u.device_id = c.device_id
-    WHERE c.recording_id = ?
-    ORDER BY c.created_at ASC
-    LIMIT 200
-  `).all(id);
-  res.json({ comments: rows.map((r) => ({
-    id: r.id, body: r.body, createdAt: r.created_at,
-    author: { handle: r.handle, displayName: r.display_name, avatar: r.avatar },
-  })) });
+  const limit = parseLimit(req.query.limit, 50, 100);
+  const cursor = parseCursor(req.query.cursor);
+  let rows;
+  if (cursor) {
+    rows = db.prepare(`
+      SELECT c.id, c.body, c.created_at, c.device_id, u.handle, u.display_name, u.avatar
+      FROM comments c
+      LEFT JOIN users u ON u.device_id = c.device_id
+      WHERE c.recording_id = ?
+        AND (c.created_at > ? OR (c.created_at = ? AND c.id > ?))
+      ORDER BY c.created_at ASC, c.id ASC
+      LIMIT ?
+    `).all(id, cursor.createdAt, cursor.createdAt, cursor.id, limit + 1);
+  } else {
+    rows = db.prepare(`
+      SELECT c.id, c.body, c.created_at, c.device_id, u.handle, u.display_name, u.avatar
+      FROM comments c
+      LEFT JOIN users u ON u.device_id = c.device_id
+      WHERE c.recording_id = ?
+      ORDER BY c.created_at ASC, c.id ASC
+      LIMIT ?
+    `).all(id, limit + 1);
+  }
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  const last = page[page.length - 1];
+  res.json({
+    comments: page.map((r) => ({
+      id: r.id, body: r.body, createdAt: r.created_at,
+      author: { handle: r.handle, displayName: r.display_name, avatar: r.avatar },
+    })),
+    nextCursor: hasMore && last ? encodeCursor(last.created_at, last.id) : null,
+  });
 });
 
 // POST /api/recordings/:id/comments
@@ -1032,12 +1181,27 @@ app.post("/api/recordings/:id/reactions", reactionLimiter, (req, res) => {
 // GET /api/users — list all users (for discover)
 app.get("/api/users", (req, res) => {
   const viewer = parseDeviceId(req.headers["x-device-id"]) || "";
-  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
-  const rows = db.prepare("SELECT * FROM users ORDER BY created_at DESC LIMIT ?").all(limit);
-  // v74: batched usersToPublicBatch (1 SQL query) replaces the
-  // previous userToPublic.map() loop (4 queries per user). Drops
-  // O(N) round-trips to O(1).
-  res.json({ users: usersToPublicBatch(rows, viewer) });
+  const limit = parseLimit(req.query.limit, 50, 100);
+  const offset = Math.max(0, Math.min(parseInt(String(req.query.offset ?? "0"), 10) || 0, 5000));
+  const rows = db.prepare(
+    "SELECT * FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?"
+  ).all(limit + 1, offset);
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  res.json({
+    users: usersToPublicBatch(page, viewer),
+    nextOffset: hasMore ? offset + limit : null,
+  });
+});
+
+// Final JSON error handler — never leak stacks / HTML default pages to clients.
+app.use((err, req, res, _next) => {
+  console.error("[unhandled]", err && err.stack ? err.stack : err);
+  if (res.headersSent) return;
+  const status = Number(err && err.status) || Number(err && err.statusCode) || 500;
+  res.status(status >= 400 && status < 600 ? status : 500).json({
+    error: status >= 500 ? "Internal error" : (err && err.message) || "Request failed",
+  });
 });
 
 app.listen(PORT, "0.0.0.0")

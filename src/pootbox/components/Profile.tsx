@@ -15,6 +15,7 @@
 
 import { useState, useEffect } from "react";
 import { getOrCreateDeviceId } from "../lib/deviceId";
+import { kidSafeError } from "../lib/kidSafeError";
 
 interface UserPublic {
   handle: string | null;
@@ -89,7 +90,7 @@ export default function Profile({ onBack }: ProfileProps) {
       });
       if (!r.ok) {
         const errBody = await r.json().catch(() => ({}));
-        setError(errBody.error || `HTTP ${r.status}`);
+        setError(kidSafeError(errBody.error, "Couldn't save — try again!"));
         return;
       }
       const updated = await r.json();

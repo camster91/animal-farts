@@ -19,6 +19,7 @@
 
 import { useState, useEffect, useRef, type FC } from "react";
 import { getOrCreateDeviceId } from "../lib/deviceId";
+import { kidSafeError } from "../lib/kidSafeError";
 
 interface Comment {
   id: number;
@@ -118,7 +119,7 @@ const CommentsSheet: FC<CommentsSheetProps> = ({
       });
       if (!r.ok) {
         const errBody = await r.json().catch(() => ({}));
-        setError(errBody.error || `HTTP ${r.status}`);
+        setError(kidSafeError(errBody.error, "Couldn't post comment — try again!"));
         return;
       }
       const data = await r.json();
@@ -149,7 +150,7 @@ const CommentsSheet: FC<CommentsSheetProps> = ({
       });
       if (!r.ok) {
         const errBody = await r.json().catch(() => ({}));
-        setError(errBody.error || `HTTP ${r.status}`);
+        setError(kidSafeError(errBody.error, "Couldn't delete — try again!"));
         return;
       }
       setComments((prev) => prev.filter((c) => c.id !== id));

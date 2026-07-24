@@ -58,6 +58,24 @@ function http(method, path, { headers = {}, body } = {}) {
 
 function multipartAudio(fieldName, fileBuffer, filename, mime) {
   const boundary = "----test-" + Math.random().toString(36).slice(2);
+  // Prepend real magic bytes so server-side sniffing accepts test payloads.
+  // WebM = EBML; other mimes used in negative tests stay as-is.
+  let payload = fileBuffer;
+  if (mime === "audio/webm" && !(fileBuffer[0] === 0x1a && fileBuffer[1] === 0x45)) {
+    payload = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), fileBuffer]);
+  } else if (mime === "audio/ogg" && fileBuffer.slice(0, 4).toString() !== "OggS") {
+    payload = Buffer.concat([Buffer.from("OggS"), fileBuffer]);
+  } else if (
+    (mime === "audio/wav" || mime === "audio/wave" || mime === "audio/x-wav") &&
+    fileBuffer.slice(0, 4).toString() !== "RIFF"
+  ) {
+    payload = Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WAVE"), fileBuffer]);
+  } else if (
+    (mime === "audio/mpeg" || mime === "audio/mp3") &&
+    !(fileBuffer[0] === 0xff || (fileBuffer[0] === 0x49 && fileBuffer[1] === 0x44))
+  ) {
+    payload = Buffer.concat([Buffer.from([0xff, 0xfb]), fileBuffer]);
+  }
   // Form fields MUST come before the file part. Multer (via busboy) parses
   // parts in stream order; if a file part ends with the multipart boundary
   // before a text field, the text field is silently dropped.
@@ -73,7 +91,7 @@ function multipartAudio(fieldName, fileBuffer, filename, mime) {
   );
   const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
   return {
-    body: Buffer.concat([nameField, head, fileBuffer, tail]),
+    body: Buffer.concat([nameField, head, payload, tail]),
     contentType: `multipart/form-data; boundary=${boundary}`,
   };
 }
@@ -827,5 +845,40 @@ describe("server integration: production audit security fixes", () => {
       body: JSON.stringify({ audioUrl: "/uploads/deadbeefdeadbeef.webm", name: "x" }),
     });
     assert.strictEqual(r.status, 400);
+  });
+
+  it("health returns ok without leaking counts", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("GET", "/api/health");
+    assert.strictEqual(r.status, 200);
+    const body = JSON.parse(r.text);
+    assert.strictEqual(body.ok, true);
+    assert.strictEqual(body.recordings, undefined);
+    assert.strictEqual(body.uptime, undefined);
+  });
+
+  it("rejects upload whose bytes are not audio (magic mismatch)", async (t) => {
+    if (!started) return t.skip();
+    // Force non-audio payload while claiming audio/webm — bypass helper magic prepend.
+    const boundary = "----test-magic-" + Math.random().toString(36).slice(2);
+    const html = Buffer.from("<!doctype html><script>alert(1)</script>");
+    const nameField = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="name"\r\n\r\nmagic-reject\r\n`,
+    );
+    const head = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="audio"; filename="x.webm"\r\nContent-Type: audio/webm\r\n\r\n`,
+    );
+    const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+    const body = Buffer.concat([nameField, head, html, tail]);
+    const r = await http("POST", "/api/recordings", {
+      headers: {
+        "x-device-id": "audit-magic-reject",
+        "content-type": `multipart/form-data; boundary=${boundary}`,
+        "content-length": String(body.length),
+      },
+      body,
+    });
+    assert.strictEqual(r.status, 400, `expected 400, got ${r.status} ${r.text}`);
+    assert.match(JSON.parse(r.text).error, /webm|audio|valid/i);
   });
 });

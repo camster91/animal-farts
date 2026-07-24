@@ -6,16 +6,12 @@
 // v74: dropped the 7 scene-illustration JPEGs (scenes/farm.jpg etc.)
 // from the precache list. v25w-era used them as canvas backgrounds
 // for the bubble canvas; v61's CardGrid replaced that with a CSS
-// gradient background. The scenes/ files still ship in /public so
-// the SW pre-cache isn't actively broken, but they're never used.
-// Removing them from the precache list drops ~1.7MB of first-load
-// bandwidth (each JPEG was 140-340KB, fetched in parallel via
-// Promise.allSettled).
-//
+// gradient background.
+// v56 audit: deleted public/scenes/ entirely (~1.7MB) — unused at runtime.
 // v55: never cache /api/* (personalized social data). Validate
 // notification click URLs to same-origin relative paths only.
 
-const CACHE = "pootbox-v55";
+const CACHE = "pootbox-v56";
 
 const SHELL_ASSETS = [
   "/",
