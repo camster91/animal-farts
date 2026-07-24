@@ -19,8 +19,13 @@ if (!existsSync(distSwPath)) { console.error("dist/sw.js not found — run build
 if (!existsSync(distHtmlPath)) { console.error("dist/index.html not found — run build first"); process.exit(1); }
 
 const html = readFileSync(distHtmlPath, "utf8");
-const matches = [...html.matchAll(/(["'])\/assets\/[^"'?]+\.(js|css)\1/g)]
-  .map((m) => m[0].slice(1, -1));
+// Vite may emit absolute `/assets/...` or relative `./assets/...` hrefs.
+// Normalize to root-absolute `/assets/...` paths for the SW cache.
+const matches = [...html.matchAll(/(["'])\.?\/assets\/[^"'?]+\.(js|css)\1/g)]
+  .map((m) => {
+    const raw = m[0].slice(1, -1);
+    return raw.startsWith("./") ? raw.slice(1) : raw;
+  });
 const assets = [...new Set(matches)];
 
 const sw = readFileSync(distSwPath, "utf8");

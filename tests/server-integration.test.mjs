@@ -746,3 +746,86 @@ describe("server integration: SPA + privacy/about", () => {
     assert.strictEqual(r.status, 404);
   });
 });
+
+describe("server integration: production audit security fixes", () => {
+  it("public user payloads never include deviceId", async (t) => {
+    if (!started) return t.skip();
+    const me = await http("GET", "/api/me", {
+      headers: { "x-device-id": "audit-device-alpha" },
+    });
+    assert.strictEqual(me.status, 200);
+    const meBody = JSON.parse(me.text);
+    assert.strictEqual(meBody.deviceId, undefined, "/api/me must not leak deviceId");
+    assert.ok(meBody.handle, "handle should still be present");
+    assert.strictEqual(meBody.isMe, true);
+
+    const list = await http("GET", "/api/users", {
+      headers: { "x-device-id": "audit-device-beta" },
+    });
+    assert.strictEqual(list.status, 200);
+    const users = JSON.parse(list.text).users || [];
+    for (const u of users) {
+      assert.strictEqual(u.deviceId, undefined, "/api/users must not leak deviceId");
+    }
+
+    const profile = await http("GET", `/api/users/${meBody.handle}`, {
+      headers: { "x-device-id": "audit-device-beta" },
+    });
+    assert.strictEqual(profile.status, 200);
+    const pub = JSON.parse(profile.text);
+    assert.strictEqual(pub.deviceId, undefined, "public profile must not leak deviceId");
+    assert.strictEqual(pub.isMe, false);
+  });
+
+  it("share mint requires ownership + returns 8-char code", async (t) => {
+    if (!started) return t.skip();
+    const webm = Buffer.from("audit-share-test-bytes");
+    const mp = multipartAudio("audio", webm, "audit-share.webm", "audio/webm");
+    const up = await http("POST", "/api/recordings", {
+      headers: {
+        "x-device-id": "audit-share-owner",
+        "content-type": mp.contentType,
+        "content-length": String(mp.body.length),
+      },
+      body: mp.body,
+    });
+    assert.strictEqual(up.status, 200, `upload should succeed, got ${up.status} ${up.text}`);
+    const { audioUrl } = JSON.parse(up.text);
+    assert.match(audioUrl, /^\/uploads\//);
+
+    // Wrong device cannot mint.
+    const theft = await http("POST", "/api/share", {
+      headers: {
+        "content-type": "application/json",
+        "x-device-id": "audit-share-thief",
+      },
+      body: JSON.stringify({ audioUrl, name: "Nope", emoji: "💨" }),
+    });
+    assert.strictEqual(theft.status, 403);
+
+    // Owner can mint; code is 8 chars.
+    const mint = await http("POST", "/api/share", {
+      headers: {
+        "content-type": "application/json",
+        "x-device-id": "audit-share-owner",
+      },
+      body: JSON.stringify({ audioUrl, name: "Shared", emoji: "💨" }),
+    });
+    assert.strictEqual(mint.status, 200, `mint should succeed, got ${mint.status} ${mint.text}`);
+    const { code } = JSON.parse(mint.text);
+    assert.match(code, /^[A-Z0-9]{8}$/, "new share codes must be 8 chars");
+
+    const lookup = await http("GET", `/api/share/${code}`);
+    assert.strictEqual(lookup.status, 200);
+    assert.strictEqual(JSON.parse(lookup.text).audioUrl, audioUrl);
+  });
+
+  it("share mint without x-device-id returns 400", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("POST", "/api/share", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ audioUrl: "/uploads/deadbeefdeadbeef.webm", name: "x" }),
+    });
+    assert.strictEqual(r.status, 400);
+  });
+});

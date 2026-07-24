@@ -13,7 +13,6 @@ import { getOrCreateDeviceId } from "../lib/deviceId";
 import { playSingle, stopAllSounds, isAnySoundPlaying } from "../audioManager";
 
 interface PublicUser {
-  deviceId: string;
   handle: string | null;
   displayName: string | null;
   avatar: string | null;

@@ -113,11 +113,15 @@ export default function PootBox() {
         if (p.id !== activePageId) return p;
         return {
           ...p,
-          bubbles: p.bubbles.map((b) =>
-            b.id === bubbleId
-              ? { ...b, blobUrl: serverAudioUrl, sound: serverAudioUrl }
-              : b
-          ),
+          bubbles: p.bubbles.map((b) => {
+            if (b.id !== bubbleId) return b;
+            // Revoke the transient blob: URL once we have a durable
+            // /uploads/... path (avoids leaking blob URLs across recordings).
+            if (b.blobUrl?.startsWith("blob:")) {
+              try { URL.revokeObjectURL(b.blobUrl); } catch { /* ignore */ }
+            }
+            return { ...b, blobUrl: serverAudioUrl, sound: serverAudioUrl };
+          }),
         };
       }));
       // The pages state will be saved to IDB by the existing pages-state
@@ -669,7 +673,10 @@ export default function PootBox() {
             const serverId = serverRecordingIds[id];
             if (typeof serverId === "number") {
               try {
-                await fetch(`/api/recordings/${serverId}`, { method: "DELETE" });
+                await fetch(`/api/recordings/${serverId}`, {
+                  method: "DELETE",
+                  headers: { "x-device-id": getOrCreateDeviceId() },
+                });
               } catch { /* offline — server row will orphan, acceptable trade */ }
               setServerRecordingIds((prev) => {
                 if (!(id in prev)) return prev;
@@ -834,7 +841,10 @@ export default function PootBox() {
             try {
               const r = await fetch("/api/share", {
                 method: "POST",
-                headers: { "content-type": "application/json" },
+                headers: {
+                  "content-type": "application/json",
+                  "x-device-id": getOrCreateDeviceId(),
+                },
                 body: JSON.stringify({
                   audioUrl: shareable.sound,
                   name: page?.name ?? "Shared sound",

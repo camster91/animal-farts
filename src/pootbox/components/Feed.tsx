@@ -24,9 +24,6 @@ interface AuthorPublic {
   recordingCount: number;
   isFollowing: boolean;
   isMe: boolean;
-  /** v79: server-side device_id is needed for keying the feed
-   *  group. The server's usersToPublicBatch returns it. */
-  deviceId?: string;
 }
 
 interface FeedRecording {
@@ -228,7 +225,7 @@ export default function Feed({ onBack, onOpenProfile }: FeedProps) {
         const displayName = a.displayName || a.handle || "Someone";
         return (
           <section
-            key={a.handle || a.deviceId}
+            key={a.handle || a.displayName || "author"}
             style={{
               margin: "0 16px 16px",
               padding: 12,

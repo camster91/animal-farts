@@ -45,7 +45,7 @@ export default function ShareSheet({
   const [code, setCode] = useState<string | null>(null);
   // Initialize lookup input from the prop. The parent changes the prop
   // (via key prop or re-render) when self-test fires.
-  const [lookupInput, setLookupInput] = useState((lookupPrefill || "").toUpperCase().slice(0, 4));
+  const [lookupInput, setLookupInput] = useState((lookupPrefill || "").toUpperCase().slice(0, 8));
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupResult, setLookupResult] = useState<SharedSound | null>(null);
   const [lookupError, setLookupError] = useState(false);
@@ -70,8 +70,9 @@ export default function ShareSheet({
   }
 
   async function handleLookup() {
-    const trimmed = lookupInput.trim().toUpperCase().slice(0, 4);
-    if (trimmed.length < 4 || !onLookupCode) return;
+    const trimmed = lookupInput.trim().toUpperCase().slice(0, 8);
+    // Accept legacy 4-char and new 8-char codes.
+    if ((trimmed.length !== 4 && trimmed.length !== 8) || !onLookupCode) return;
     setLookupLoading(true);
     setLookupError(false);
     setLookupOffline(false);
@@ -234,10 +235,10 @@ export default function ShareSheet({
 
             <input
               type="text"
-              placeholder="Enter 4-letter code"
+              placeholder="Enter share code"
               value={lookupInput}
               onChange={(e) =>
-                setLookupInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4))
+                setLookupInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8))
               }
               style={{
                 width: "100%",

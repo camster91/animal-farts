@@ -20,9 +20,9 @@
 //   POST /api/recordings/:id/reactions — toggle {emoji} reaction (adult-only)
 //
 // Storage: SQLite for metadata, /server/uploads/ for audio files (webm/mp4).
-// No real auth — device-id header is used to identify users, auto-creates
-// a user record on first request. The user picks a "handle" (any string they
-// want, no uniqueness check needed since it's local).
+// Auth: x-device-id identifies the caller. It is a bearer secret — never
+// returned in public user payloads. Prefer signed sessions for a stronger
+// boundary; until then, do not leak device_id via /api/users|/api/feed|/api/me.
 //
 import express from "express";
 import multer from "multer";
@@ -124,6 +124,7 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_users_handle ON users(handle);
+  CREATE INDEX IF NOT EXISTS idx_recordings_device_id ON recordings(device_id, created_at DESC);
 
   CREATE TABLE IF NOT EXISTS follows (
     follower_device_id TEXT NOT NULL,
@@ -161,16 +162,39 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_share_codes_created ON share_codes(created_at);
 `);
 
+// Enforce unique handles. Older DBs may have duplicates from a race on
+// PATCH /api/me; rename extras before creating the unique index.
+(function migrateUniqueHandles() {
+  const dupes = db.prepare(`
+    SELECT handle FROM users GROUP BY handle HAVING COUNT(*) > 1
+  `).all();
+  for (const { handle } of dupes) {
+    const rows = db.prepare(
+      "SELECT device_id FROM users WHERE handle = ? ORDER BY created_at ASC"
+    ).all(handle);
+    for (let i = 1; i < rows.length; i++) {
+      const suffix = crypto.randomBytes(2).toString("hex");
+      const next = `${String(handle).slice(0, 15)}_${suffix}`.slice(0, 20);
+      db.prepare("UPDATE users SET handle = ? WHERE device_id = ?")
+        .run(next, rows[i].device_id);
+    }
+  }
+  db.exec("DROP INDEX IF EXISTS idx_users_handle");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_handle ON users(handle)");
+})();
+
 const app = express();
 // CORS: same-origin SPA, so no cross-origin headers needed. The previous
 // `app.use(cors())` was a wildcard that let any third-party site hit the API
 // with a custom x-device-id and exercise the full social graph + uploads.
 app.use(express.json({ limit: "1mb" })); // for social endpoints (users, follows, comments)
 
+// Production sits behind Traefik → docker. Without trust proxy, every client
+// shares one rate-limit bucket (the proxy's IP). Trust one hop so
+// X-Forwarded-For from the edge is used.
+app.set("trust proxy", 1);
+
 // ─── Rate limiters (per IP) ─────────────────────────────────────────────────
-// "trust proxy" is NOT enabled, so these count actual client IPs. The upload
-// and share-code endpoints are the most abuse-prone.
-//
 // makeLimiter centralizes the shared options. Setting RATE_LIMIT_DISABLED=1
 // raises every ceiling to effectively unlimited — used ONLY by the integration
 // test, which fires many uploads at one server instance and would otherwise
@@ -179,6 +203,11 @@ app.use(express.json({ limit: "1mb" })); // for social endpoints (users, follows
 // asserts on are still emitted. `fixed` limiters keep their real cap even in
 // test mode (a test asserts the share-lookup header reports 30).
 const RATE_LIMIT_DISABLED = process.env.RATE_LIMIT_DISABLED === "1";
+if (RATE_LIMIT_DISABLED && process.env.NODE_ENV === "production") {
+  // Integration tests intentionally set both. Never enable this on a
+  // real production deploy — it raises every abuse ceiling to ~1M/min.
+  console.warn("[server] WARNING: RATE_LIMIT_DISABLED=1 with NODE_ENV=production — abuse limits are effectively off");
+}
 function makeLimiter(limit, { fixed = false } = {}) {
   return rateLimit({
     windowMs: 60 * 1000,
@@ -189,18 +218,19 @@ function makeLimiter(limit, { fixed = false } = {}) {
 }
 const generalLimiter = makeLimiter(120); // 2 req/sec sustained
 const uploadLimiter = makeLimiter(6); // 1 upload per 10s
-const shareLookupLimiter = makeLimiter(30, { fixed: true }); // 1M keyspace; allows "type a friend's code" UX
+const shareLookupLimiter = makeLimiter(30, { fixed: true }); // allows "type a friend's code" UX
 const shareMintLimiter = makeLimiter(6);
 // v73 (code review 2026-06-16 #7): per-endpoint limits on the social
 // surface. The general 120/min limiter counts every /api/* call, so
 // a single kid's 200 follow + 200 react + 200 comment in a minute
 // would burn the general budget for every other endpoint. Per-endpoint
 // limiters let legitimate UX through while capping each action at
-// a sane rate. The "trust proxy" is off (per the general limiter's
-// comment), so these count actual client IPs.
+// a sane rate.
 const followLimiter = makeLimiter(20); // more than a kid will ever do, less than a botnet
 const reactionLimiter = makeLimiter(60); // 1 reaction/sec sustained — generous for the kid UX
 const commentDeleteLimiter = makeLimiter(30); // 1 delete/2s — covers "I typo'd a comment" UX
+const commentCreateLimiter = makeLimiter(20); // comment spam cap
+const upvoteLimiter = makeLimiter(30); // toggle spam cap
 // Telemetry (client error reports + feedback) writes straight to the server
 // log. Cap it tighter than the general limiter so a broken client loop or an
 // abuser can't flood the log (the client posts 100% of errors).
@@ -358,6 +388,15 @@ function parseIdParam(value) {
   return n;
 }
 
+// Cap + charset-check the device identity header. Spoofed headers used to
+// be stored unbounded; reject garbage early so votes/comments can't bloat.
+function parseDeviceId(value) {
+  if (typeof value !== "string") return null;
+  const id = value.trim();
+  if (!/^[a-zA-Z0-9_-]{4,64}$/.test(id)) return null;
+  return id;
+}
+
 // Existence check for the write endpoints that reference a recording.
 // There is no FOREIGN KEY on votes/comments/reactions, so a valid-but-
 // nonexistent id (e.g. a deleted recording) would otherwise create orphan
@@ -374,25 +413,25 @@ function sanitizeLogValue(value, max = 500) {
     .slice(0, max);
 }
 
-// === Share codes (4-character) ===
-// Anyone can mint a code for a public recording URL. Anyone with the
-// code can fetch the audio. No accounts, no follows, no profiles.
-// Codes are 4 uppercase letters/digits, easy to read aloud.
+// === Share codes ===
+// Minted codes are 8 chars (~1.1e12 keyspace). Lookup still accepts legacy
+// 4-char codes so existing shares keep working. Mint requires ownership of
+// the uploaded file (x-device-id must match a recordings row for that path).
 
 const SHARE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L confusion
+const SHARE_CODE_LEN = 8;
 
 function generateShareCode() {
-  // 32^4 = 1M combinations. Use crypto-random for the per-char picks so the
-  // sequence is unpredictable from observed outputs (the previous Math.random
-  // implementation was brute-forceable without a rate limit).
   let s = "";
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < SHARE_CODE_LEN; i++) {
     s += SHARE_ALPHABET[crypto.randomInt(0, SHARE_ALPHABET.length)];
   }
   return s;
 }
 
 app.post("/api/share", shareMintLimiter, (req, res) => {
+  const deviceId = parseDeviceId(req.headers["x-device-id"]);
+  if (!deviceId) return res.status(400).json({ error: "Missing or invalid x-device-id" });
   const { audioUrl, name, emoji } = req.body || {};
   if (typeof audioUrl !== "string" || !audioUrl) {
     return res.status(400).json({ error: "audioUrl is required" });
@@ -400,6 +439,23 @@ app.post("/api/share", shareMintLimiter, (req, res) => {
   // The audioUrl must be a /uploads/... path on this server (not arbitrary)
   if (!/^\/uploads\/[A-Za-z0-9._-]+$/.test(audioUrl)) {
     return res.status(400).json({ error: "audioUrl must be a /uploads/... path" });
+  }
+  const filename = audioUrl.slice("/uploads/".length);
+  // Ownership: only the uploader can mint a share code for their file.
+  const owned = db.prepare(
+    "SELECT 1 FROM recordings WHERE filename = ? AND device_id = ?"
+  ).get(filename, deviceId);
+  if (!owned) {
+    return res.status(403).json({ error: "Not your recording" });
+  }
+  // File must still exist on disk.
+  const abs = path.resolve(UPLOAD_DIR, filename);
+  const root = path.resolve(UPLOAD_DIR) + path.sep;
+  if (!abs.startsWith(root) || !fs.existsSync(abs)) {
+    return res.status(404).json({ error: "Audio file not found" });
+  }
+  if (containsBannedWord(name) || containsBannedWord(emoji)) {
+    return res.status(400).json({ error: "Name or emoji contains blocked words" });
   }
   // Try up to 5 times to get a unique code (collision odds are tiny)
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -411,13 +467,6 @@ app.post("/api/share", shareMintLimiter, (req, res) => {
       return res.json({ code, audioUrl, name: name || "Shared sound", emoji: emoji || "💨" });
     } catch (err) {
       // v73 (code review 2026-06-16 #11): only retry on PK collision.
-      // The previous code caught any error and tried a new code, which
-      // doesn't fix a different constraint (e.g. NOT NULL fail, file
-      // permission). The 32^4 = 1M keyspace + 5 attempts means even a
-      // PK collision is astronomically unlikely; the retry loop is a
-      // belt-and-suspenders, not a real fix path. Bubble up non-PK
-      // errors so they hit the general 500 path with their real
-      // message.
       if (err && err.code === "SQLITE_CONSTRAINT_PRIMARYKEY" && attempt < 4) continue;
       console.error(`[share] insert failed on attempt ${attempt}: ${err && err.message}`);
       return res.status(500).json({ error: "code collision, retry" });
@@ -426,8 +475,9 @@ app.post("/api/share", shareMintLimiter, (req, res) => {
 });
 
 app.get("/api/share/:code", shareLookupLimiter, (req, res) => {
-  const code = String(req.params.code || "").toUpperCase().slice(0, 4);
-  if (!/^[A-Z0-9]{4}$/.test(code)) {
+  const code = String(req.params.code || "").toUpperCase().slice(0, SHARE_CODE_LEN);
+  // Accept legacy 4-char codes and new 8-char codes.
+  if (!/^[A-Z0-9]{4}$|^[A-Z0-9]{8}$/.test(code)) {
     return res.status(400).json({ error: "Invalid code format" });
   }
   const row = db.prepare("SELECT audio_url, name, emoji, created_at FROM share_codes WHERE code = ?").get(code);
@@ -437,7 +487,7 @@ app.get("/api/share/:code", shareLookupLimiter, (req, res) => {
 
 // List recordings (sorted by upvotes desc, then recency)
 app.get("/api/recordings", (req, res) => {
-  const deviceId = req.headers["x-device-id"] || "";
+  const deviceId = parseDeviceId(req.headers["x-device-id"]) || "";
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   const rows = db.prepare(`
     SELECT r.id, r.name, r.emoji, r.duration_sec, r.upvotes, r.created_at, r.filename,
@@ -478,10 +528,10 @@ app.post("/api/recordings", uploadLimiter, (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No audio file provided" });
     const { name, emoji, kidName, durationSec } = req.body;
-    // Require the x-device-id header (consistent with every other write
+    // Require a validated x-device-id header (consistent with every other write
     // endpoint). The previous fallback to req.body.deviceId was an extra
     // spoofing surface and inconsistent with the rest of the API.
-    const deviceId = req.headers["x-device-id"];
+    const deviceId = parseDeviceId(req.headers["x-device-id"]);
     if (!name || !deviceId) {
       if (req.file) safeUnlink(req.file.filename);
       return res.status(400).json({ error: "Missing name or x-device-id" });
@@ -507,7 +557,7 @@ app.post("/api/recordings", uploadLimiter, (req, res, next) => {
     `).run(
       String(name).slice(0, 40),
       String(emoji || "💨").slice(0, 8),
-      String(deviceId).slice(0, 64),
+      deviceId,
       kidName ? String(kidName).slice(0, 20) : null,
       req.file.filename,
       parsedDuration,
@@ -532,10 +582,10 @@ app.post("/api/recordings", uploadLimiter, (req, res, next) => {
 });
 
 // Upvote (idempotent — toggles vote on/off per device)
-app.post("/api/recordings/:id/upvote", (req, res) => {
+app.post("/api/recordings/:id/upvote", upvoteLimiter, (req, res) => {
   const id = parseIdParam(req.params.id);
   if (id === null) return res.status(400).json({ error: "Invalid id" });
-  const deviceId = req.headers["x-device-id"];
+  const deviceId = parseDeviceId(req.headers["x-device-id"]);
   if (!deviceId) return res.status(400).json({ error: "Missing x-device-id header" });
   if (!recordingExists(id)) return res.status(404).json({ error: "Not found" });
 
@@ -561,7 +611,7 @@ app.post("/api/recordings/:id/upvote", (req, res) => {
 app.delete("/api/recordings/:id", (req, res) => {
   const id = parseIdParam(req.params.id);
   if (id === null) return res.status(400).json({ error: "Invalid id" });
-  const deviceId = req.headers["x-device-id"];
+  const deviceId = parseDeviceId(req.headers["x-device-id"]);
   if (!deviceId) return res.status(400).json({ error: "Missing x-device-id header" });
   const row = db.prepare("SELECT filename, device_id FROM recordings WHERE id = ?").get(id);
   if (!row) return res.status(404).json({ error: "Not found" });
@@ -637,7 +687,8 @@ function usersToPublicBatch(users, viewerDeviceId) {
   return users.map((u) => {
     const r = byId.get(u.device_id);
     return {
-      deviceId: u.device_id,
+      // deviceId is intentionally omitted from public payloads — it is the
+      // sole write-auth secret. Clients use handle + isMe instead.
       handle: r.handle,
       displayName: r.display_name,
       avatar: r.avatar,
@@ -661,7 +712,7 @@ function userToPublic(u, viewerDeviceId) {
     ? !!db.prepare("SELECT 1 FROM follows WHERE follower_device_id = ? AND followee_device_id = ?").get(viewerDeviceId, u.device_id)
     : false;
   return {
-    deviceId: u.device_id,
+    // Never expose device_id — it is the write-auth credential.
     handle: u.handle,
     displayName: u.display_name,
     avatar: u.avatar,
@@ -677,7 +728,7 @@ function userToPublic(u, viewerDeviceId) {
 
 // GET /api/me — get or create the current user
 app.get("/api/me", (req, res) => {
-  const deviceId = req.headers["x-device-id"];
+  const deviceId = parseDeviceId(req.headers["x-device-id"]);
   if (!deviceId) return res.status(400).json({ error: "Missing x-device-id" });
   const u = getOrCreateUser(deviceId);
   res.json(userToPublic(u, deviceId));
@@ -685,7 +736,7 @@ app.get("/api/me", (req, res) => {
 
 // PATCH /api/me — update profile
 app.patch("/api/me", (req, res) => {
-  const deviceId = req.headers["x-device-id"];
+  const deviceId = parseDeviceId(req.headers["x-device-id"]);
   if (!deviceId) return res.status(400).json({ error: "Missing x-device-id" });
   getOrCreateUser(deviceId);
   // v73 (code review 2026-06-16 #9): explicit typeof guards per field.
@@ -698,24 +749,36 @@ app.patch("/api/me", (req, res) => {
   if (displayName !== undefined) {
     if (typeof displayName !== "string") return res.status(400).json({ error: "displayName must be a string" });
     if (displayName.length > 30) return res.status(400).json({ error: "Display name too long" });
+    if (containsBannedWord(displayName)) return res.status(400).json({ error: "Display name contains blocked words" });
     db.prepare("UPDATE users SET display_name = ? WHERE device_id = ?").run(displayName.slice(0, 30), deviceId);
   }
   if (avatar !== undefined) {
     if (typeof avatar !== "string") return res.status(400).json({ error: "avatar must be a string" });
+    if (containsBannedWord(avatar)) return res.status(400).json({ error: "Avatar contains blocked words" });
     db.prepare("UPDATE users SET avatar = ? WHERE device_id = ?").run(avatar.slice(0, 8), deviceId);
   }
   if (bio !== undefined) {
     if (typeof bio !== "string") return res.status(400).json({ error: "bio must be a string" });
     if (bio.length > 200) return res.status(400).json({ error: "Bio too long" });
+    if (containsBannedWord(bio)) return res.status(400).json({ error: "Bio contains blocked words" });
     db.prepare("UPDATE users SET bio = ? WHERE device_id = ?").run(bio.slice(0, 200), deviceId);
   }
   if (handle !== undefined) {
     if (typeof handle !== "string") return res.status(400).json({ error: "handle must be a string" });
     const cleanHandle = handle.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20);
     if (cleanHandle.length < 3) return res.status(400).json({ error: "Handle too short" });
+    if (containsBannedWord(cleanHandle)) return res.status(400).json({ error: "Handle contains blocked words" });
     const existing = db.prepare("SELECT 1 FROM users WHERE handle = ? AND device_id != ?").get(cleanHandle, deviceId);
     if (existing) return res.status(409).json({ error: "Handle taken" });
-    db.prepare("UPDATE users SET handle = ? WHERE device_id = ?").run(cleanHandle, deviceId);
+    try {
+      db.prepare("UPDATE users SET handle = ? WHERE device_id = ?").run(cleanHandle, deviceId);
+    } catch (err) {
+      // Race: UNIQUE index catches concurrent claims the SELECT missed.
+      if (err && (err.code === "SQLITE_CONSTRAINT_UNIQUE" || err.code === "SQLITE_CONSTRAINT")) {
+        return res.status(409).json({ error: "Handle taken" });
+      }
+      throw err;
+    }
   }
   const u = db.prepare("SELECT * FROM users WHERE device_id = ?").get(deviceId);
   res.json(userToPublic(u, deviceId));
@@ -723,7 +786,7 @@ app.patch("/api/me", (req, res) => {
 
 // GET /api/users/:handle — public profile
 app.get("/api/users/:handle", (req, res) => {
-  const viewer = req.headers["x-device-id"];
+  const viewer = parseDeviceId(req.headers["x-device-id"]) || "";
   const u = db.prepare("SELECT * FROM users WHERE handle = ?").get(req.params.handle);
   if (!u) return res.status(404).json({ error: "User not found" });
   res.json(userToPublic(u, viewer));
@@ -731,7 +794,7 @@ app.get("/api/users/:handle", (req, res) => {
 
 // POST /api/users/:handle/follow — toggle follow
 app.post("/api/users/:handle/follow", followLimiter, (req, res) => {
-  const viewer = req.headers["x-device-id"];
+  const viewer = parseDeviceId(req.headers["x-device-id"]);
   if (!viewer) return res.status(400).json({ error: "Missing x-device-id" });
   const u = db.prepare("SELECT * FROM users WHERE handle = ?").get(req.params.handle);
   if (!u) return res.status(404).json({ error: "User not found" });
@@ -758,7 +821,7 @@ app.get("/api/users/:handle/followers", (req, res) => {
     LIMIT 200
   `).all(u.device_id);
   // v74: batched (was userToPublic.map → 4 queries per follower)
-  res.json({ users: usersToPublicBatch(rows, req.headers["x-device-id"]) });
+  res.json({ users: usersToPublicBatch(rows, parseDeviceId(req.headers["x-device-id"]) || "") });
 });
 
 // GET /api/users/:handle/following
@@ -773,12 +836,12 @@ app.get("/api/users/:handle/following", (req, res) => {
     LIMIT 200
   `).all(u.device_id);
   // v74: batched (was userToPublic.map → 4 queries per followee)
-  res.json({ users: usersToPublicBatch(rows, req.headers["x-device-id"]) });
+  res.json({ users: usersToPublicBatch(rows, parseDeviceId(req.headers["x-device-id"]) || "") });
 });
 
 // GET /api/users/:handle/recordings — recordings by a user
 app.get("/api/users/:handle/recordings", (req, res) => {
-  const deviceId = req.headers["x-device-id"] || "";
+  const deviceId = parseDeviceId(req.headers["x-device-id"]) || "";
   const u = db.prepare("SELECT * FROM users WHERE handle = ?").get(req.params.handle);
   if (!u) return res.status(404).json({ error: "Not found" });
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
@@ -802,7 +865,7 @@ app.get("/api/users/:handle/recordings", (req, res) => {
 
 // GET /api/feed — recordings from people you follow + your own
 app.get("/api/feed", (req, res) => {
-  const deviceId = req.headers["x-device-id"] || "";
+  const deviceId = parseDeviceId(req.headers["x-device-id"]) || "";
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   // Make sure the user exists
   if (deviceId) getOrCreateUser(deviceId);
@@ -825,11 +888,11 @@ app.get("/api/feed", (req, res) => {
     ? []
     : db.prepare(`SELECT * FROM users WHERE device_id IN (${authorIds.map(() => "?").join(",")})`).all(...authorIds);
   const authorMap = usersToPublicBatch(authorRows, deviceId);
-  // authorMap is in the same order as authorRows, which is the
-  // same order as authorIds. Build by device_id.
+  // Key by the row's device_id — SQLite IN (...) does not preserve
+  // authorIds order, so never zip authorMap[i] with authorIds[i].
   const byDeviceId = new Map();
-  for (let i = 0; i < authorIds.length; i++) {
-    byDeviceId.set(authorIds[i], authorMap[i]);
+  for (let i = 0; i < authorRows.length; i++) {
+    byDeviceId.set(authorRows[i].device_id, authorMap[i]);
   }
   // Group by author for Instagram-style feed (one post per author with their most recent)
   const groupOrder = [];
@@ -870,8 +933,8 @@ app.get("/api/recordings/:id/comments", (req, res) => {
 });
 
 // POST /api/recordings/:id/comments
-app.post("/api/recordings/:id/comments", (req, res) => {
-  const deviceId = req.headers["x-device-id"];
+app.post("/api/recordings/:id/comments", commentCreateLimiter, (req, res) => {
+  const deviceId = parseDeviceId(req.headers["x-device-id"]);
   if (!deviceId) return res.status(400).json({ error: "Missing x-device-id" });
   const id = parseIdParam(req.params.id);
   if (id === null) return res.status(400).json({ error: "Invalid id" });
@@ -890,7 +953,7 @@ app.post("/api/recordings/:id/comments", (req, res) => {
 
 // DELETE /api/comments/:id
 app.delete("/api/comments/:id", commentDeleteLimiter, (req, res) => {
-  const deviceId = req.headers["x-device-id"];
+  const deviceId = parseDeviceId(req.headers["x-device-id"]);
   if (!deviceId) return res.status(400).json({ error: "Missing x-device-id" });
   const id = parseIdParam(req.params.id);
   if (id === null) return res.status(400).json({ error: "Invalid id" });
@@ -917,7 +980,7 @@ function sanitizeEmoji(s) {
 app.get("/api/recordings/:id/reactions", (req, res) => {
   const id = parseIdParam(req.params.id);
   if (id === null) return res.status(400).json({ error: "Invalid id" });
-  const deviceId = req.headers["x-device-id"];
+  const deviceId = parseDeviceId(req.headers["x-device-id"]);
   const rows = db.prepare(
     "SELECT emoji, COUNT(*) AS n FROM reactions WHERE recording_id = ? GROUP BY emoji"
   ).all(id);
@@ -931,7 +994,7 @@ app.get("/api/recordings/:id/reactions", (req, res) => {
 
 // POST /api/recordings/:id/reactions — toggle { emoji }
 app.post("/api/recordings/:id/reactions", reactionLimiter, (req, res) => {
-  const deviceId = req.headers["x-device-id"];
+  const deviceId = parseDeviceId(req.headers["x-device-id"]);
   if (!deviceId) return res.status(400).json({ error: "Missing x-device-id" });
   const id = parseIdParam(req.params.id);
   if (id === null) return res.status(400).json({ error: "Invalid id" });
@@ -968,7 +1031,7 @@ app.post("/api/recordings/:id/reactions", reactionLimiter, (req, res) => {
 
 // GET /api/users — list all users (for discover)
 app.get("/api/users", (req, res) => {
-  const viewer = req.headers["x-device-id"] || "";
+  const viewer = parseDeviceId(req.headers["x-device-id"]) || "";
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   const rows = db.prepare("SELECT * FROM users ORDER BY created_at DESC LIMIT ?").all(limit);
   // v74: batched usersToPublicBatch (1 SQL query) replaces the
