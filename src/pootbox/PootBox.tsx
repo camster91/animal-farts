@@ -91,7 +91,7 @@ export default function PootBox() {
     // v60: confirm the recording saved. Fires AFTER the local IDB
     // write succeeds; failure path returns early inside the hook.
     onSaved: (bubble) => {
-      showToast(`${bubble.emoji} Saved!`);
+      showToast(`${bubble.emoji} Saved!`, { variant: "success" });
     },
     onUploadComplete: (bubbleId, serverAudioUrl, serverRecordingId) => {
       // The fire-and-forget server upload succeeded. Swap the bubble's
@@ -130,7 +130,7 @@ export default function PootBox() {
       // load, the bubble renders with the server URL, not the dead
       // blob: URL.
     },
-    onError: (msg) => { showToast(msg); },
+    onError: (msg) => { showToast(msg, { variant: "error" }); },
   });
 
   // Audio state
@@ -150,8 +150,8 @@ export default function PootBox() {
     } catch { return true; }
   });
 
-  // Toast (extracted to useToast hook)
-  const { toastMessage, showToast } = useToast();
+  // Toast (app-wide ToastProvider via useToast wrapper)
+  const { showToast } = useToast();
 
   // Lookup input prefill — set when the user taps the "self-test"
   // link in share mode. The key on the <ShareSheet> below is
@@ -614,9 +614,9 @@ export default function PootBox() {
               method: "POST",
               headers: { "x-device-id": getOrCreateDeviceId() },
             });
-            showToast(r.ok ? "👍" : "Upvote failed");
+            showToast(r.ok ? "👍 Nice!" : "Couldn't upvote", { variant: r.ok ? "success" : "error" });
           } catch {
-            showToast("Upvote failed — are you online?");
+            showToast("Upvote failed — are you online?", { variant: "error" });
           }
         }}
         // v78: emoji reactions (👍/😂/💀). Same gating as upvote:
@@ -639,7 +639,7 @@ export default function PootBox() {
               body: JSON.stringify({ emoji }),
             });
             if (!r.ok) {
-              showToast("Reaction failed");
+              showToast("Couldn't react", { variant: "error" });
               return;
             }
             const data = await r.json();
@@ -650,7 +650,7 @@ export default function PootBox() {
               return next;
             });
           } catch {
-            showToast("Reaction failed — are you online?");
+            showToast("Reaction failed — are you online?", { variant: "error" });
           }
         }}
         // v78: open the comments sheet for a bubble.
@@ -854,13 +854,13 @@ export default function PootBox() {
               });
               if (!r.ok) {
                 const body = await r.json().catch(() => ({}));
-                showToast(kidSafeError(body.error, "Share failed — try again!"));
+                showToast(kidSafeError(body.error, "Share failed — try again!"), { variant: "error" });
                 return "";
               }
               const data = await r.json();
               return data.code ?? "";
             } catch {
-              showToast("Share failed — are you online?");
+              showToast("Share failed — are you online?", { variant: "error" });
               return "";
             }
           }}
@@ -871,7 +871,7 @@ export default function PootBox() {
             // best-effort (iOS Safari blocks it without a user
             // gesture, some browsers require a permission prompt)
             // — the toast fires regardless so the user knows we tried.
-            showToast("Copied to clipboard ✓");
+            showToast("Copied to clipboard ✓", { variant: "success" });
           }}
           onSelfTest={(code) => {
             // Switch the sheet to lookup mode and pre-fill the input
@@ -1124,24 +1124,7 @@ export default function PootBox() {
 
       {/* Stop button */}
 
-      {/* Toast */}
-      {toastMessage && (
-        <div style={{
-          position: "fixed",
-          top: 16,
-          left: "50%",
-          transform: "translateX(-50%)",
-          background: "rgba(0,0,0,0.85)",
-          color: "white",
-          padding: "10px 20px",
-          borderRadius: 24,
-          zIndex: 1000,
-          fontFamily: "Fredoka, system-ui, sans-serif",
-          fontSize: "0.95rem",
-        }}>
-          {toastMessage}
-        </div>
-      )}
+      {/* Toast UI is rendered by App-level ToastProvider */}
 
       <FooterBar
         installBanner={<InstallPrompt />}

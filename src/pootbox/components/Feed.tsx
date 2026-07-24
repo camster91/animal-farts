@@ -12,6 +12,10 @@
 import { useState, useEffect } from "react";
 import { playSingle, stopAllSounds, isAnySoundPlaying } from "../audioManager";
 import { getOrCreateDeviceId } from "../lib/deviceId";
+import { FeedSkeleton } from "../ui/Skeleton";
+import EmptyState from "../ui/EmptyState";
+import InlineBanner from "../ui/InlineBanner";
+import { useAppToast } from "../ui/useAppToast";
 
 interface AuthorPublic {
   handle: string | null;
@@ -58,6 +62,7 @@ interface FeedProps {
 }
 
 export default function Feed({ onBack, onOpenProfile }: FeedProps) {
+  const { showToast } = useAppToast();
   const [groups, setGroups] = useState<FeedGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -200,29 +205,59 @@ export default function Feed({ onBack, onOpenProfile }: FeedProps) {
 
   async function handleFollowToggle(author: AuthorPublic) {
     if (author.isMe || !author.handle) return;
+    const prevFollowing = author.isFollowing;
+    // Optimistic flip
+    setGroups((prev) => prev.map((g) => {
+      if (g.author.handle !== author.handle) return g;
+      const nextFollowing = !prevFollowing;
+      return {
+        ...g,
+        author: {
+          ...g.author,
+          isFollowing: nextFollowing,
+          followerCount: Math.max(0, g.author.followerCount + (nextFollowing ? 1 : -1)),
+        },
+      };
+    }));
     try {
       const r = await fetch(`/api/users/${author.handle}/follow`, {
         method: "POST",
         headers: { "x-device-id": getOrCreateDeviceId() },
       });
-      if (r.ok) {
-        const data = await r.json();
-        // Update local state optimistically.
-        setGroups((prev) => prev.map((g) => {
-          if (g.author.handle !== author.handle) return g;
-          return { ...g, author: { ...g.author, isFollowing: data.following } };
-        }));
-      }
-    } catch { /* offline — leave as is */ }
+      if (!r.ok) throw new Error("follow failed");
+      const data = await r.json();
+      setGroups((prev) => prev.map((g) => {
+        if (g.author.handle !== author.handle) return g;
+        return { ...g, author: { ...g.author, isFollowing: data.following } };
+      }));
+      showToast(data.following ? `Following ${author.displayName || author.handle}` : "Unfollowed", {
+        variant: "success",
+      });
+    } catch {
+      // Revert
+      setGroups((prev) => prev.map((g) => {
+        if (g.author.handle !== author.handle) return g;
+        return {
+          ...g,
+          author: {
+            ...g.author,
+            isFollowing: prevFollowing,
+            followerCount: author.followerCount,
+          },
+        };
+      }));
+      showToast("Couldn't update follow — are you online?", { variant: "error" });
+    }
   }
 
   return (
     <div
       style={{
         minHeight: "100vh",
-        background: "linear-gradient(180deg, #FFF7ED 0%, #FEF3C7 100%)",
+        background: "linear-gradient(180deg, var(--pb-bg-0) 0%, var(--pb-bg-1) 100%)",
         fontFamily: "Fredoka, system-ui, sans-serif",
         padding: "16px 0 80px",
+        color: "var(--pb-ink)",
       }}
     >
       {/* Header */}
@@ -235,17 +270,20 @@ export default function Feed({ onBack, onOpenProfile }: FeedProps) {
         }}
       >
         <button
+          type="button"
           onClick={onBack}
           aria-label="Back to play"
+          className="pb-hit"
           style={{
-            width: 36,
-            height: 36,
-            borderRadius: 18,
+            minWidth: 44,
+            minHeight: 44,
+            borderRadius: 14,
             border: "none",
-            background: "rgba(255,255,255,0.9)",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
+            background: "var(--pb-surface)",
+            boxShadow: "var(--pb-shadow)",
             fontSize: 18,
             cursor: "pointer",
+            color: "var(--pb-ink)",
           }}
         >
           ←
@@ -255,24 +293,23 @@ export default function Feed({ onBack, onOpenProfile }: FeedProps) {
             margin: 0,
             fontSize: "1.4rem",
             fontWeight: 700,
-            color: "#3D2C1E",
+            color: "var(--pb-ink)",
           }}
         >
           Friends
         </h1>
       </div>
 
-      {loading && (
-        <div style={{ textAlign: "center", padding: 32, color: "#92705A" }}>Loading…</div>
-      )}
+      {loading && <FeedSkeleton />}
       {error && (
-        <div style={{ textAlign: "center", padding: 32, color: "#BE185D" }}>{error}</div>
+        <InlineBanner message={error} onDismiss={() => setError(null)} />
       )}
       {!loading && !error && groups.length === 0 && (
-        <div style={{ textAlign: "center", padding: 32, color: "#92705A" }}>
-          Your feed is empty. Record something yourself or share a code
-          with a friend to find them here.
-        </div>
+        <EmptyState
+          icon="👥"
+          title="Your feed is quiet"
+          body="Record a sound, or open a friend’s share code to find them here."
+        />
       )}
       {!loading && !error && groups.map((group) => {
         const a = group.author;
@@ -280,12 +317,13 @@ export default function Feed({ onBack, onOpenProfile }: FeedProps) {
         return (
           <section
             key={a.handle || a.displayName || "author"}
+            className="pb-enter"
             style={{
               margin: "0 16px 16px",
               padding: 12,
               borderRadius: 16,
-              background: "rgba(255,255,255,0.85)",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+              background: "var(--pb-surface)",
+              boxShadow: "var(--pb-shadow)",
             }}
           >
             {/* Author header */}
@@ -346,21 +384,26 @@ export default function Feed({ onBack, onOpenProfile }: FeedProps) {
               </div>
               {!a.isMe && a.handle && (
                 <button
+                  type="button"
+                  className="pb-hit"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleFollowToggle(a);
                   }}
                   aria-label={a.isFollowing ? `Unfollow ${displayName}` : `Follow ${displayName}`}
+                  aria-pressed={a.isFollowing}
                   style={{
                     appearance: "none",
                     border: "none",
-                    background: a.isFollowing ? "rgba(0,0,0,0.06)" : "#F59E0B",
-                    color: a.isFollowing ? "#3D2C1E" : "white",
+                    background: a.isFollowing ? "var(--pb-border)" : "var(--pb-accent)",
+                    color: a.isFollowing ? "var(--pb-ink)" : "var(--pb-accent-ink)",
                     fontFamily: "inherit",
-                    fontSize: 12,
+                    fontSize: 13,
                     fontWeight: 700,
-                    padding: "6px 12px",
-                    borderRadius: 12,
+                    padding: "0 14px",
+                    minHeight: 44,
+                    minWidth: 96,
+                    borderRadius: 14,
                     cursor: "pointer",
                   }}
                 >

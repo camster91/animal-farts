@@ -27,6 +27,7 @@ import PootBox from "./pootbox/PootBox";
 import Feed from "./pootbox/components/Feed";
 import Profile from "./pootbox/components/Profile";
 import PublicProfile from "./pootbox/components/PublicProfile";
+import { ToastProvider } from "./pootbox/ui/ToastContext";
 
 type View = "play" | "feed" | "profile";
 
@@ -67,6 +68,7 @@ export default function App() {
   }
 
   return (
+    <ToastProvider>
     <div style={{ minHeight: "100vh", position: "relative" }}>
       {view === "play" && (
         <PootBox />
@@ -84,12 +86,7 @@ export default function App() {
       )}
 
       {/* v79/v80: bottom tab bar. Fixed to the bottom of the viewport
-          with safe-area-inset padding for iOS notches. The
-          tab bar is hidden when a modal/sheet is open? — for
-          simplicity we always show it; the kid can dismiss
-          any modal and click the tab. Z-index sits below
-          the modal overlay (which is 400 in CommentsSheet
-          / ShareSheet / etc.). */}
+          with safe-area-inset padding for iOS notches. */}
       <nav
         role="navigation"
         aria-label="App sections"
@@ -98,13 +95,14 @@ export default function App() {
           bottom: 0,
           left: 0,
           right: 0,
-          height: 64,
-          background: "rgba(255,255,255,0.95)",
-          backdropFilter: "blur(8px)",
-          WebkitBackdropFilter: "blur(8px)",
-          borderTop: "1px solid rgba(0,0,0,0.06)",
+          minHeight: 64,
+          height: "calc(64px + env(safe-area-inset-bottom, 0px))",
+          background: "color-mix(in srgb, var(--pb-surface) 92%, transparent)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+          borderTop: "1px solid var(--pb-border)",
           display: "flex",
-          alignItems: "center",
+          alignItems: "stretch",
           justifyContent: "space-around",
           paddingBottom: "env(safe-area-inset-bottom, 0)",
           zIndex: 100,
@@ -131,6 +129,7 @@ export default function App() {
         />
       </nav>
     </div>
+    </ToastProvider>
   );
 }
 
@@ -144,29 +143,34 @@ interface TabButtonProps {
 function TabButton({ label, icon, active, onClick }: TabButtonProps) {
   return (
     <button
+      type="button"
       onClick={onClick}
       aria-label={label}
       aria-current={active ? "page" : undefined}
+      className="pb-hit"
       style={{
         flex: 1,
-        height: "100%",
+        minHeight: 64,
         border: "none",
-        background: "transparent",
+        background: active ? "var(--pb-accent-soft)" : "transparent",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
         gap: 2,
         cursor: "pointer",
-        padding: 0,
+        padding: "8px 4px",
+        borderRadius: 12,
+        margin: "4px 6px",
+        transition: "background 160ms ease",
       }}
     >
-      <span style={{ fontSize: 24, lineHeight: 1 }}>{icon}</span>
+      <span style={{ fontSize: 24, lineHeight: 1 }} aria-hidden>{icon}</span>
       <span
         style={{
-          fontSize: 11,
-          fontWeight: active ? 700 : 500,
-          color: active ? "#F59E0B" : "#92705A",
+          fontSize: 12,
+          fontWeight: active ? 700 : 600,
+          color: active ? "var(--pb-accent-ink)" : "var(--pb-muted)",
         }}
       >
         {label}

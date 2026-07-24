@@ -11,6 +11,10 @@
 import { useState, useEffect } from "react";
 import { getOrCreateDeviceId } from "../lib/deviceId";
 import { playSingle, stopAllSounds, isAnySoundPlaying } from "../audioManager";
+import { ProfileSkeleton } from "../ui/Skeleton";
+import InlineBanner from "../ui/InlineBanner";
+import EmptyState from "../ui/EmptyState";
+import { useAppToast } from "../ui/useAppToast";
 
 interface PublicUser {
   handle: string | null;
@@ -51,6 +55,7 @@ function formatRelative(ms: number): string {
 }
 
 export default function PublicProfile({ handle, onBack, onOpenFeed }: PublicProfileProps) {
+  const { showToast } = useAppToast();
   const [user, setUser] = useState<PublicUser | null>(null);
   const [recordings, setRecordings] = useState<PublicRecording[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,32 +136,40 @@ export default function PublicProfile({ handle, onBack, onOpenFeed }: PublicProf
   }
 
   async function handleFollowToggle() {
-    if (!user || user.isMe) return;
+    if (!user || user.isMe || !user.handle) return;
+    const prev = user;
+    const nextFollowing = !user.isFollowing;
+    setUser({
+      ...user,
+      isFollowing: nextFollowing,
+      followerCount: Math.max(0, user.followerCount + (nextFollowing ? 1 : -1)),
+    });
     try {
       const r = await fetch(`/api/users/${user.handle}/follow`, {
         method: "POST",
         headers: { "x-device-id": getOrCreateDeviceId() },
       });
-      if (r.ok) {
-        const data = await r.json();
-        setUser((u) => u ? { ...u, isFollowing: data.following, followerCount: u.followerCount + (data.following ? 1 : -1) } : u);
-      }
-    } catch { /* offline — leave as is */ }
+      if (!r.ok) throw new Error("follow failed");
+      const data = await r.json();
+      setUser((u) => u ? { ...u, isFollowing: data.following } : u);
+      showToast(data.following ? "Following!" : "Unfollowed", { variant: "success" });
+    } catch {
+      setUser(prev);
+      showToast("Couldn't update follow — are you online?", { variant: "error" });
+    }
   }
 
   if (loading) {
     return (
       <Shell onBack={onBack}>
-        <div style={{ textAlign: "center", padding: 32, color: "#92705A" }}>Loading…</div>
+        <ProfileSkeleton />
       </Shell>
     );
   }
   if (error || !user) {
     return (
       <Shell onBack={onBack}>
-        <div style={{ textAlign: "center", padding: 32, color: "#BE185D" }}>
-          {error || "Couldn't load profile"}
-        </div>
+        <InlineBanner message={error || "Couldn't load profile"} />
       </Shell>
     );
   }
@@ -248,9 +261,12 @@ export default function PublicProfile({ handle, onBack, onOpenFeed }: PublicProf
           Recordings
         </h2>
         {recordings.length === 0 ? (
-          <p style={{ margin: 0, fontSize: 12, color: "#92705A" }}>
-            No recordings yet.
-          </p>
+          <EmptyState
+            icon="🎧"
+            title="No recordings yet"
+            body="When they upload a sound, it’ll show up here."
+            style={{ padding: "20px 8px" }}
+          />
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {recordings.map((rec) => {
