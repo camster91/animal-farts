@@ -91,6 +91,11 @@ before(async () => {
       ...process.env,
       PORT: String(PORT),
       NODE_ENV: "production",
+      // Many tests hit one server instance; raise the rate-limit ceilings so
+      // the tight upload budget (6/min) doesn't 429 later upload-based tests.
+      // Limiters stay active (RateLimit-* headers still emitted) — see
+      // makeLimiter in server.js.
+      RATE_LIMIT_DISABLED: "1",
       DB_PATH: join(dataDir, "farts.db"),
       UPLOAD_DIR: join(dataDir, "uploads"),
     },
@@ -230,7 +235,6 @@ describe("server integration: :id route validation (v72)", () => {
       headers: {
         "x-device-id": "v72-test",
         "content-type": "application/json",
-        "content-length": "20",
       },
       body: JSON.stringify({ body: "should not insert" }),
     });
@@ -245,7 +249,6 @@ describe("server integration: :id route validation (v72)", () => {
       headers: {
         "x-device-id": "v72-test",
         "content-type": "application/json",
-        "content-length": "20",
       },
       body: JSON.stringify({ emoji: "👍" }),
     });
@@ -487,7 +490,10 @@ describe("server integration: POST /api/recordings/:id/reactions (v78)", () => {
     });
     assert.strictEqual(r1b.status, 200);
     const body1b = JSON.parse(r1b.text);
-    assert.strictEqual(body1b.counts["👍"], 0);
+    // A toggled-off reaction is omitted from the GROUP BY aggregation (the
+    // same contract as a fresh recording's empty counts above), so the key
+    // is absent rather than 0.
+    assert.strictEqual(body1b.counts["👍"] ?? 0, 0);
     assert.deepStrictEqual(body1b.mine, []);
     assert.strictEqual(body1b.added, false);
 
