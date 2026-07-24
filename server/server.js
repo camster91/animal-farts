@@ -32,6 +32,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import rateLimit from "express-rate-limit";
+import { containsBannedWord } from "./moderation.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 5174;
@@ -66,41 +67,12 @@ const ALLOWED_MIMETYPES = new Set([
   "audio/ogg",
 ]);
 
-// ─── Content moderation (single source of truth) ────────────────────────────
-// v73 (code review 2026-06-16 #8): the previous list was ASCII-only and
-// trusted the client. Real-world abuse patterns:
-//   - zero-width space (U+200B) between letters: "f u c k"
-//   - diacritics that NFKD-normalize away: "fück" → "fuck"
-//   - homoglyphs: "ｆuck" (fullwidth f), "fuсk" (Cyrillic с)
-//   - digit/letter substitution: "f4ck", "5hit"
-// The list itself is kid-safety focused, not a full profanity dump. We
-// catch the common substitutions and let the rest through. The kid
-// surface limits the blast radius; the right next move is a maintained
-// wordlist (a kid-app one, not a 4chan one), not a regex zoo.
-const BANNED_WORDS = [
-  "fuck", "shit", "bitch", "cunt", "nigger", "fag", "kike",
-  "piss", "ass", "whore", "crack", "dick", "cock", "pussy", "twat",
-];
-
-// NFKD-normalize + strip combining marks + lowercase + collapse. This
-// turns "f ü c k" / "f̶u̶c̶k̶" / "𝐟𝐮𝐜𝐤" into "fuck" before the
-// substring check. Diacritic strip uses a Unicode property regex; the
-// \p{Mn} class matches all "nonspacing mark" code points (U+0300-U+036F
-// and others). NFKD first so "ﬁ" (U+FB01) decomposes to "fi".
-function normalizeForModeration(s) {
-  return String(s || "")
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "") // combining marks
-    .replace(/[\u200B-\u200F\uFEFF]/g, "") // zero-width chars
-    .toLowerCase()
-    .replace(/\s+/g, "");
-}
-
-function containsBannedWord(s) {
-  const normalized = normalizeForModeration(s);
-  if (!normalized) return false;
-  return BANNED_WORDS.some((w) => normalized.includes(w));
-}
+// ─── Content moderation ─────────────────────────────────────────────────────
+// The banned-word matcher lives in ./moderation.js (single source of truth,
+// dependency-free so the unit tests can import the same code the server runs).
+// It uses two-tier matching: substring for "strong" tokens and word-boundary
+// for short tokens that are legitimate substrings of innocent words (so
+// "brass"/"cockatoo"/"cracker" are no longer false-positives).
 
 // ─── Path-traversal-safe unlink ─────────────────────────────────────────────
 function safeUnlink(filename) {
@@ -198,30 +170,27 @@ app.use(express.json({ limit: "1mb" })); // for social endpoints (users, follows
 // ─── Rate limiters (per IP) ─────────────────────────────────────────────────
 // "trust proxy" is NOT enabled, so these count actual client IPs. The upload
 // and share-code endpoints are the most abuse-prone.
-const generalLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  limit: 120, // 2 req/sec sustained
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-const uploadLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  limit: 6, // 1 upload per 10s
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-const shareLookupLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  limit: 30, // share codes have 1M keyspace; 30/min still allows legit "type a friend's code" UX
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-const shareMintLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  limit: 6,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+//
+// makeLimiter centralizes the shared options. Setting RATE_LIMIT_DISABLED=1
+// raises every ceiling to effectively unlimited — used ONLY by the integration
+// test, which fires many uploads at one server instance and would otherwise
+// exhaust the tight upload budget. It defaults off, so production is unchanged.
+// We raise the limit rather than `skip` so the RateLimit-* headers the test
+// asserts on are still emitted. `fixed` limiters keep their real cap even in
+// test mode (a test asserts the share-lookup header reports 30).
+const RATE_LIMIT_DISABLED = process.env.RATE_LIMIT_DISABLED === "1";
+function makeLimiter(limit, { fixed = false } = {}) {
+  return rateLimit({
+    windowMs: 60 * 1000,
+    limit: RATE_LIMIT_DISABLED && !fixed ? 1_000_000 : limit,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+}
+const generalLimiter = makeLimiter(120); // 2 req/sec sustained
+const uploadLimiter = makeLimiter(6); // 1 upload per 10s
+const shareLookupLimiter = makeLimiter(30, { fixed: true }); // 1M keyspace; allows "type a friend's code" UX
+const shareMintLimiter = makeLimiter(6);
 // v73 (code review 2026-06-16 #7): per-endpoint limits on the social
 // surface. The general 120/min limiter counts every /api/* call, so
 // a single kid's 200 follow + 200 react + 200 comment in a minute
@@ -229,24 +198,13 @@ const shareMintLimiter = rateLimit({
 // limiters let legitimate UX through while capping each action at
 // a sane rate. The "trust proxy" is off (per the general limiter's
 // comment), so these count actual client IPs.
-const followLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  limit: 20, // 20 follows/min — more than a kid will ever do, less than a botnet
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-const reactionLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  limit: 60, // 1 reaction/sec sustained — generous for the kid UX
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-const commentDeleteLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  limit: 30, // 1 delete/2s — covers "I typo'd a comment" UX
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+const followLimiter = makeLimiter(20); // more than a kid will ever do, less than a botnet
+const reactionLimiter = makeLimiter(60); // 1 reaction/sec sustained — generous for the kid UX
+const commentDeleteLimiter = makeLimiter(30); // 1 delete/2s — covers "I typo'd a comment" UX
+// Telemetry (client error reports + feedback) writes straight to the server
+// log. Cap it tighter than the general limiter so a broken client loop or an
+// abuser can't flood the log (the client posts 100% of errors).
+const telemetryLimiter = makeLimiter(30);
 // Apply the general limiter only to the API. Audio file fetches and the
 // SPA shell bypass the limiter so a service-worker pre-cache or a kid's
 // first play can't be 429-throttled out of a legit request.
@@ -361,21 +319,30 @@ app.get("/api/health", (req, res) => {
   res.json({ ok: true, recordings: count.n, uptime: process.uptime() });
 });
 
-// v29: lightweight self-hosted error monitoring (10% sample, logs to stderr)
-app.post("/api/errors", (req, res) => {
+// v29: lightweight self-hosted error monitoring (logs to stderr). All
+// user-supplied fields are run through sanitizeLogValue so a crafted payload
+// can't inject extra log lines.
+app.post("/api/errors", telemetryLimiter, (req, res) => {
   const { message, stack, url, userAgent, profileId, ts } = req.body || {};
-  // Log to server stderr — piped to the runbook's logging system
-  console.error(`[client-error] ts=${ts} url=${url} profileId=${profileId} ua=${userAgent} msg=${message} stack=${stack}`);
+  console.error(
+    `[client-error] ts=${sanitizeLogValue(ts, 32)} url=${sanitizeLogValue(url, 200)} ` +
+    `profileId=${sanitizeLogValue(profileId, 64)} ua=${sanitizeLogValue(userAgent, 200)} ` +
+    `msg=${sanitizeLogValue(message)} stack=${sanitizeLogValue(stack, 1000)}`,
+  );
   res.json({ ok: true });
 });
 
 // v30: user-facing feedback endpoint (report a problem from parent dashboard)
-app.post("/api/feedback", (req, res) => {
+app.post("/api/feedback", telemetryLimiter, (req, res) => {
   const { message, profileId, url, userAgent, ts } = req.body || {};
   if (!message || typeof message !== "string" || !message.trim()) {
     return res.status(400).json({ error: "message is required" });
   }
-  console.error(`[feedback] ts=${ts} profileId=${profileId} url=${url} ua=${userAgent} msg=${message.trim()}`);
+  console.error(
+    `[feedback] ts=${sanitizeLogValue(ts, 32)} profileId=${sanitizeLogValue(profileId, 64)} ` +
+    `url=${sanitizeLogValue(url, 200)} ua=${sanitizeLogValue(userAgent, 200)} ` +
+    `msg=${sanitizeLogValue(message.trim())}`,
+  );
   res.json({ ok: true });
 });
 
@@ -389,6 +356,22 @@ function parseIdParam(value) {
   const n = parseInt(value, 10);
   if (!Number.isInteger(n) || n <= 0) return null;
   return n;
+}
+
+// Existence check for the write endpoints that reference a recording.
+// There is no FOREIGN KEY on votes/comments/reactions, so a valid-but-
+// nonexistent id (e.g. a deleted recording) would otherwise create orphan
+// rows. Callers 404 when this returns false.
+function recordingExists(id) {
+  return !!db.prepare("SELECT 1 FROM recordings WHERE id = ?").get(id);
+}
+
+// Strip CR/LF (and other control chars) so user-supplied values can't forge
+// extra lines in the server logs (log injection). Also caps length.
+function sanitizeLogValue(value, max = 500) {
+  return String(value ?? "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .slice(0, max);
 }
 
 // === Share codes (4-character) ===
@@ -512,6 +495,12 @@ app.post("/api/recordings", uploadLimiter, (req, res, next) => {
       if (req.file) safeUnlink(req.file.filename);
       return res.status(400).json({ error: "Name or emoji contains blocked words" });
     }
+    // Only store a finite numeric duration. A non-numeric string used to
+    // parseFloat to NaN and get bound to SQLite as-is.
+    const parsedDuration =
+      durationSec != null && Number.isFinite(parseFloat(durationSec))
+        ? parseFloat(durationSec)
+        : null;
     const result = db.prepare(`
       INSERT INTO recordings (name, emoji, device_id, kid_name, filename, duration_sec, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -521,14 +510,14 @@ app.post("/api/recordings", uploadLimiter, (req, res, next) => {
       String(deviceId).slice(0, 64),
       kidName ? String(kidName).slice(0, 20) : null,
       req.file.filename,
-      durationSec ? parseFloat(durationSec) : null,
+      parsedDuration,
       Date.now()
     );
     res.json({
       id: result.lastInsertRowid,
       name, emoji,
       kidName,
-      durationSec: durationSec ? parseFloat(durationSec) : null,
+      durationSec: parsedDuration,
       upvotes: 0,
       userVoted: false,
       audioUrl: `/uploads/${req.file.filename}`,
@@ -548,18 +537,24 @@ app.post("/api/recordings/:id/upvote", (req, res) => {
   if (id === null) return res.status(400).json({ error: "Invalid id" });
   const deviceId = req.headers["x-device-id"];
   if (!deviceId) return res.status(400).json({ error: "Missing x-device-id header" });
+  if (!recordingExists(id)) return res.status(404).json({ error: "Not found" });
 
-  const existing = db.prepare("SELECT 1 FROM votes WHERE recording_id = ? AND device_id = ?").get(id, deviceId);
-  if (existing) {
-    // Toggle off
-    db.prepare("DELETE FROM votes WHERE recording_id = ? AND device_id = ?").run(id, deviceId);
-    db.prepare("UPDATE recordings SET upvotes = upvotes - 1 WHERE id = ?").run(id);
-  } else {
-    db.prepare("INSERT INTO votes (recording_id, device_id, created_at) VALUES (?, ?, ?)").run(id, deviceId, Date.now());
-    db.prepare("UPDATE recordings SET upvotes = upvotes + 1 WHERE id = ?").run(id);
-  }
-  const updated = db.prepare("SELECT upvotes FROM recordings WHERE id = ?").get(id);
-  res.json({ upvotes: updated?.upvotes ?? 0, userVoted: !existing });
+  // Wrap the read-modify-write in a transaction so two concurrent toggles
+  // from the same device can't both see "no vote" and double-insert (PK
+  // conflict) or drift the count.
+  const toggle = db.transaction(() => {
+    const existing = db.prepare("SELECT 1 FROM votes WHERE recording_id = ? AND device_id = ?").get(id, deviceId);
+    if (existing) {
+      db.prepare("DELETE FROM votes WHERE recording_id = ? AND device_id = ?").run(id, deviceId);
+      db.prepare("UPDATE recordings SET upvotes = upvotes - 1 WHERE id = ?").run(id);
+    } else {
+      db.prepare("INSERT INTO votes (recording_id, device_id, created_at) VALUES (?, ?, ?)").run(id, deviceId, Date.now());
+      db.prepare("UPDATE recordings SET upvotes = upvotes + 1 WHERE id = ?").run(id);
+    }
+    const updated = db.prepare("SELECT upvotes FROM recordings WHERE id = ?").get(id);
+    return { upvotes: updated?.upvotes ?? 0, userVoted: !existing };
+  });
+  res.json(toggle());
 });
 
 // Delete (only by original creator's device id)
@@ -886,6 +881,7 @@ app.post("/api/recordings/:id/comments", (req, res) => {
   if (containsBannedWord(body)) {
     return res.status(400).json({ error: "Comment contains blocked words" });
   }
+  if (!recordingExists(id)) return res.status(404).json({ error: "Not found" });
   getOrCreateUser(deviceId);
   const r = db.prepare(`INSERT INTO comments (recording_id, device_id, body, created_at) VALUES (?, ?, ?, ?)`)
     .run(id, deviceId, body, Date.now());
@@ -941,28 +937,33 @@ app.post("/api/recordings/:id/reactions", reactionLimiter, (req, res) => {
   if (id === null) return res.status(400).json({ error: "Invalid id" });
   const emoji = sanitizeEmoji(req.body && req.body.emoji);
   if (!emoji) return res.status(400).json({ error: "Invalid emoji" });
-  const exists = db.prepare(
-    "SELECT 1 FROM reactions WHERE recording_id = ? AND device_id = ? AND emoji = ?"
-  ).get(id, deviceId, emoji);
-  if (exists) {
-    db.prepare(
-      "DELETE FROM reactions WHERE recording_id = ? AND device_id = ? AND emoji = ?"
-    ).run(id, deviceId, emoji);
-  } else {
-    db.prepare(
-      "INSERT INTO reactions (recording_id, device_id, emoji, created_at) VALUES (?, ?, ?, ?)"
-    ).run(id, deviceId, emoji, Date.now());
-  }
-  // Re-aggregate and return the same shape as GET
-  const rows = db.prepare(
-    "SELECT emoji, COUNT(*) AS n FROM reactions WHERE recording_id = ? GROUP BY emoji"
-  ).all(id);
-  const counts = {};
-  for (const r of rows) counts[r.emoji] = r.n;
-  const mineRows = db.prepare(
-    "SELECT emoji FROM reactions WHERE recording_id = ? AND device_id = ?"
-  ).all(id, deviceId);
-  res.json({ counts, mine: mineRows.map((r) => r.emoji), added: !exists });
+  if (!recordingExists(id)) return res.status(404).json({ error: "Not found" });
+  // Toggle + re-aggregate in one transaction so concurrent toggles can't
+  // double-insert (PK conflict) or return a torn count.
+  const apply = db.transaction(() => {
+    const exists = db.prepare(
+      "SELECT 1 FROM reactions WHERE recording_id = ? AND device_id = ? AND emoji = ?"
+    ).get(id, deviceId, emoji);
+    if (exists) {
+      db.prepare(
+        "DELETE FROM reactions WHERE recording_id = ? AND device_id = ? AND emoji = ?"
+      ).run(id, deviceId, emoji);
+    } else {
+      db.prepare(
+        "INSERT INTO reactions (recording_id, device_id, emoji, created_at) VALUES (?, ?, ?, ?)"
+      ).run(id, deviceId, emoji, Date.now());
+    }
+    const rows = db.prepare(
+      "SELECT emoji, COUNT(*) AS n FROM reactions WHERE recording_id = ? GROUP BY emoji"
+    ).all(id);
+    const counts = {};
+    for (const r of rows) counts[r.emoji] = r.n;
+    const mineRows = db.prepare(
+      "SELECT emoji FROM reactions WHERE recording_id = ? AND device_id = ?"
+    ).all(id, deviceId);
+    return { counts, mine: mineRows.map((r) => r.emoji), added: !exists };
+  });
+  res.json(apply());
 });
 
 // GET /api/users — list all users (for discover)

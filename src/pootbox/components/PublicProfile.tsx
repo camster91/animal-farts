@@ -65,7 +65,6 @@ export default function PublicProfile({ handle, onBack, onOpenFeed }: PublicProf
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setError(null);
     Promise.all([
       fetch(`/api/users/${handle}`, { headers: { "x-device-id": getOrCreateDeviceId() } }),

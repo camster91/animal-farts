@@ -75,7 +75,6 @@ export default function Feed({ onBack, onOpenProfile }: FeedProps) {
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setError(null);
     fetch("/api/feed", { headers: { "x-device-id": getOrCreateDeviceId() } })
       .then(async (r) => {

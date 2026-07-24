@@ -7,27 +7,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 
-// === Inline copies of the pure server functions (no JSX, no Express) ===
-
-const BANNED_WORDS = [
-  "fuck", "shit", "bitch", "cunt", "nigger", "fag", "kike",
-  "piss", "ass", "whore", "crack", "dick", "cock", "pussy", "twat",
-];
-
-function normalizeForModeration(s) {
-  return String(s || "")
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[\u200B-\u200F\uFEFF]/g, "")
-    .toLowerCase()
-    .replace(/\s+/g, "");
-}
-
-function containsBannedWord(s) {
-  const normalized = normalizeForModeration(s);
-  if (!normalized) return false;
-  return BANNED_WORDS.some((w) => normalized.includes(w));
-}
+// Import the real moderation code the server runs so this test can't drift
+// from production behavior (the previous inline copies did exactly that).
+import {
+  BANNED_WORDS,
+  normalizeForModeration,
+  containsBannedWord,
+} from "../server/moderation.js";
 
 // v73: typeof guards for PATCH /api/me. These are pure checks, the
 // actual route handler is in server.js.
@@ -86,6 +72,25 @@ describe("v73 moderation: containsBannedWord", () => {
   it("lets benign text through", () => {
     assert.strictEqual(containsBannedWord("cow"), false);
     assert.strictEqual(containsBannedWord("My Animal Sound"), false);
+  });
+  it("does not false-positive on innocent words containing short tokens", () => {
+    // Regression: the old raw-substring list blocked these on a soundboard
+    // ("ass" in brass/class/grass, "cock" in cockatoo/peacock, "crack" in
+    // cracker, "pussy" in pussycat).
+    for (const w of [
+      "Brass Band", "Classroom", "Grass", "Bass Drum", "Password",
+      "Cockatoo", "Peacock", "Cracker", "Crackle", "Pussycat",
+    ]) {
+      assert.strictEqual(containsBannedWord(w), false, `${w} must be allowed`);
+    }
+  });
+  it("still catches short tokens as standalone words", () => {
+    for (const w of ["ass", "piss", "crack", "dick", "cock", "fag", "pussy"]) {
+      assert.strictEqual(containsBannedWord(w), true, `${w} must be caught alone`);
+    }
+    // ...and when isolated by punctuation/emoji.
+    assert.strictEqual(containsBannedWord("ass!"), true);
+    assert.strictEqual(containsBannedWord("💨cock💨"), true);
   });
   it("rejects empty / nullish input (defensive)", () => {
     assert.strictEqual(containsBannedWord(""), false);

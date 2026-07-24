@@ -14,3 +14,9 @@ dist
 .data
 server-package-snapshot
 tests/build/
+
+# Server runtime data (SQLite DB + uploaded audio) — never commit
+server/uploads/
+server/*.db
+server/*.db-shm
+server/*.db-wal
