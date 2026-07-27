@@ -6,13 +6,12 @@
 // v74: dropped the 7 scene-illustration JPEGs (scenes/farm.jpg etc.)
 // from the precache list. v25w-era used them as canvas backgrounds
 // for the bubble canvas; v61's CardGrid replaced that with a CSS
-// gradient background. The scenes/ files still ship in /public so
-// the SW pre-cache isn't actively broken, but they're never used.
-// Removing them from the precache list drops ~1.7MB of first-load
-// bandwidth (each JPEG was 140-340KB, fetched in parallel via
-// Promise.allSettled).
+// gradient background.
+// v56 audit: deleted public/scenes/ entirely (~1.7MB) — unused at runtime.
+// v55: never cache /api/* (personalized social data). Validate
+// notification click URLs to same-origin relative paths only.
 
-const CACHE = "pootbox-v54";
+const CACHE = "pootbox-v56";
 
 const SHELL_ASSETS = [
   "/",
@@ -77,11 +76,36 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+/** Allow only same-origin relative paths (open-redirect defense). */
+function safeAppUrl(raw) {
+  if (typeof raw !== "string" || !raw) return "/";
+  // Absolute http(s) URLs — only same origin.
+  try {
+    if (/^https?:\/\//i.test(raw)) {
+      const u = new URL(raw);
+      if (u.origin !== self.location.origin) return "/";
+      return u.pathname + u.search + u.hash;
+    }
+  } catch {
+    return "/";
+  }
+  // Relative path only; reject protocol-relative and weird schemes.
+  if (!raw.startsWith("/") || raw.startsWith("//")) return "/";
+  return raw;
+}
+
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
   const url = new URL(e.request.url);
   // Only handle same-origin requests
   if (url.origin !== self.location.origin) return;
+
+  // API responses are personalized (feed, me, reactions) — never cache.
+  // Network-only so stale social state can't be replayed offline/across users.
+  if (url.pathname.startsWith("/api/")) {
+    e.respondWith(fetch(e.request));
+    return;
+  }
 
   e.respondWith(
     (async () => {
@@ -124,7 +148,7 @@ self.addEventListener("push", (e) => {
       body: data.body,
       icon: "/icon-192.png",
       badge: "/icon-192.png",
-      data: { url: data.url },
+      data: { url: safeAppUrl(data.url) },
       tag: "animal-farts-daily",
       renotify: true,
       vibrate: [200, 100, 200],
@@ -135,7 +159,7 @@ self.addEventListener("push", (e) => {
 // Notification click → focus the app and navigate
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
-  const targetUrl = (e.notification.data && e.notification.data.url) || "/";
+  const targetUrl = safeAppUrl((e.notification.data && e.notification.data.url) || "/");
   e.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {

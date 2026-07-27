@@ -19,6 +19,10 @@
 
 import { useState, useEffect, useRef, type FC } from "react";
 import { getOrCreateDeviceId } from "../lib/deviceId";
+import { kidSafeError } from "../lib/kidSafeError";
+import { CommentsSkeleton } from "../ui/Skeleton";
+import InlineBanner from "../ui/InlineBanner";
+import EmptyState from "../ui/EmptyState";
 
 interface Comment {
   id: number;
@@ -118,7 +122,7 @@ const CommentsSheet: FC<CommentsSheetProps> = ({
       });
       if (!r.ok) {
         const errBody = await r.json().catch(() => ({}));
-        setError(errBody.error || `HTTP ${r.status}`);
+        setError(kidSafeError(errBody.error, "Couldn't post comment — try again!"));
         return;
       }
       const data = await r.json();
@@ -149,7 +153,7 @@ const CommentsSheet: FC<CommentsSheetProps> = ({
       });
       if (!r.ok) {
         const errBody = await r.json().catch(() => ({}));
-        setError(errBody.error || `HTTP ${r.status}`);
+        setError(kidSafeError(errBody.error, "Couldn't delete — try again!"));
         return;
       }
       setComments((prev) => prev.filter((c) => c.id !== id));
@@ -247,18 +251,17 @@ const CommentsSheet: FC<CommentsSheetProps> = ({
             minHeight: 200,
           }}
         >
-          {loading && (
-            <div style={{ color: "#92705A", fontSize: 14, textAlign: "center", padding: 20 }}>
-              Loading…
-            </div>
-          )}
+          {loading && <CommentsSkeleton />}
           {!loading && error && (
-            <div style={{ color: "#BE185D", fontSize: 14, padding: 12 }}>{error}</div>
+            <InlineBanner message={error} onDismiss={() => setError(null)} />
           )}
           {!loading && !error && comments.length === 0 && (
-            <div style={{ color: "#92705A", fontSize: 14, textAlign: "center", padding: 20 }}>
-              No comments yet. Be the first!
-            </div>
+            <EmptyState
+              icon="💬"
+              title="No comments yet"
+              body="Be the first to say something funny!"
+              style={{ padding: "24px 8px" }}
+            />
           )}
           {!loading && comments.map((c) => {
             const mine = myCommentIds.has(c.id);

@@ -170,7 +170,7 @@ const CardGrid: FC<CardGridProps> = ({
           userSelect: "none",
           WebkitUserSelect: "none",
           WebkitTapHighlightColor: "transparent",
-          paddingBottom: 36, // extra room for the bottom action bar
+          paddingBottom: 52, // room for 44px action bar
           // The transform transition is set in the <style> block
           // above (.pootbox-card) so the :active state can override
           // it. Inline `transition` here would win specificity.
@@ -226,34 +226,39 @@ const CardGrid: FC<CardGridProps> = ({
               return (
                 <button
                   key={emoji}
+                  type="button"
+                  className="pb-hit"
                   onClick={(e) => {
                     e.stopPropagation();
                     onReactBubble(b.id, emoji);
                   }}
                   aria-label={`React ${emoji} on ${name}`}
                   title={mine ? `Remove your ${emoji}` : `React ${emoji}`}
+                  aria-pressed={mine}
                   style={{
                     display: "flex",
                     alignItems: "center",
+                    justifyContent: "center",
                     gap: 2,
-                    minWidth: 30,
-                    height: 22,
-                    borderRadius: 11,
+                    minWidth: 44,
+                    minHeight: 44,
+                    borderRadius: 14,
                     background: mine
                       ? "rgba(245,158,11,0.85)"
-                      : "rgba(255,255,255,0.75)",
+                      : "rgba(255,255,255,0.85)",
                     border: mine ? "none" : "1px solid rgba(0,0,0,0.08)",
                     color: mine ? "#FFFFFF" : "#3D2C1E",
                     fontFamily: "Fredoka, system-ui, sans-serif",
-                    fontSize: 11,
+                    fontSize: 13,
                     fontWeight: 600,
-                    cursor: count || mine ? "pointer" : "default",
+                    cursor: "pointer",
                     lineHeight: 1,
+                    padding: "0 8px",
                   }}
                 >
-                  <span style={{ fontSize: 13, lineHeight: 1 }}>{emoji}</span>
+                  <span style={{ fontSize: 16, lineHeight: 1 }}>{emoji}</span>
                   {count > 0 && (
-                    <span style={{ fontSize: 10, lineHeight: 1 }}>
+                    <span style={{ fontSize: 12, lineHeight: 1 }}>
                       {count}
                     </span>
                   )}
@@ -276,12 +281,14 @@ const CardGrid: FC<CardGridProps> = ({
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
-            gap: 4,
+            gap: 6,
             padding: "0 4px",
           }}
         >
           {isCustom && onRenameCard && (
             <button
+              type="button"
+              className="pb-hit"
               onClick={(e) => {
                 e.stopPropagation();
                 onRenameCard(b.id);
@@ -289,14 +296,14 @@ const CardGrid: FC<CardGridProps> = ({
               aria-label={`Rename ${name}`}
               title="Rename"
               style={{
-                width: 26,
-                height: 22,
-                borderRadius: 11,
+                minWidth: 44,
+                minHeight: 44,
+                borderRadius: 14,
                 background: "rgba(255,255,255,0.95)",
                 border: "none",
                 boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
                 color: "#3D2C1E",
-                fontSize: 12,
+                fontSize: 16,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -309,6 +316,8 @@ const CardGrid: FC<CardGridProps> = ({
             </button>
           )}
           <button
+            type="button"
+            className="pb-hit"
             onClick={(e) => {
               e.stopPropagation();
               onChangeSound(b.id);
@@ -316,23 +325,23 @@ const CardGrid: FC<CardGridProps> = ({
             aria-label={`Change ${name} sound`}
             title="Change sound"
             style={{
-              minWidth: 56,
-              height: 22,
-              borderRadius: 11,
+              minWidth: 72,
+              minHeight: 44,
+              borderRadius: 14,
               background: "rgba(255,255,255,0.95)",
               border: "none",
               boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
               color: "#3D2C1E",
-              fontSize: 10,
+              fontSize: 12,
               fontWeight: 700,
               fontFamily: "Fredoka, system-ui, sans-serif",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               cursor: "pointer",
-              padding: "0 10px",
+              padding: "0 12px",
               lineHeight: 1,
-              letterSpacing: "0.05em",
+              letterSpacing: "0.04em",
               textTransform: "uppercase",
             }}
           >
@@ -343,8 +352,10 @@ const CardGrid: FC<CardGridProps> = ({
               bubble has a server recording id (i.e. we know the
               upvote can actually reach the server). The parent
               passes hasUpvote = true via the upvote-eligible set. */}
-          {isCustom && onUpvoteBubble && upvoteEligible && (
+          {isCustom && onUpvoteBubble && upvoteEligible?.has(b.id) && (
             <button
+              type="button"
+              className="pb-hit"
               onClick={(e) => {
                 e.stopPropagation();
                 onUpvoteBubble(b.id);
@@ -352,14 +363,14 @@ const CardGrid: FC<CardGridProps> = ({
               aria-label={`Upvote ${name}`}
               title="Upvote"
               style={{
-                width: 26,
-                height: 22,
-                borderRadius: 11,
+                minWidth: 44,
+                minHeight: 44,
+                borderRadius: 14,
                 background: "rgba(255,255,255,0.95)",
                 border: "none",
                 boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
                 color: "#B45309",
-                fontSize: 12,
+                fontSize: 16,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -373,8 +384,10 @@ const CardGrid: FC<CardGridProps> = ({
           )}
           {/* v78: comments button — opens the CommentsSheet. Same
               gating as upvote (only for uploaded custom cards). */}
-          {isCustom && onOpenComments && upvoteEligible && (
+          {isCustom && onOpenComments && upvoteEligible?.has(b.id) && (
             <button
+              type="button"
+              className="pb-hit"
               onClick={(e) => {
                 e.stopPropagation();
                 onOpenComments(b.id);
@@ -382,14 +395,14 @@ const CardGrid: FC<CardGridProps> = ({
               aria-label={`Comments on ${name}`}
               title="Comments"
               style={{
-                width: 26,
-                height: 22,
-                borderRadius: 11,
+                minWidth: 44,
+                minHeight: 44,
+                borderRadius: 14,
                 background: "rgba(255,255,255,0.95)",
                 border: "none",
                 boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
                 color: "#3D2C1E",
-                fontSize: 12,
+                fontSize: 16,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -402,28 +415,32 @@ const CardGrid: FC<CardGridProps> = ({
             </button>
           )}
         </div>
-        {/* Delete button — only for custom (user-recorded) cards. */}
         {isCustom && onDeleteCard && (
           <button
+            type="button"
+            className="pb-hit"
             onClick={(e) => handleCardDelete(b, e)}
             aria-label={`Delete ${name}`}
+            title="Delete"
             style={{
               position: "absolute",
-              top: 6,
-              right: 6,
-              width: 22,
-              height: 22,
-              borderRadius: "50%",
-              background: "rgba(220, 38, 38, 0.85)",
+              top: 4,
+              right: 4,
+              minWidth: 44,
+              minHeight: 44,
+              borderRadius: 14,
+              background: "rgba(224, 122, 95, 0.95)",
               border: "none",
-              color: "white",
-              fontSize: 12,
+              color: "#FFF",
+              fontSize: 18,
+              fontWeight: 700,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               cursor: "pointer",
               padding: 0,
               lineHeight: 1,
+              boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
             }}
           >
             ×
@@ -440,7 +457,7 @@ const CardGrid: FC<CardGridProps> = ({
         top: 72, // leave room for the new top bar (gear icon)
         left: 8,
         right: 8,
-        bottom: 8,
+        bottom: 80, // clear the tab bar
         overflowY: "auto",
         // CSS grid: as many 124px columns as fit, min 100px. The
         // gap is small so the cards look like one big sheet, not

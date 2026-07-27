@@ -19,6 +19,9 @@
          Permissions API pre-check in JS work around the proxy block.
          See PootBox.tsx startRecording. -->
     <meta http-equiv="Permissions-Policy" content="microphone=(self)" />
+    <!-- CSP: lock down to same-origin. Inline styles are required by the
+         React style={{...}} UI; scripts/fonts/media stay same-origin. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; upgrade-insecure-requests" />
     <meta name="description" content="PootBox — a sound toy for kids. Tap an animal card to hear its sound. Change any card's sound from a list, or record your own." />
     <meta name="keywords" content="kids, sounds, sound toy, poot, family, fun, toddler" />
 

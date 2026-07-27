@@ -5,7 +5,7 @@ import path from 'path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE = 'http://localhost:5174';
-const OUT  = path.join(__dirname, 'public', 'store-assets', 'screenshots');
+const OUT  = path.join(__dirname, 'store-assets', 'screenshots');
 
 const SCENES = [
   { name: 'farm',     title: 'Farm',     tagline: 'Moo! Baa! Oink!',           feature: '12 barnyard sounds to tap' },

@@ -58,6 +58,24 @@ function http(method, path, { headers = {}, body } = {}) {
 
 function multipartAudio(fieldName, fileBuffer, filename, mime) {
   const boundary = "----test-" + Math.random().toString(36).slice(2);
+  // Prepend real magic bytes so server-side sniffing accepts test payloads.
+  // WebM = EBML; other mimes used in negative tests stay as-is.
+  let payload = fileBuffer;
+  if (mime === "audio/webm" && !(fileBuffer[0] === 0x1a && fileBuffer[1] === 0x45)) {
+    payload = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), fileBuffer]);
+  } else if (mime === "audio/ogg" && fileBuffer.slice(0, 4).toString() !== "OggS") {
+    payload = Buffer.concat([Buffer.from("OggS"), fileBuffer]);
+  } else if (
+    (mime === "audio/wav" || mime === "audio/wave" || mime === "audio/x-wav") &&
+    fileBuffer.slice(0, 4).toString() !== "RIFF"
+  ) {
+    payload = Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WAVE"), fileBuffer]);
+  } else if (
+    (mime === "audio/mpeg" || mime === "audio/mp3") &&
+    !(fileBuffer[0] === 0xff || (fileBuffer[0] === 0x49 && fileBuffer[1] === 0x44))
+  ) {
+    payload = Buffer.concat([Buffer.from([0xff, 0xfb]), fileBuffer]);
+  }
   // Form fields MUST come before the file part. Multer (via busboy) parses
   // parts in stream order; if a file part ends with the multipart boundary
   // before a text field, the text field is silently dropped.
@@ -73,7 +91,7 @@ function multipartAudio(fieldName, fileBuffer, filename, mime) {
   );
   const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
   return {
-    body: Buffer.concat([nameField, head, fileBuffer, tail]),
+    body: Buffer.concat([nameField, head, payload, tail]),
     contentType: `multipart/form-data; boundary=${boundary}`,
   };
 }
@@ -744,5 +762,123 @@ describe("server integration: SPA + privacy/about", () => {
     if (!started) return t.skip();
     const r = await http("GET", "/api/nonexistent");
     assert.strictEqual(r.status, 404);
+  });
+});
+
+describe("server integration: production audit security fixes", () => {
+  it("public user payloads never include deviceId", async (t) => {
+    if (!started) return t.skip();
+    const me = await http("GET", "/api/me", {
+      headers: { "x-device-id": "audit-device-alpha" },
+    });
+    assert.strictEqual(me.status, 200);
+    const meBody = JSON.parse(me.text);
+    assert.strictEqual(meBody.deviceId, undefined, "/api/me must not leak deviceId");
+    assert.ok(meBody.handle, "handle should still be present");
+    assert.strictEqual(meBody.isMe, true);
+
+    const list = await http("GET", "/api/users", {
+      headers: { "x-device-id": "audit-device-beta" },
+    });
+    assert.strictEqual(list.status, 200);
+    const users = JSON.parse(list.text).users || [];
+    for (const u of users) {
+      assert.strictEqual(u.deviceId, undefined, "/api/users must not leak deviceId");
+    }
+
+    const profile = await http("GET", `/api/users/${meBody.handle}`, {
+      headers: { "x-device-id": "audit-device-beta" },
+    });
+    assert.strictEqual(profile.status, 200);
+    const pub = JSON.parse(profile.text);
+    assert.strictEqual(pub.deviceId, undefined, "public profile must not leak deviceId");
+    assert.strictEqual(pub.isMe, false);
+  });
+
+  it("share mint requires ownership + returns 8-char code", async (t) => {
+    if (!started) return t.skip();
+    const webm = Buffer.from("audit-share-test-bytes");
+    const mp = multipartAudio("audio", webm, "audit-share.webm", "audio/webm");
+    const up = await http("POST", "/api/recordings", {
+      headers: {
+        "x-device-id": "audit-share-owner",
+        "content-type": mp.contentType,
+        "content-length": String(mp.body.length),
+      },
+      body: mp.body,
+    });
+    assert.strictEqual(up.status, 200, `upload should succeed, got ${up.status} ${up.text}`);
+    const { audioUrl } = JSON.parse(up.text);
+    assert.match(audioUrl, /^\/uploads\//);
+
+    // Wrong device cannot mint.
+    const theft = await http("POST", "/api/share", {
+      headers: {
+        "content-type": "application/json",
+        "x-device-id": "audit-share-thief",
+      },
+      body: JSON.stringify({ audioUrl, name: "Nope", emoji: "💨" }),
+    });
+    assert.strictEqual(theft.status, 403);
+
+    // Owner can mint; code is 8 chars.
+    const mint = await http("POST", "/api/share", {
+      headers: {
+        "content-type": "application/json",
+        "x-device-id": "audit-share-owner",
+      },
+      body: JSON.stringify({ audioUrl, name: "Shared", emoji: "💨" }),
+    });
+    assert.strictEqual(mint.status, 200, `mint should succeed, got ${mint.status} ${mint.text}`);
+    const { code } = JSON.parse(mint.text);
+    assert.match(code, /^[A-Z0-9]{8}$/, "new share codes must be 8 chars");
+
+    const lookup = await http("GET", `/api/share/${code}`);
+    assert.strictEqual(lookup.status, 200);
+    assert.strictEqual(JSON.parse(lookup.text).audioUrl, audioUrl);
+  });
+
+  it("share mint without x-device-id returns 400", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("POST", "/api/share", {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ audioUrl: "/uploads/deadbeefdeadbeef.webm", name: "x" }),
+    });
+    assert.strictEqual(r.status, 400);
+  });
+
+  it("health returns ok without leaking counts", async (t) => {
+    if (!started) return t.skip();
+    const r = await http("GET", "/api/health");
+    assert.strictEqual(r.status, 200);
+    const body = JSON.parse(r.text);
+    assert.strictEqual(body.ok, true);
+    assert.strictEqual(body.recordings, undefined);
+    assert.strictEqual(body.uptime, undefined);
+  });
+
+  it("rejects upload whose bytes are not audio (magic mismatch)", async (t) => {
+    if (!started) return t.skip();
+    // Force non-audio payload while claiming audio/webm — bypass helper magic prepend.
+    const boundary = "----test-magic-" + Math.random().toString(36).slice(2);
+    const html = Buffer.from("<!doctype html><script>alert(1)</script>");
+    const nameField = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="name"\r\n\r\nmagic-reject\r\n`,
+    );
+    const head = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="audio"; filename="x.webm"\r\nContent-Type: audio/webm\r\n\r\n`,
+    );
+    const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+    const body = Buffer.concat([nameField, head, html, tail]);
+    const r = await http("POST", "/api/recordings", {
+      headers: {
+        "x-device-id": "audit-magic-reject",
+        "content-type": `multipart/form-data; boundary=${boundary}`,
+        "content-length": String(body.length),
+      },
+      body,
+    });
+    assert.strictEqual(r.status, 400, `expected 400, got ${r.status} ${r.text}`);
+    assert.match(JSON.parse(r.text).error, /webm|audio|valid/i);
   });
 });

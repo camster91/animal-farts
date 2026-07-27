@@ -4,6 +4,7 @@ import "./index.css";
 import App from "./App.tsx";
 import { initErrorReporter } from "./lib/errorReporter.ts";
 import { installAudioPrime } from "./audio/primeAudio.ts";
+import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 
 // v30: iOS Safari audio priming — installed at the absolute top of the
 // app lifecycle so the first user gesture (welcome tap, profile tap,
@@ -15,7 +16,9 @@ initErrorReporter();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>
 );
 

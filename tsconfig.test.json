@@ -14,5 +14,12 @@
     "lib": ["ES2022", "DOM"],
     "types": ["react"]
   },
-  "include": ["src/pootbox/audioManager.ts", "src/pootbox/recordings.ts", "src/pootbox/constants.ts", "src/pootbox/types.ts", "src/pootbox/pageTabsHelpers.ts"]
+  "include": [
+    "src/pootbox/audioManager.ts",
+    "src/pootbox/recordings.ts",
+    "src/pootbox/constants.ts",
+    "src/pootbox/types.ts",
+    "src/pootbox/pageTabsHelpers.ts",
+    "src/pootbox/lib/kidSafeError.ts"
+  ]
 }

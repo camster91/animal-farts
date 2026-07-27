@@ -1,17 +1,16 @@
-// useToast.ts — extracted from PootBox.tsx in v52
-// Owns: a single transient message (auto-clears after 1.5s)
+// useToast.ts — thin wrapper over app-wide ToastProvider.
 
-import { useState, useCallback } from "react";
-
-const TOAST_TIMEOUT_MS = 1500;
+import { useAppToast } from "../ui/useAppToast";
+import type { ToastPayload } from "../ui/toastShared";
 
 export function useToast() {
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const { showToast: show } = useAppToast();
 
-  const showToast = useCallback((msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), TOAST_TIMEOUT_MS);
-  }, []);
-
-  return { toastMessage, showToast };
+  return {
+    /** @deprecated Toast UI is rendered by ToastProvider — always null. */
+    toastMessage: null as string | null,
+    showToast: (msg: string, opts?: Omit<ToastPayload, "message">) => {
+      show(msg, opts);
+    },
+  };
 }

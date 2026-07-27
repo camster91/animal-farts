@@ -15,6 +15,9 @@
 
 import { useState, useEffect } from "react";
 import { getOrCreateDeviceId } from "../lib/deviceId";
+import { kidSafeError } from "../lib/kidSafeError";
+import { ProfileSkeleton } from "../ui/Skeleton";
+import InlineBanner from "../ui/InlineBanner";
 
 interface UserPublic {
   handle: string | null;
@@ -89,7 +92,7 @@ export default function Profile({ onBack }: ProfileProps) {
       });
       if (!r.ok) {
         const errBody = await r.json().catch(() => ({}));
-        setError(errBody.error || `HTTP ${r.status}`);
+        setError(kidSafeError(errBody.error, "Couldn't save — try again!"));
         return;
       }
       const updated = await r.json();
@@ -105,16 +108,14 @@ export default function Profile({ onBack }: ProfileProps) {
   if (loading) {
     return (
       <Shell onBack={onBack}>
-        <div style={{ textAlign: "center", padding: 32, color: "#92705A" }}>Loading…</div>
+        <ProfileSkeleton />
       </Shell>
     );
   }
   if (error || !me) {
     return (
       <Shell onBack={onBack}>
-        <div style={{ textAlign: "center", padding: 32, color: "#BE185D" }}>
-          {error || "Couldn't load profile"}
-        </div>
+        <InlineBanner message={error || "Couldn't load profile"} />
       </Shell>
     );
   }

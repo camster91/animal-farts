@@ -70,8 +70,10 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
   const mediaChunksRef = useRef<Blob[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordingTimerRef = useRef<number | null>(null);
+  const autoStopTimeoutRef = useRef<number | null>(null);
   const recordingStartRef = useRef(0);
   const audioUnlockedRef = useRef(false);
+  const pendingUrlRef = useRef<string | null>(null);
 
   // ── Track permission state ─────────────────────────────────────────────
   // We use a "deferred" initial state: if the browser doesn't expose
@@ -86,22 +88,62 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.permissions) return;
     let cancelled = false;
+    let status: PermissionStatus | null = null;
+    const onChange = () => {
+      if (!status) return;
+      setMicPermState(status.state as "prompt" | "denied" | "granted");
+      setMicDenied(status.state === "denied");
+    };
     navigator.permissions
       .query({ name: "microphone" as PermissionName })
       .then((p) => {
         if (cancelled) return;
+        status = p;
         setMicPermState(p.state as "prompt" | "denied" | "granted");
         setMicDenied(p.state === "denied");
-        p.addEventListener("change", () => {
-          setMicPermState(p.state as "prompt" | "denied" | "granted");
-          setMicDenied(p.state === "denied");
-        });
+        p.addEventListener("change", onChange);
       })
       .catch(() => {
         if (cancelled) return;
         setMicPermState("unsupported");
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (status) status.removeEventListener("change", onChange);
+    };
+  }, []);
+
+  // Tear down mic/recorder/timers if the host unmounts mid-recording
+  // (App.tsx swaps tabs and unmounts <PootBox />).
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) {
+        window.clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      if (autoStopTimeoutRef.current) {
+        window.clearTimeout(autoStopTimeoutRef.current);
+        autoStopTimeoutRef.current = null;
+      }
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.ondataavailable = null;
+        mediaRecorderRef.current.onstop = null;
+        try {
+          if (mediaRecorderRef.current.state === "recording") {
+            mediaRecorderRef.current.stop();
+          }
+        } catch { /* ignore */ }
+        mediaRecorderRef.current = null;
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+      }
+      if (pendingUrlRef.current) {
+        URL.revokeObjectURL(pendingUrlRef.current);
+        pendingUrlRef.current = null;
+      }
+    };
   }, []);
 
   // ── Unlock audio (iOS Safari) ──────────────────────────────────────────
@@ -130,6 +172,7 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
       recorder.onstop = () => {
         const blob = new Blob(mediaChunksRef.current, { type: "audio/webm" });
         const url = URL.createObjectURL(blob);
+        pendingUrlRef.current = url;
         setPendingBlob(blob);
         setPendingUrl(url);
         setRecPhase("picking");
@@ -142,6 +185,10 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
           window.clearInterval(recordingTimerRef.current);
           recordingTimerRef.current = null;
         }
+        if (autoStopTimeoutRef.current) {
+          window.clearTimeout(autoStopTimeoutRef.current);
+          autoStopTimeoutRef.current = null;
+        }
       };
       recordingStartRef.current = performance.now();
       setRecordingMs(0);
@@ -152,7 +199,11 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
         setRecordingMs(Math.round(performance.now() - recordingStartRef.current));
       }, 100);
       // Auto-stop at maxRecordingMs
-      window.setTimeout(() => {
+      if (autoStopTimeoutRef.current) {
+        window.clearTimeout(autoStopTimeoutRef.current);
+      }
+      autoStopTimeoutRef.current = window.setTimeout(() => {
+        autoStopTimeoutRef.current = null;
         if (recorder.state === "recording") recorder.stop();
       }, maxRecordingMs);
     } catch {
@@ -168,6 +219,10 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
       window.clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
     }
+    if (autoStopTimeoutRef.current) {
+      window.clearTimeout(autoStopTimeoutRef.current);
+      autoStopTimeoutRef.current = null;
+    }
     if (mediaRecorderRef.current?.state === "recording") {
       mediaRecorderRef.current.stop();
     }
@@ -178,6 +233,10 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
     if (recordingTimerRef.current) {
       window.clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
+    }
+    if (autoStopTimeoutRef.current) {
+      window.clearTimeout(autoStopTimeoutRef.current);
+      autoStopTimeoutRef.current = null;
     }
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.ondataavailable = null;
@@ -192,6 +251,7 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
       mediaStreamRef.current = null;
     }
     if (pendingUrl) URL.revokeObjectURL(pendingUrl);
+    pendingUrlRef.current = null;
     setPendingBlob(null);
     setPendingUrl(null);
     setRecordingMs(0);
@@ -254,12 +314,15 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
           }
         },
       });
-      // Reset
+      // Reset pending state but do NOT revoke pendingUrl here — the
+      // bubble still plays from that blob: URL until onUploadComplete
+      // swaps it to /uploads/... (parent revokes the old blob: URL).
+      pendingUrlRef.current = null;
       setPendingBlob(null);
       setPendingUrl(null);
       setRecPhase("idle");
     },
-    [pendingBlob, pendingUrl, onBubbleAdded, onError]
+    [pendingBlob, pendingUrl, recordingMs, onBubbleAdded, onSaved, onUploadComplete, onError]
   );
 
   return {
