@@ -5,7 +5,7 @@
     "moduleResolution": "NodeNext",
     "outDir": "tests/build",
     "rootDir": "src/pootbox",
-    "strict": false,
+    "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "isolatedModules": false,
