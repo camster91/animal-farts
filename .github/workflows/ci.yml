@@ -1,7 +1,7 @@
 name: CI Build
 
-# Build-only workflow for animal-farts (PWA: Vite+React frontend + Express server).
-# Build the frontend, then syntax-check the server.
+# Release gate for Animal Farts (Vite/React frontend + Express/SQLite server).
+# Validate lint, tests, production build, and server syntax on every PR.
 
 on:
   push:
@@ -19,9 +19,9 @@ concurrency:
 
 jobs:
   build:
-    name: Build
+    name: Validate
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -33,14 +33,27 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
+      - name: Install frontend dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci --no-audit --no-fund
 
       - name: Lint
         run: npm run lint
         env:
           CI: true
-        continue-on-error: true
+
+      - name: Compile test targets
+        run: npm run test:build
+        env:
+          CI: true
+
+      - name: Test
+        run: node --test --test-concurrency=1 --test-timeout=30000 tests/unit-*.test.mjs tests/server-integration.test.mjs
+        env:
+          CI: true
 
       - name: Build frontend
         run: npm run build
