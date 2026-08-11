@@ -235,6 +235,9 @@ export default function ShareSheet({
 
             <input
               type="text"
+              aria-label="Share code"
+              inputMode="text"
+              autoComplete="off"
               placeholder="Enter share code"
               value={lookupInput}
               onChange={(e) =>
