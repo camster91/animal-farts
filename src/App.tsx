@@ -21,18 +21,41 @@
 // Now that the tick is dead, the tab bar is safe to re-introduce
 // — kid product is whole (Play / Friends / Me views).
 //
+// v81: top-level views are code-split so mobile cold starts do not
+// eagerly parse the play, feed, own-profile, and public-profile trees.
 
-import { useState, useEffect } from "react";
-import PootBox from "./pootbox/PootBox";
-import Feed from "./pootbox/components/Feed";
-import Profile from "./pootbox/components/Profile";
-import PublicProfile from "./pootbox/components/PublicProfile";
+import { lazy, Suspense, useState, useEffect } from "react";
 import { ToastProvider } from "./pootbox/ui/ToastContext";
+
+const PootBox = lazy(() => import("./pootbox/PootBox"));
+const Feed = lazy(() => import("./pootbox/components/Feed"));
+const Profile = lazy(() => import("./pootbox/components/Profile"));
+const PublicProfile = lazy(() => import("./pootbox/components/PublicProfile"));
 
 type View = "play" | "feed" | "profile";
 
 const VIEW_KEY = "pootbox-current-view-v1";
 const PROFILE_HANDLE_KEY = "pootbox-profile-handle-v1";
+
+function ViewFallback() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        minHeight: "100vh",
+        display: "grid",
+        placeItems: "center",
+        paddingBottom: "calc(64px + env(safe-area-inset-bottom, 0px))",
+        color: "var(--pb-muted)",
+        fontFamily: "Fredoka, system-ui, sans-serif",
+        fontWeight: 600,
+      }}
+    >
+      Loading…
+    </div>
+  );
+}
 
 export default function App() {
   const [view, setView] = useState<View>(() => {
@@ -69,66 +92,68 @@ export default function App() {
 
   return (
     <ToastProvider>
-    <div style={{ minHeight: "100vh", position: "relative" }}>
-      {view === "play" && (
-        <PootBox />
-      )}
-      {view === "feed" && (
-        <Feed
-          onBack={() => setView("play")}
-          onOpenProfile={(handle) => openPublicProfile(handle)}
-        />
-      )}
-      {view === "profile" && (
-        profileHandle
-          ? <PublicProfile handle={profileHandle} onBack={backToOwnProfile} onOpenFeed={() => setView("feed")} />
-          : <Profile onBack={() => setView("play")} />
-      )}
+      <div style={{ minHeight: "100vh", position: "relative" }}>
+        <Suspense fallback={<ViewFallback />}>
+          {view === "play" && (
+            <PootBox />
+          )}
+          {view === "feed" && (
+            <Feed
+              onBack={() => setView("play")}
+              onOpenProfile={(handle) => openPublicProfile(handle)}
+            />
+          )}
+          {view === "profile" && (
+            profileHandle
+              ? <PublicProfile handle={profileHandle} onBack={backToOwnProfile} onOpenFeed={() => setView("feed")} />
+              : <Profile onBack={() => setView("play")} />
+          )}
+        </Suspense>
 
-      {/* v79/v80: bottom tab bar. Fixed to the bottom of the viewport
-          with safe-area-inset padding for iOS notches. */}
-      <nav
-        role="navigation"
-        aria-label="App sections"
-        style={{
-          position: "fixed",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          minHeight: 64,
-          height: "calc(64px + env(safe-area-inset-bottom, 0px))",
-          background: "color-mix(in srgb, var(--pb-surface) 92%, transparent)",
-          backdropFilter: "blur(12px)",
-          WebkitBackdropFilter: "blur(12px)",
-          borderTop: "1px solid var(--pb-border)",
-          display: "flex",
-          alignItems: "stretch",
-          justifyContent: "space-around",
-          paddingBottom: "env(safe-area-inset-bottom, 0)",
-          zIndex: 100,
-          fontFamily: "Fredoka, system-ui, sans-serif",
-        }}
-      >
-        <TabButton
-          label="Play"
-          icon="🎵"
-          active={view === "play"}
-          onClick={() => { setProfileHandle(null); setView("play"); }}
-        />
-        <TabButton
-          label="Friends"
-          icon="👥"
-          active={view === "feed"}
-          onClick={() => { setProfileHandle(null); setView("feed"); }}
-        />
-        <TabButton
-          label="Me"
-          icon="🙂"
-          active={view === "profile" && profileHandle === null}
-          onClick={() => { setProfileHandle(null); setView("profile"); }}
-        />
-      </nav>
-    </div>
+        {/* v79/v80: bottom tab bar. Fixed to the bottom of the viewport
+            with safe-area-inset padding for iOS notches. */}
+        <nav
+          role="navigation"
+          aria-label="App sections"
+          style={{
+            position: "fixed",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            minHeight: 64,
+            height: "calc(64px + env(safe-area-inset-bottom, 0px))",
+            background: "color-mix(in srgb, var(--pb-surface) 92%, transparent)",
+            backdropFilter: "blur(12px)",
+            WebkitBackdropFilter: "blur(12px)",
+            borderTop: "1px solid var(--pb-border)",
+            display: "flex",
+            alignItems: "stretch",
+            justifyContent: "space-around",
+            paddingBottom: "env(safe-area-inset-bottom, 0)",
+            zIndex: 100,
+            fontFamily: "Fredoka, system-ui, sans-serif",
+          }}
+        >
+          <TabButton
+            label="Play"
+            icon="🎵"
+            active={view === "play"}
+            onClick={() => { setProfileHandle(null); setView("play"); }}
+          />
+          <TabButton
+            label="Friends"
+            icon="👥"
+            active={view === "feed"}
+            onClick={() => { setProfileHandle(null); setView("feed"); }}
+          />
+          <TabButton
+            label="Me"
+            icon="🙂"
+            active={view === "profile" && profileHandle === null}
+            onClick={() => { setProfileHandle(null); setView("profile"); }}
+          />
+        </nav>
+      </div>
     </ToastProvider>
   );
 }
