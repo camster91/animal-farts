@@ -1,167 +1,57 @@
-# What's missing — animal-farts, 2026-06-13
+# Current gaps — Animal Farts / PootBox
 
-Verified against the live site (https://animals.ashbi.ca/) and the repo HEAD
-at `08d562e` (v56-3). All paths probed with curl; client source audited
-end-to-end; server endpoints enumerated from `server/server.js`.
+Updated 2026-08-11. This file supersedes the June 13, 2026 gap review, which described the app before the Friends / Me social surfaces and production-hardening work landed.
 
-## The big one: the social app exists on the server and nowhere else
+## Current product state
 
-`server/server.js` has 20+ social endpoints. The client app (`src/App.tsx`)
-is literally:
+The app now has three top-level experiences: **Play**, **Friends**, and **Me**, plus public profiles opened from the Friends feed. Custom recordings, share codes, server-backed social APIs, offline PWA behavior, Android/Capacitor packaging, moderation, rate limiting, upload validation, and device-scoped write authorization are all implemented.
 
-```tsx
-export default function App() {
-  return <PootBox />;
-}
-```
+The old statement that "the social app exists on the server and nowhere else" is no longer true. Historical review documents should be treated as point-in-time references, not implementation instructions.
 
-No router, no `/profile`, no `/me`, no `/feed`, no `/community`. The server
-endpoints:
+## Release priorities
 
-| Endpoint | Server | Client calls it? |
-|---|---|---|
-| `POST /api/share` (mint 4-letter code) | ✓ | ✓ (ShareSheet) |
-| `GET /api/share/:code` (lookup) | ✓ | ✓ (ShareSheet) |
-| `GET /api/recordings` (list) | ✓ | ✗ — `/api/recordings` returns 1 test row, no UI shows it |
-| `POST /api/recordings` (upload) | ✓ | ✗ — recordings stay local in IDB; never POSTed to the server |
-| `POST /api/recordings/:id/upvote` | ✓ | ✗ — no upvote button anywhere |
-| `GET /api/recordings/:id/comments` | ✓ | ✗ — no comment thread UI |
-| `POST /api/recordings/:id/comments` | ✓ | ✗ — same |
-| `DELETE /api/comments/:id` | ✓ | ✗ — same |
-| `GET /api/recordings/:id/reactions` | ✓ | ✗ — no emoji reaction picker |
-| `POST /api/recordings/:id/reactions` | ✓ | ✗ — same |
-| `GET /api/feed` | ✓ | ✗ — no feed page |
-| `GET /api/me` | ✓ | ✗ — no profile page |
-| `GET /api/users/:handle` | ✓ | ✗ — no profile-by-handle page |
-| `GET /api/users/:handle/recordings` | ✓ | ✗ — same |
-| `GET /api/users/:handle/followers` | ✓ | ✗ — no followers list |
-| `GET /api/users/:handle/following` | ✓ | ✗ — no following list |
-| `POST /api/users/:handle/follow` | ✓ | ✗ — no follow button |
-| `GET /api/users` (search) | ✓ | ✗ — no search UI |
+### 1. Finish the July audit cleanup
 
-Live curl confirms: `/api/feed` returns 200, `/api/users` returns 200,
-`/profile` returns 200 (SPA catch-all), `/me` returns 200 (SPA catch-all),
-`/u/test` returns 200. But every one of them is a dead page or anonymous
-data — the x-device-id header is required for the social writes, and
-no client code sends it.
+The remaining audit work is intentionally small and release-focused:
 
-`grep -rn 'x-device-id' src/` returns zero hits. The only client-side
-device identity is the localStorage deviceId used for the local pair-sync
-feature (v47-era), which never makes it to a header.
+- Accessible labels for Sound Library search, share-code lookup, and volume controls.
+- Route-level code splitting for Play / Friends / profile surfaces to reduce mobile cold-start parsing.
+- TypeScript strict mode across app, Node config, and test compilation.
 
-## Three concrete, addressable gaps
+These are being handled together in `chore/complete-open-audit-2026-08-11` and should only be considered complete after CI passes.
 
-### 1. Recording sharing is half-built (server works, client doesn't push)
+### 2. Keep the core play loop dominant
 
-The kid records a sound → it lives in IDB → on reload it's gone (v56-5
-flagged this). The server has `POST /api/recordings` ready with rate
-limits and x-device-id auth. Wiring this end-to-end is:
+Animal Farts works best when the first interaction is immediate: open the app, tap a funny sound, hear it. Social/profile features should remain secondary and must not increase cold-start cost or make Play harder to reach.
 
-- `useRecording.ts`: after `finalizeRecording`, POST the blob to
-  `/api/recordings`, get back `{id, audioUrl: "/uploads/...webm"}`,
-  store that in the bubble's `audioUrl` (replacing the blob: URL).
-- `usePagesState.ts` or a new `useRecordingsSync` hook: on app boot,
-  pull `/api/recordings`, dedup against the local IDB pool, offer
-  "Restore 3 recordings from server" if any are missing.
-- The share-code flow already POSTs to `/api/share` and reads back
-  `/uploads/...webm` — that pipeline is end-to-end working, but it's
-  not what `useRecording` does. Recordings vs share-codes are
-  different (recording = a personal audio, share-code = a 4-letter
-  pointer to an existing audio). Right now the share-code is the
-  only way to publish.
+### 3. Treat social features as a child-safety surface
 
-Roughly 4-6 hours of work. The biggest user-facing impact: recordings
-survive reload via the server's blob storage, and the kid can post a
-sound to the server for a sibling to look up by code.
+Because the product is aimed at young children, any public sharing, profiles, comments, reactions, following, search, or discovery must be reviewed as a safety/privacy feature rather than ordinary social-app functionality. Prefer controlled sharing and family/friend codes over broader discovery when the same product goal can be met.
 
-### 2. "The kid mashed all the noises at once" — single-voice policy needs a visible target
+Before expanding the social surface, require an explicit product decision covering:
 
-`audioManager.ts` already stops the previous sound before playing the
-new one. The ⏹ button works. But the kid sees bubbles flying around
-the screen; if they want to silence a specific one, they have to find
-the ⏹ button. Plan.md called this v56-4 (tap-playing-bubble-to-stop):
+- who can discover whom;
+- what information is public;
+- whether comments are necessary at all;
+- parent/guardian controls and reporting;
+- retention/deletion of recordings and profile data;
+- moderation and abuse-response expectations.
 
-- Track `currentlyPlayingId` in the audio manager (or use a ref
-  passed via context)
-- When a bubble is the currently-playing one, give it a visual
-  "playing" state (pulsing border, scale-up, color shift)
-- Tap the currently-playing bubble → stop the sound
-- Tap any other bubble → single-voice policy (the existing flow)
+### 4. Reduce `PootBox.tsx` opportunistically, not via a risky rewrite
 
-Roughly 2-3 hours. Medium risk because the audio state needs to be
-exposed to the canvas component (which currently doesn't know what's
-playing).
+`PootBox.tsx` is still the main orchestration pressure point. Future feature work should extract cohesive concerns (modal coordination, sharing, recording orchestration, page state, audio/play state) into focused hooks/components as those areas are touched. Avoid a large refactor solely for line-count reduction unless tests and behavior coverage are expanded first.
 
-### 3. No "share my page" UX — the share button exists but the result is opaque
+### 5. Keep documentation and CI authoritative
 
-Looking at the share-button → share-sheet flow:
+When architecture or product surfaces change, update `README.md`, `AGENTS.md`, and this file in the same PR. Historical review files should be clearly dated. CI should run lint, tests, production build, and server syntax checks before merge.
 
-- User taps 🔗 in the top bar → ShareSheet opens in "share" mode
-- A 4-letter code appears (e.g. "QMSM")
-- User taps "Copy code"
-- ShareSheet says: "Anyone with this code can add 'Page name' to their pages"
-- User dismisses the sheet
+## Definition of release-ready
 
-There's no:
-- Confirmation toast when the code is copied
-- A way to test the code (open the lookup tab and paste your own code)
-- A way to know which codes you've already shared
-- A "this code was looked up 3 times" feedback loop
+A release candidate should have:
 
-Roughly 1-2 hours, isolated to ShareSheet.tsx + PootBox.tsx toast
-plumbing. No server changes needed.
-
-## Smaller items (worth listing, not worth doing alone)
-
-- **No-emoji deduplication is by name only.** Two recordings with the
-  same emoji and same audio will be stored as separate pages. The
-  `addBubbleToPageDedup` checks `builtinKey` and `blobUrl`, so custom
-  recordings only dedup on the exact blob URL. Identical-looking
-  recordings from different sessions show up as two bubbles. The
-  v47-era content-hash dedup was removed.
-- **No "undo" for deletion.** Recording a sound, accidentally
-  deleting it, and redoing requires re-recording. The UndoToast
-  component exists (for combo end-of-chain) but isn't wired to
-  deletions.
-- **The audio share import loses audio on page reload** (v56-5).
-  A shared bubble gets `blobUrl: data.audioUrl` from the server,
-  which is a `/uploads/...webm` path — but the bubble template
-  sets `sound: data.audioUrl` (the same path), not the fetched
-  blob. If the kid reloads, the page rebuilds and the bubble
-  has no actual audio. Fix: fetch the audio bytes, store as a
-  real Blob in IDB.
-- **No "delete this page" confirm.** `removePage` exists but
-  the TopBar only enables it via long-press, with no confirm
-  dialog. A kid can accidentally trash a page.
-- **No kid mode / parent gate.** All of Settings is one big
-  modal. No "tap-and-hold the 🐄 in the corner 3 times to enter
-  parent mode" gating pattern. The v47-era `pootbox-parent-pin`
-  code is gone.
-- **First-run intro only shows on first load.** It dismisses
-  forever in localStorage. No way to re-watch the tutorial.
-- **No "this recording was added to your library" feedback.**
-  When the kid records, the bubble appears on the canvas but
-  there's no "🎤 Saved!" toast confirming the mic capture
-  succeeded.
-
-## What I would ship next, ranked
-
-If you said "build the next thing," here's what I'd do:
-
-1. **#1 above (recording → server push)** — biggest user-facing gap.
-   The data is there on the server, the client just doesn't use it.
-2. **#3 (share-code UX polish)** — small, isolated, high visible
-   impact for the one user-facing flow that DOES exist.
-3. **#2 (tap-playing-bubble)** — the "proper game" framing.
-4. The v56-5 blobUrl fix as a small one-off.
-5. The smaller items as a follow-up sweep.
-
-Roughly 8-12 hours of work, 3-4 commits. The repo's been very stable
-post-v53: 81/81 tests pass, build is clean, deploy is reliable, the
-live site is healthy. Adding the social surface is a different kind of
-work — a UX surface, not a bug fix. Worth scoping before committing to it.
-
-If you want to pivot toward "ship the social surface," I'd want a
-separate conversation about: what does the kid see? A feed? A
-"recordings I made" tab? A "find other kids' sounds" page? Each of
-those is a different product.
+- CI green on the exact commit being merged;
+- no unresolved Critical/High security findings;
+- no known broken Play, recording, sharing, offline, Friends, or profile flows;
+- accessible names for interactive controls;
+- Android/PWA smoke testing for audio, microphone permission, offline reload, and bottom safe-area behavior;
+- a documented decision before any meaningful expansion of public social/discovery features.
