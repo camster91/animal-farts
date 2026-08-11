@@ -9,6 +9,7 @@ export default function VolumeSlider({ show, volume, onChange, position }: Volum
   if (!show) return null;
 
   const isMuted = volume === 0;
+  const volumePercent = Math.round(volume * 100);
 
   return (
     <div
@@ -34,6 +35,7 @@ export default function VolumeSlider({ show, volume, onChange, position }: Volum
       >
         <button
           onClick={() => onChange(isMuted ? 1 : 0)}
+          aria-label={isMuted ? "Unmute sound" : "Mute sound"}
           style={{
             appearance: "none",
             border: "none",
@@ -54,6 +56,8 @@ export default function VolumeSlider({ show, volume, onChange, position }: Volum
           max={1}
           step={0.05}
           value={volume}
+          aria-label="Volume"
+          aria-valuetext={`${volumePercent} percent`}
           onChange={(e) => onChange(parseFloat(e.target.value))}
           style={{
             flex: 1,
@@ -63,6 +67,7 @@ export default function VolumeSlider({ show, volume, onChange, position }: Volum
         />
 
         <span
+          aria-hidden="true"
           style={{
             fontSize: "0.8rem",
             color: "#92705A",
@@ -72,7 +77,7 @@ export default function VolumeSlider({ show, volume, onChange, position }: Volum
             flexShrink: 0,
           }}
         >
-          {Math.round(volume * 100)}%
+          {volumePercent}%
         </span>
       </div>
     </div>
