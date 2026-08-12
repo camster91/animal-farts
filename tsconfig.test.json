@@ -5,7 +5,7 @@
     "moduleResolution": "NodeNext",
     "outDir": "tests/build",
     "rootDir": "src/pootbox",
-    "strict": false,
+    "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "isolatedModules": false,
@@ -19,7 +19,7 @@
     "src/pootbox/recordings.ts",
     "src/pootbox/constants.ts",
     "src/pootbox/types.ts",
-    "src/pootbox/pageTabsHelpers.ts",
+    "src/pootbox/components/recordSheetUtils.ts",
     "src/pootbox/lib/kidSafeError.ts"
   ]
 }

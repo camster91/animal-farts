@@ -298,6 +298,7 @@ const SoundLibrary: FC<SoundLibraryProps> = ({
         }}
       >
         <span
+          aria-hidden="true"
           style={{
             position: "absolute",
             left: 12,
@@ -311,6 +312,7 @@ const SoundLibrary: FC<SoundLibraryProps> = ({
         </span>
         <input
           type="text"
+          aria-label="Search sounds"
           value={searchRaw}
           onChange={(e) => setSearchRaw(e.target.value)}
           placeholder="Search sounds…"
