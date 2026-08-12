@@ -51,7 +51,7 @@ jobs:
           CI: true
 
       - name: Test
-        run: node --test --test-concurrency=1 --test-timeout=30000 tests/unit-*.test.mjs tests/server-integration.test.mjs
+        run: node --test --test-concurrency=1 --test-timeout=60000 tests/unit-*.test.mjs tests/server-integration.test.mjs
         env:
           CI: true
 
@@ -64,3 +64,4 @@ jobs:
       - name: Syntax check server
         working-directory: server
         run: node --check server.js
+

@@ -15,9 +15,10 @@ import { readFileSync, existsSync, readdirSync, mkdtempSync, cpSync, rmSync, sta
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const CONSTANTS = new URL('../src/pootbox/constants.ts', import.meta.url).pathname;
-const SOUNDS = new URL('../public/sounds/', import.meta.url).pathname;
+const CONSTANTS = fileURLToPath(new URL('../src/pootbox/constants.ts', import.meta.url));
+const SOUNDS = fileURLToPath(new URL('../public/sounds/', import.meta.url));
 
 function listPngsMatching(re) {
   return readdirSync(SOUNDS, { recursive: true })
@@ -48,7 +49,7 @@ function extractEntries() {
 
 describe('v70: scan-sounds output invariants', () => {
   it('scan-sounds.py exists and is runnable', () => {
-    const p = new URL('../scripts/scan-sounds.py', import.meta.url).pathname;
+    const p = fileURLToPath(new URL('../scripts/scan-sounds.py', import.meta.url));
     assert.ok(existsSync(p), 'scripts/scan-sounds.py should exist');
   });
 
@@ -155,7 +156,7 @@ describe('v70: scan-sounds output invariants', () => {
   // or adds a .mp3 to public/sounds/ without re-scanning, this
   // catches it. The scan is fast (~150ms for 376 files).
   it('v75: scanner output matches the committed constants.ts (no drift)', () => {
-    if (!existsSync(new URL('../scripts/scan-sounds.py', import.meta.url).pathname)) {
+    if (!existsSync(fileURLToPath(new URL('../scripts/scan-sounds.py', import.meta.url)))) {
       return; // scanner missing — earlier test already asserts that
     }
     // Skip if python3 isn't available (the Dockerfile is alpine

@@ -26,6 +26,7 @@ const BASE = `http://127.0.0.1:${PORT}`;
 let dataDir;
 let proc;
 let started = false;
+let startupStderr = "";
 
 function http(method, path, { headers = {}, body } = {}) {
   return new Promise((resolve, reject) => {
@@ -96,12 +97,10 @@ function multipartAudio(fieldName, fileBuffer, filename, mime) {
   };
 }
 
+describe("server integration", () => {
 before(async () => {
-  // Skip the whole suite if the server file isn't present (e.g. someone ran
-  // `git clean` and missed the server dir). The unit tests will still pass.
   if (!existsSync(SERVER)) {
-    console.warn(`[server-integration] skipping: ${SERVER} not found`);
-    return;
+    throw new Error(`[server-integration] ${SERVER} not found`);
   }
   dataDir = mkdtempSync(join(tmpdir(), "af-srv-int-"));
   proc = spawn("node", [SERVER], {
@@ -119,6 +118,9 @@ before(async () => {
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  proc.stderr.on("data", (chunk) => {
+    startupStderr += String(chunk);
+  });
   // Wait for /api/health to return 200 (max 5s).
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
@@ -133,7 +135,11 @@ before(async () => {
     }
     await new Promise((res) => setTimeout(res, 100));
   }
-  // give up — subsequent tests will fail with connection errors
+  throw new Error(
+    `[server-integration] server did not become healthy within 5s.${
+      startupStderr ? ` Startup stderr:\n${startupStderr.trim()}` : ""
+    }`,
+  );
 });
 
 after(async () => {
@@ -881,4 +887,6 @@ describe("server integration: production audit security fixes", () => {
     assert.strictEqual(r.status, 400, `expected 400, got ${r.status} ${r.text}`);
     assert.match(JSON.parse(r.text).error, /webm|audio|valid/i);
   });
+});
+
 });
