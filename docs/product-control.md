@@ -41,7 +41,9 @@ current child-safety, privacy, moderation, or operating cost.
   upload, controlled sharing, deletion, and offline shell/audio behavior.
 - An IndexedDB operation queue with idempotent server mutations has been
   implemented for durable upload/delete reconciliation and is awaiting merge.
-- Unit/integration coverage and a three-journey mobile Playwright suite exist.
+- Unit/integration coverage and a four-journey mobile Playwright suite cover
+  recording, persistence, controlled sharing, deletion, offline recovery,
+  keyboard onboarding/update behavior, and minimum touch targets.
 - Production has trusted Traefik-managed ACME TLS, verified daily SQLite plus
   uploads backups, a rehearsed isolated restore, and a five-minute ops check.
 - There is no billing, advertising, third-party analytics, or AI provider in the
@@ -155,8 +157,10 @@ and aggregate product learning must remain separate from recordings and names.
 3. **Durable data (#39, implemented; CI pending):** exact PR #44 head
    `252dbdd` passes lint and 229 local tests. Merge only after the independent
    Local CI gate validates that same head.
-4. **Core browser proof (#33, implemented locally):** reconcile, pass CI, merge,
-   and preserve failure artifacts without production/child data.
+4. **Core browser proof (#33, verified locally; CI pending):** exact commit
+   `67f34f8` passes lint, all 229 unit/integration tests, and five consecutive
+   four-journey Playwright runs. Reconcile, pass CI, merge, and preserve failure
+   artifacts without production/child data.
 5. **Operations/TLS (#34/#35, partially verified):** merge runbooks and scripts;
    add an independent alert path and rehearse 30/14/7-day paging.
 6. **Documentation (#38, implemented locally):** land current API, history,
@@ -203,6 +207,11 @@ is warranted while these remain.
   flaky random-code assertion; and verified its exact head with lint plus 229
   tests. Hosted Actions remain blocked by account billing and Local CI still
   needs its reviewed profile activated at a safe worker restart window.
-- 2026-08-28: on the staged Android stack, passed 247 application tests, three
-  mobile E2E journeys, a no-findings security diff scan, and JDK 21 debug APK
-  assembly. No physical device was connected, so device QA remains open.
+- 2026-08-28: expanded the core PWA suite to four journeys covering deterministic
+  offline audio, reconnect recovery, keyboard focus/onboarding, and update-prompt
+  behavior; exact commit `67f34f8` passed lint, all 229 unit/integration tests,
+  and five consecutive Playwright runs (20/20 scenarios).
+- 2026-08-28: on the staged Android stack before that E2E expansion, passed 247
+  application tests, three mobile E2E journeys, a no-findings security diff
+  scan, and JDK 21 debug APK assembly. No physical device was connected, so
+  device QA remains open; the reconciled stack must be revalidated.
