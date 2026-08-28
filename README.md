@@ -20,6 +20,21 @@ npm run build
 npm run preview
 ```
 
+## Test
+
+Use Node 20 for the release checks:
+
+```bash
+npm test
+npm run lint
+npx playwright install chromium # first E2E run only
+npm run test:e2e
+```
+
+The Playwright suite starts the production server with a temporary database
+and upload directory. It never reads or modifies normal local or deployed
+recording data.
+
 ## Deploy
 
 The `dist/` folder is a static bundle. The deploy script (`scripts/deploy-vps.sh`) bundles the source, builds the Docker image on the VPS (the Mac has no docker), and swaps in the new container with `camster91/animal-farts:<sha>`.

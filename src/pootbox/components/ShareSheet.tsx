@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface ShareSheetProps {
   mode: "share" | "lookup";
@@ -10,6 +10,7 @@ interface ShareSheetProps {
    *  the same code we just shared. Lets the kid verify their own
    *  code works before sending it to a friend. */
   onSelfTest?: (code: string) => void;
+  onOpenLookup?: () => void;
   /** Initial value for the lookup input. The parent should pass a
    *  key={...} derived from this so the sheet remounts (and reads
    *  the new initial value) when self-test fires. */
@@ -38,6 +39,7 @@ export default function ShareSheet({
   onGenerateCode,
   onCopyCode,
   onSelfTest,
+  onOpenLookup,
   lookupPrefill,
   onLookupCode,
   onAddAsPage,
@@ -50,10 +52,12 @@ export default function ShareSheet({
   const [lookupResult, setLookupResult] = useState<SharedSound | null>(null);
   const [lookupError, setLookupError] = useState(false);
   const [lookupOffline, setLookupOffline] = useState(false);
+  const generatedCodeRef = useRef(false);
 
   // share mode: generate code on mount
   useEffect(() => {
-    if (mode === "share" && onGenerateCode) {
+    if (mode === "share" && onGenerateCode && !generatedCodeRef.current) {
+      generatedCodeRef.current = true;
       onGenerateCode().then(setCode);
     }
   }, [mode, onGenerateCode]);
@@ -110,8 +114,8 @@ export default function ShareSheet({
         display: "flex",
         alignItems: "flex-end",
         justifyContent: "center",
-        zIndex: 150,
-        padding: 16,
+        zIndex: 500,
+        padding: "16px 16px calc(16px + env(safe-area-inset-bottom, 0px))",
       }}
       onClick={onClose}
     >
@@ -203,6 +207,7 @@ export default function ShareSheet({
 
             <button
               onClick={handleSelfTest}
+              disabled={!code}
               style={{
                 appearance: "none",
                 border: "none",
@@ -218,6 +223,26 @@ export default function ShareSheet({
             >
               Look up the code you just shared
             </button>
+            {onOpenLookup && (
+              <button
+                type="button"
+                onClick={onOpenLookup}
+                style={{
+                  appearance: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  background: "transparent",
+                  color: "#3D2C1E",
+                  fontSize: "0.9rem",
+                  fontFamily: "inherit",
+                  fontWeight: 700,
+                  marginTop: 12,
+                  padding: 8,
+                }}
+              >
+                I have a share code
+              </button>
+            )}
           </>
         ) : (
           <>
@@ -371,6 +396,9 @@ export default function ShareSheet({
             fontSize: "0.9rem",
             fontFamily: "inherit",
             marginTop: 8,
+            // PootBox is rendered beneath App's fixed navigation stacking
+            // context, so keep this final action physically above the bar.
+            marginBottom: "calc(64px + env(safe-area-inset-bottom, 0px))",
           }}
         >
           Cancel

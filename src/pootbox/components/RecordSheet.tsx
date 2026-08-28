@@ -132,7 +132,10 @@ const RecordSheet: FC<RecordSheetProps> = ({
               padding: "8px 4px",
               maxWidth: "100%",
               width: "100%",
-              justifyContent: "center",
+              // The row is wider than a phone. Centering an overflowing flex
+              // row places its first choices to the left of scroll origin,
+              // making them unreachable. Start at the leading edge instead.
+              justifyContent: "flex-start",
               scrollbarWidth: "none",
               WebkitOverflowScrolling: "touch",
             }}

@@ -120,6 +120,8 @@ export default function PootBox() {
         return;
       }
       setPages(updatedPages);
+      const updatedPage = updatedPages.find((page) => page.id === activePageId);
+      if (updatedPage) void savePage(updatedPage);
     },
     // v60: confirm the recording saved. Fires AFTER the local IDB
     // write succeeds; failure path returns early inside the hook.
@@ -145,7 +147,7 @@ export default function PootBox() {
       if (!activePageId) return;
       setPages((prev) => prev.map((p) => {
         if (p.id !== activePageId) return p;
-        return {
+        const updatedPage = {
           ...p,
           bubbles: p.bubbles.map((b) => {
             if (b.id !== bubbleId) return b;
@@ -157,11 +159,9 @@ export default function PootBox() {
             return { ...b, blobUrl: serverAudioUrl, sound: serverAudioUrl };
           }),
         };
+        void savePage(updatedPage);
+        return updatedPage;
       }));
-      // The pages state will be saved to IDB by the existing pages-state
-      // auto-save effect (bubbles changes trigger a save). On next page
-      // load, the bubble renders with the server URL, not the dead
-      // blob: URL.
     },
     onDeleteComplete: (bubbleId) => {
       setServerRecordingIds((previous) => {
@@ -971,6 +971,10 @@ export default function PootBox() {
             // the new lookupPrefill is read by useState's initializer.
             setShowShare("lookup");
             setLookupPrefill(code);
+          }}
+          onOpenLookup={() => {
+            setLookupPrefill("");
+            setShowShare("lookup");
           }}
           onLookupCode={async (code) => {
             if (!navigator.onLine) return { __offline: true, code };

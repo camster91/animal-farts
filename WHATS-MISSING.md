@@ -10,15 +10,14 @@ The old statement that "the social app exists on the server and nowhere else" is
 
 ## Release priorities
 
-### 1. Finish the July audit cleanup
+### 1. Keep core PWA journeys in the release gate
 
-The remaining audit work is intentionally small and release-focused:
-
-- Accessible labels for Sound Library search, share-code lookup, and volume controls.
-- Route-level code splitting for Play / Friends / profile surfaces to reduce mobile cold-start parsing.
-- TypeScript strict mode across app, Node config, and test compilation.
-
-These are being handled together in `chore/complete-open-audit-2026-08-11` and should only be considered complete after CI passes.
+The mobile Chromium suite covers first-run onboarding, Play-only navigation,
+record/upload, rename, IndexedDB persistence across reload, controlled sharing
+between isolated browser contexts, deletion, offline reload/error handling,
+viewport overflow, minimum touch targets, and uncaught page errors. CI installs
+the pinned browser and uploads Playwright traces, screenshots, and video when a
+journey fails. Physical Android/device QA remains a separate release task.
 
 ### 2. Keep the core play loop dominant
 
@@ -43,7 +42,7 @@ Before expanding the social surface, require a new reviewed product decision cov
 
 ### 5. Keep documentation and CI authoritative
 
-When architecture or product surfaces change, update `README.md`, `AGENTS.md`, and this file in the same PR. Historical review files should be clearly dated. CI should run lint, tests, production build, and server syntax checks before merge.
+When architecture or product surfaces change, update `README.md`, `AGENTS.md`, and this file in the same PR. Historical review files should be clearly dated. CI runs lint, serial tests, production build, the isolated mobile Playwright suite, and the server syntax check before merge.
 
 ## Definition of release-ready
 
