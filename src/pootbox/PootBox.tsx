@@ -39,6 +39,11 @@ import InstallPrompt from "./components/InstallPrompt";
 import UpdatePrompt from "./components/UpdatePrompt";
 import FooterBar from "./components/FooterBar";
 import { SOCIAL_FEATURES_ENABLED } from "../config/features";
+import {
+  enqueueDelete,
+  retryAllFailedOperations,
+  type SyncStatus,
+} from "./syncQueue";
 
 // ─── Main component ─────────────────────────────────────────────────────────
 
@@ -74,11 +79,38 @@ export default function PootBox() {
   // Settings (extracted to useSettings hook)
   const { settings, settingsRef, setSettings, setVolume } = useSettings();
 
+  type VisibleSyncStatus = SyncStatus | "synced" | "deleted";
+  const [syncStatuses, setSyncStatuses] = useState<Map<string, { status: VisibleSyncStatus; message?: string }>>(
+    () => new Map(),
+  );
+  const updateSyncStatus = useCallback((
+    bubbleId: string,
+    status: VisibleSyncStatus,
+    message?: string,
+  ) => {
+    if (status === "synced" || status === "deleted") {
+      window.setTimeout(() => {
+        setSyncStatuses((previous) => {
+          const current = previous.get(bubbleId);
+          if (current?.status !== status) return previous;
+          const next = new Map(previous);
+          next.delete(bubbleId);
+          return next;
+        });
+      }, 2_500);
+    }
+    setSyncStatuses((previous) => {
+      const next = new Map(previous);
+      next.set(bubbleId, { status, message });
+      return next;
+    });
+  }, []);
+
   // Recording (extracted to useRecording hook)
   const {
     recPhase, recordingMs, micDenied, micPermState,
     startRecording, stopRecording, cancelRecording,
-    finalizeRecording,
+    finalizeRecording, syncNow,
   } = useRecording({
     onBubbleAdded: (bubble) => {
       if (!activePageId) return;
@@ -131,6 +163,15 @@ export default function PootBox() {
       // load, the bubble renders with the server URL, not the dead
       // blob: URL.
     },
+    onDeleteComplete: (bubbleId) => {
+      setServerRecordingIds((previous) => {
+        if (!(bubbleId in previous)) return previous;
+        const next = { ...previous };
+        delete next[bubbleId];
+        return next;
+      });
+    },
+    onSyncStatus: updateSyncStatus,
     onError: (msg) => { showToast(msg, { variant: "error" }); },
   });
 
@@ -661,39 +702,87 @@ export default function PootBox() {
           // v61: delete a custom card. The original onRemoveBubble
           // also revokes the blob: URL; for v61 share-imported
           // bubbles (b:shared:*) we just leave the blobUrl alone.
-          // v76: also DELETE the server-side recording so the upload
-          // row doesn't orphan. Look up the server recording id in
-          // the localStorage-backed map (populated by onUploadComplete).
-          // We never block the local delete on this — if the server
-          // call fails (offline, 404, 403), the local row is still
-          // gone and we just log. The map entry is cleaned up too.
+          // Server cleanup is represented by a durable tombstone before
+          // the local card/blob is removed. This preserves delete intent
+          // across offline periods, reloads, and an upload still in flight.
           if (!activePageId) return;
           if (id.startsWith("b:custom:")) {
+            const serverId = serverRecordingIds[id];
+            // Persist the deletion intent before removing the local card.
+            // If an upload for this bubble is still pending, the queue links
+            // the eventual server id to this tombstone and deletes it next.
+            try {
+              await enqueueDelete({ bubbleId: id, serverRecordingId: serverId });
+              updateSyncStatus(id, "pending", "Delete will finish when online");
+              void syncNow();
+            } catch {
+              showToast("Couldn't save the delete request", { variant: "error" });
+              return;
+            }
             const b = bubbles.find(x => x.id === id);
             if (b?.blobUrl?.startsWith("blob:")) URL.revokeObjectURL(b.blobUrl);
             try { await deleteBlob(id); } catch { /* ignore */ }
             try { deleteRecordingEmoji(id); } catch { /* ignore */ }
-            const serverId = serverRecordingIds[id];
-            if (typeof serverId === "number") {
-              try {
-                await fetch(`/api/recordings/${serverId}`, {
-                  method: "DELETE",
-                  headers: { "x-device-id": getOrCreateDeviceId() },
-                });
-              } catch { /* offline — server row will orphan, acceptable trade */ }
-              setServerRecordingIds((prev) => {
-                if (!(id in prev)) return prev;
-                const next = { ...prev };
-                delete next[id];
-                return next;
-              });
-            }
           }
           const updated = await removeBubbleFromPage(activePageId, id);
           setPages(prev => prev.map(p => p.id === updated.id ? updated : p));
           showToast("Card removed");
         }}
       />
+
+      {(() => {
+        const pending = [...syncStatuses.values()].filter((item) => item.status === "pending" || item.status === "syncing").length;
+        const failed = [...syncStatuses.values()].filter((item) => item.status === "failed").length;
+        const synced = [...syncStatuses.values()].filter((item) => item.status === "synced").length;
+        const deleted = [...syncStatuses.values()].filter((item) => item.status === "deleted").length;
+        if (pending === 0 && failed === 0 && synced === 0 && deleted === 0) return null;
+        const success = failed === 0 && pending === 0;
+        return (
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              position: "fixed",
+              left: 12,
+              right: 12,
+              bottom: "calc(72px + env(safe-area-inset-bottom, 0px))",
+              zIndex: 120,
+              borderRadius: 14,
+              padding: "10px 12px",
+              background: failed ? "#FEE2E2" : success ? "#DCFCE7" : "#FFF7ED",
+              color: failed ? "#991B1B" : success ? "#166534" : "#92400E",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              fontFamily: "Fredoka, system-ui, sans-serif",
+              fontWeight: 600,
+            }}
+          >
+            <span>{
+              failed
+                ? `${failed} sound change${failed === 1 ? "" : "s"} need help`
+                : pending
+                  ? `${pending} sound change${pending === 1 ? "" : "s"} waiting to sync`
+                  : deleted
+                    ? "Delete finished"
+                    : "Sound backed up"
+            }</span>
+            {failed > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  void retryAllFailedOperations().then(() => syncNow());
+                }}
+                style={{ minHeight: 44, border: 0, borderRadius: 10, padding: "0 14px", fontWeight: 700 }}
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Empty page hint */}
       {activePageId && pages.find(p => p.id === activePageId)?.bubbles.length === 0 && (

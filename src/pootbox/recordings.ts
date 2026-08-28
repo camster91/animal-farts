@@ -4,9 +4,10 @@ import type { Page, BubbleState } from "./types.js";
 import { BUILT_IN_SOUNDS } from "./constants.js";
 
 const DB_NAME = "pootbox";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const PAGES_STORE = "pages";
 const BLOBS_STORE = "blobs";
+const SYNC_STORE = "sync-operations";
 
 // --- DB open (defensive, best-effort) ---
 
@@ -19,7 +20,12 @@ function openDB(): Promise<IDBDatabase> {
         if (!db.objectStoreNames.contains(BLOBS_STORE)) {
           db.createObjectStore(BLOBS_STORE);
         }
-        // "pages" store created lazily on first save
+        if (!db.objectStoreNames.contains(PAGES_STORE)) {
+          db.createObjectStore(PAGES_STORE);
+        }
+        if (!db.objectStoreNames.contains(SYNC_STORE)) {
+          db.createObjectStore(SYNC_STORE, { keyPath: "id" });
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -254,10 +260,6 @@ export async function loadAllPages(): Promise<Page[]> {
 export async function savePage(page: Page): Promise<void> {
   try {
     const db = await openDB();
-    // ensure store exists (lazy creation for pages — blobs store created in upgrade)
-    if (!db.objectStoreNames.contains(PAGES_STORE)) {
-      db.createObjectStore(PAGES_STORE);
-    }
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(PAGES_STORE, "readwrite");
       tx.objectStore(PAGES_STORE).put(page, page.id);

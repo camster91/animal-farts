@@ -82,7 +82,7 @@
 
     <section>
       <h2>Sharing and deletion</h2>
-      <p>Sharing creates an eight-character code that expires after 30 days. Anyone who has a valid code can play that recording, so a grown-up should help choose recipients. Deleting a recording asks the server to remove its metadata and audio file. If the device is offline, server deletion may be delayed or fail; durable retry work is in progress. Clearing only browser data does not delete an existing server copy.</p>
+      <p>Sharing creates an eight-character code that expires after 30 days. Anyone who has a valid code can play that recording, so a grown-up should help choose recipients. Deleting a recording stores a deletion request on the device before removing the card, then removes the server metadata, audio, and share codes. If offline, the request retries after reconnecting and the app shows whether it is waiting or needs help. Clearing browser data before queued work finishes can remove that pending request and does not by itself delete an existing server copy.</p>
     </section>
 
     <section>

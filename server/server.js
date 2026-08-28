@@ -161,6 +161,27 @@ db.exec(`
     created_at   INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_share_codes_created ON share_codes(created_at);
+
+  CREATE TABLE IF NOT EXISTS recording_deletions (
+    device_id TEXT NOT NULL,
+    operation_id TEXT NOT NULL,
+    recording_id INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (device_id, operation_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_recording_deletions_created ON recording_deletions(created_at);
+`);
+
+// v1 durable-sync migration. Nullable keeps existing rows valid; new queued
+// uploads provide a stable operation id that is unique per device.
+const recordingColumns = db.prepare("PRAGMA table_info(recordings)").all();
+if (!recordingColumns.some((column) => column.name === "client_operation_id")) {
+  db.exec("ALTER TABLE recordings ADD COLUMN client_operation_id TEXT");
+}
+db.exec(`
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_recordings_device_operation
+  ON recordings(device_id, client_operation_id)
+  WHERE client_operation_id IS NOT NULL
 `);
 
 // Enforce unique handles. Older DBs may have duplicates from a race on
@@ -396,6 +417,7 @@ app.get("/api/health", (req, res) => {
 // Retention: share codes expire after 30 days. Orphan codes without a live
 // upload also get cleaned. Runs once at boot and hourly.
 const SHARE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const DELETION_TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const MAX_RECORDINGS_PER_DEVICE = 40;
 function cleanupExpiredShareCodes() {
   try {
@@ -404,6 +426,8 @@ function cleanupExpiredShareCodes() {
     if (expired.changes > 0) {
       console.log(`[retention] deleted ${expired.changes} expired share codes`);
     }
+    db.prepare("DELETE FROM recording_deletions WHERE created_at < ?")
+      .run(Date.now() - DELETION_TOMBSTONE_TTL_MS);
   } catch (err) {
     console.error("[retention] share cleanup failed:", err && err.message);
   }
@@ -456,6 +480,14 @@ function parseDeviceId(value) {
   if (typeof value !== "string") return null;
   const id = value.trim();
   if (!/^[a-zA-Z0-9_-]{4,64}$/.test(id)) return null;
+  return id;
+}
+
+function parseOperationId(value) {
+  if (value === undefined) return null;
+  if (typeof value !== "string") return false;
+  const id = value.trim();
+  if (!/^[a-zA-Z0-9_-]{8,128}$/.test(id)) return false;
   return id;
 }
 
@@ -618,9 +650,34 @@ app.post("/api/recordings", uploadLimiter, (req, res, next) => {
     // endpoint). The previous fallback to req.body.deviceId was an extra
     // spoofing surface and inconsistent with the rest of the API.
     const deviceId = parseDeviceId(req.headers["x-device-id"]);
+    const operationId = parseOperationId(req.headers["x-operation-id"]);
+    if (operationId === false) {
+      if (req.file) safeUnlink(req.file.filename);
+      return res.status(400).json({ error: "Invalid x-operation-id" });
+    }
     if (!name || !deviceId) {
       if (req.file) safeUnlink(req.file.filename);
       return res.status(400).json({ error: "Missing name or x-device-id" });
+    }
+    if (operationId) {
+      const existing = db.prepare(`
+        SELECT id, name, emoji, duration_sec, filename
+        FROM recordings
+        WHERE device_id = ? AND client_operation_id = ?
+      `).get(deviceId, operationId);
+      if (existing) {
+        safeUnlink(req.file.filename);
+        return res.json({
+          id: existing.id,
+          name: existing.name,
+          emoji: existing.emoji,
+          durationSec: existing.duration_sec,
+          upvotes: 0,
+          userVoted: false,
+          audioUrl: `/uploads/${existing.filename}`,
+          deduplicated: true,
+        });
+      }
     }
     if (typeof name !== "string" || String(name).length > 40) {
       if (req.file) safeUnlink(req.file.filename);
@@ -655,8 +712,9 @@ app.post("/api/recordings", uploadLimiter, (req, res, next) => {
         ? parseFloat(durationSec)
         : null;
     const result = db.prepare(`
-      INSERT INTO recordings (name, emoji, device_id, kid_name, filename, duration_sec, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO recordings (
+        name, emoji, device_id, kid_name, filename, duration_sec, created_at, client_operation_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       String(name).slice(0, 40),
       String(emoji || "💨").slice(0, 8),
@@ -664,7 +722,8 @@ app.post("/api/recordings", uploadLimiter, (req, res, next) => {
       kidName ? String(kidName).slice(0, 20) : null,
       req.file.filename,
       parsedDuration,
-      Date.now()
+      Date.now(),
+      operationId,
     );
     res.json({
       id: result.lastInsertRowid,
@@ -716,6 +775,16 @@ app.delete("/api/recordings/:id", (req, res) => {
   if (id === null) return res.status(400).json({ error: "Invalid id" });
   const deviceId = parseDeviceId(req.headers["x-device-id"]);
   if (!deviceId) return res.status(400).json({ error: "Missing x-device-id header" });
+  const operationId = parseOperationId(req.headers["x-operation-id"]);
+  if (operationId === false) return res.status(400).json({ error: "Invalid x-operation-id" });
+  if (operationId) {
+    const completed = db.prepare(
+      "SELECT recording_id FROM recording_deletions WHERE device_id = ? AND operation_id = ?"
+    ).get(deviceId, operationId);
+    if (completed) {
+      return res.json({ ok: true, alreadyDeleted: true, id: completed.recording_id });
+    }
+  }
   const row = db.prepare("SELECT filename, device_id FROM recordings WHERE id = ?").get(id);
   if (!row) return res.status(404).json({ error: "Not found" });
   if (row.device_id !== deviceId) return res.status(403).json({ error: "Not your recording" });
@@ -733,10 +802,20 @@ app.delete("/api/recordings/:id", (req, res) => {
     }
     throw err;
   }
-  db.prepare("DELETE FROM votes WHERE recording_id = ?").run(id);
-  db.prepare("DELETE FROM comments WHERE recording_id = ?").run(id);
-  db.prepare("DELETE FROM reactions WHERE recording_id = ?").run(id);
-  db.prepare("DELETE FROM recordings WHERE id = ?").run(id);
+  const applyDelete = db.transaction(() => {
+    db.prepare("DELETE FROM votes WHERE recording_id = ?").run(id);
+    db.prepare("DELETE FROM comments WHERE recording_id = ?").run(id);
+    db.prepare("DELETE FROM reactions WHERE recording_id = ?").run(id);
+    db.prepare("DELETE FROM share_codes WHERE audio_url = ?").run(`/uploads/${row.filename}`);
+    db.prepare("DELETE FROM recordings WHERE id = ?").run(id);
+    if (operationId) {
+      db.prepare(`
+        INSERT INTO recording_deletions (device_id, operation_id, recording_id, created_at)
+        VALUES (?, ?, ?, ?)
+      `).run(deviceId, operationId, id, Date.now());
+    }
+  });
+  applyDelete();
   res.json({ ok: true });
 });
 
