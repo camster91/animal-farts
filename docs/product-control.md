@@ -253,3 +253,7 @@ is warranted while these remain.
   the Capacitor CLI toolchain; the Android branch now overrides it with the
   compatible patched `uuid@11.1.1`, after which `npm audit` reports zero known
   vulnerabilities and Capacitor sync plus the JDK 21 debug build still pass.
+- 2026-08-28: after reconciling the operations and bundle-budget contracts, the
+  exact staged Android stack passed lint, all 251 application tests, and all
+  four E2E journeys. These additions affect tests, scripts, and documentation;
+  the previously assembled application bundle and APK remain unchanged.
