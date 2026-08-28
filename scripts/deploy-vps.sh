@@ -20,7 +20,7 @@ usage() {
 }
 
 [[ $# -eq 1 ]] || usage
-git diff --quiet HEAD -- . || {
+[[ -z "$(git status --porcelain --untracked-files=normal)" ]] || {
   echo "[deploy] working tree is dirty; commit or stash it first" >&2
   exit 1
 }
