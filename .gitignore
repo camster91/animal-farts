@@ -16,6 +16,12 @@ server-package-snapshot
 tests/build/
 .artifacts/
 
+# Android release signing material must never enter Git.
+*.jks
+*.keystore
+keystore.properties
+android/key.properties
+
 # Server runtime data (SQLite DB + uploaded audio) — never commit
 server/uploads/
 server/*.db

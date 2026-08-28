@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.ashbi.pootparty',
-  appName: 'Poot Party',
+  appName: 'PootBox',
   webDir: 'dist',
   android: {
     allowMixedContent: false,
