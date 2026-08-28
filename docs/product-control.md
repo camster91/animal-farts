@@ -241,3 +241,15 @@ is warranted while these remain.
   application tests, three mobile E2E journeys, a no-findings security diff
   scan, and JDK 21 debug APK assembly. No physical device was connected, so
   device QA remains open; the reconciled stack must be revalidated.
+- 2026-08-28: the reconciled staged Android stack passed lint, all 247
+  application tests, all four mobile E2E journeys, Capacitor sync, and JDK 21
+  debug APK assembly. The APK SHA-256 is
+  `9a15b5c64accdacb6fcab64bc2a914cc2c6c63f48d0fffe0923af242aaf699d3`.
+  The earlier Android security diff scan had no reportable findings. No physical
+  device was connected, so device QA remains open.
+- 2026-08-28: a fresh detached checkout of the staged Android commit completed
+  root and server `npm ci`, lint, all 247 application tests, and all four E2E
+  journeys. The clean install exposed a moderate `xcode -> uuid@7` advisory in
+  the Capacitor CLI toolchain; the Android branch now overrides it with the
+  compatible patched `uuid@11.1.1`, after which `npm audit` reports zero known
+  vulnerabilities and Capacitor sync plus the JDK 21 debug build still pass.
