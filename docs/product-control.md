@@ -211,6 +211,11 @@ is warranted while these remain.
   offline audio, reconnect recovery, keyboard focus/onboarding, and update-prompt
   behavior; exact commit `67f34f8` passed lint, all 229 unit/integration tests,
   and five consecutive Playwright runs (20/20 scenarios).
+- 2026-08-28: repaired the production operations contract so a high Docker
+  restart count now fails instead of merely being reported. The updated script
+  passed its unit contract and a read-only production execution at 72% disk,
+  3% inode use, 89 certificate days, zero restarts, current backup, and healthy
+  public/container health. External paging remains unconfigured.
 - 2026-08-28: on the staged Android stack before that E2E expansion, passed 247
   application tests, three mobile E2E journeys, a no-findings security diff
   scan, and JDK 21 debug APK assembly. No physical device was connected, so
