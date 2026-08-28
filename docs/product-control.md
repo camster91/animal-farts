@@ -221,6 +221,11 @@ is warranted while these remain.
 - 2026-08-28: added a production bundle regression gate. The verified core
   build uses 346.5 KiB raw / 98.6 KiB gzip JavaScript, a 62.0 KiB gzip entry,
   and 3.5 KiB gzip CSS; all 231 tests and four E2E journeys passed.
+- 2026-08-28: pinned every GitHub release-workflow action to its current
+  upstream immutable commit, added weekly GitHub Actions Dependabot governance,
+  and added a contract that rejects floating actions, obsolete hard-coded test
+  paths, and non-blocking release checks. YAML parsing, lint, and all 234 core
+  tests passed; hosted execution remains billing-blocked.
 - 2026-08-28: on the staged Android stack before that E2E expansion, passed 247
   application tests, three mobile E2E journeys, a no-findings security diff
   scan, and JDK 21 debug APK assembly. No physical device was connected, so
