@@ -7,7 +7,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { BubbleState } from "../types";
 import { saveBlob, saveRecordingEmoji } from "../recordings";
-import { uploadRecording } from "../lib/uploadRecording";
+import { enqueueUpload, processSyncQueue, type SyncStatus } from "../syncQueue";
 
 export type RecPhase = "idle" | "recording" | "picking";
 
@@ -31,6 +31,8 @@ export interface UseRecordingParams {
   // upload row that accumulates every time a recording is uploaded
   // and then deleted client-side).
   onUploadComplete?: (bubbleId: string, serverAudioUrl: string, serverRecordingId: number) => void;
+  onDeleteComplete?: (bubbleId: string) => void;
+  onSyncStatus?: (bubbleId: string, status: SyncStatus | "synced" | "deleted", message?: string) => void;
   /** Called on recording errors (mic denied, getUserMedia failed, etc.) */
   onError?: (msg: string) => void;
 }
@@ -47,6 +49,7 @@ export interface UseRecordingResult {
   cancelRecording: () => void;
   /** Build the bubble from the pending blob + emoji, save to IDB, call onBubbleAdded */
   finalizeRecording: (emoji: string) => Promise<void>;
+  syncNow: () => Promise<void>;
   /** iOS Safari: empty audio.play() to unlock the AudioContext. Call from a user gesture. */
   unlockAudio: () => void;
 }
@@ -54,7 +57,38 @@ export interface UseRecordingResult {
 const DEFAULT_MAX_RECORDING_MS = 6000;
 
 export function useRecording(params: UseRecordingParams = {}): UseRecordingResult {
-  const { maxRecordingMs = DEFAULT_MAX_RECORDING_MS, onBubbleAdded, onSaved, onUploadComplete, onError } = params;
+  const {
+    maxRecordingMs = DEFAULT_MAX_RECORDING_MS,
+    onBubbleAdded,
+    onSaved,
+    onUploadComplete,
+    onDeleteComplete,
+    onSyncStatus,
+    onError,
+  } = params;
+
+  const syncCallbacksRef = useRef({ onUploadComplete, onDeleteComplete, onSyncStatus });
+  useEffect(() => {
+    syncCallbacksRef.current = { onUploadComplete, onDeleteComplete, onSyncStatus };
+  }, [onDeleteComplete, onSyncStatus, onUploadComplete]);
+  const drainSyncQueue = useCallback(() => processSyncQueue({
+    onStatus: (...args) => syncCallbacksRef.current.onSyncStatus?.(...args),
+    onUploadComplete: (bubbleId, recording) => {
+      syncCallbacksRef.current.onUploadComplete?.(bubbleId, recording.audioUrl, recording.id);
+    },
+    onDeleteComplete: (bubbleId) => syncCallbacksRef.current.onDeleteComplete?.(bubbleId),
+  }), []);
+
+  useEffect(() => {
+    void drainSyncQueue();
+    const onOnline = () => { void drainSyncQueue(); };
+    window.addEventListener("online", onOnline);
+    const timer = window.setInterval(() => { void drainSyncQueue(); }, 30_000);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.clearInterval(timer);
+    };
+  }, [drainSyncQueue]);
 
   // ── State ────────────────────────────────────────────────────────────────
   const [recPhase, setRecPhase] = useState<RecPhase>("idle");
@@ -289,31 +323,23 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
       // succeeded. Fires only on the successful-save path; an
       // onError above prevents reaching here on save failure.
       onSaved?.(bubble);
-      // Fire-and-forget server upload. The local IDB blob is the
-      // source of truth for playback; if the server push succeeds
-      // we notify the parent via onUploadComplete so it can swap
-      // the bubble's blobUrl + sound to the /uploads/... path. If
-      // it fails (offline, 4xx, 5xx) the bubble still works via
-      // the local blob: URL — the v56-5 reload-persistence gap
-      // is closed only on success.
-      const capturedBlob = pendingBlob;
-      const capturedId = id;
+      // Persist the upload intent and blob before attempting the network.
+      // The queue survives reload/offline periods and retries with the same
+      // operation id, allowing the server to deduplicate every attempt.
       const durationSec = recordingMs / 1000;
-      uploadRecording({
-        blob: capturedBlob,
-        name: bubble.id,
-        emoji,
-        durationSec,
-        onSuccess: (rec) => {
-          onUploadComplete?.(capturedId, rec.audioUrl, rec.id);
-        },
-        onError: (err) => {
-          if (err.offline) return; // expected when offline
-          if (typeof console !== "undefined" && console.warn) {
-            console.warn("recording upload failed:", err);
-          }
-        },
-      });
+      try {
+        await enqueueUpload({
+          bubbleId: id,
+          blob: pendingBlob,
+          name: bubble.id,
+          emoji,
+          durationSec,
+        });
+        onSyncStatus?.(id, "pending");
+        void drainSyncQueue();
+      } catch {
+        onError?.("Saved here, but couldn't queue online backup");
+      }
       // Reset pending state but do NOT revoke pendingUrl here — the
       // bubble still plays from that blob: URL until onUploadComplete
       // swaps it to /uploads/... (parent revokes the old blob: URL).
@@ -322,7 +348,7 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
       setPendingUrl(null);
       setRecPhase("idle");
     },
-    [pendingBlob, pendingUrl, recordingMs, onBubbleAdded, onSaved, onUploadComplete, onError]
+    [pendingBlob, pendingUrl, recordingMs, onBubbleAdded, onSaved, onSyncStatus, onError, drainSyncQueue]
   );
 
   return {
@@ -336,6 +362,7 @@ export function useRecording(params: UseRecordingParams = {}): UseRecordingResul
     stopRecording,
     cancelRecording,
     finalizeRecording,
+    syncNow: drainSyncQueue,
     unlockAudio,
   };
 }

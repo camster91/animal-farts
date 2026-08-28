@@ -390,6 +390,81 @@ describe("server integration: DELETE /api/recordings/:id (v76 orphan fix)", () =
       headers: { "x-device-id": "v76-auth-A" },
     });
   });
+
+  it("deduplicates upload retries by device + operation id", async (t) => {
+    if (!started) return t.skip();
+    const operationId = "upload-op-dedup-0001";
+    const upload = async () => {
+      const mp = multipartAudio(
+        "audio",
+        Buffer.from("durable-upload-dedup"),
+        "durable.webm",
+        "audio/webm",
+      );
+      return http("POST", "/api/recordings", {
+        headers: {
+          "x-device-id": "durable-device-1",
+          "x-operation-id": operationId,
+          "content-type": mp.contentType,
+          "content-length": String(mp.body.length),
+        },
+        body: mp.body,
+      });
+    };
+
+    const first = await upload();
+    const second = await upload();
+    assert.strictEqual(first.status, 200);
+    assert.strictEqual(second.status, 200);
+    const firstBody = JSON.parse(first.text);
+    const secondBody = JSON.parse(second.text);
+    assert.strictEqual(secondBody.id, firstBody.id, "retry must return the original row");
+    assert.strictEqual(secondBody.audioUrl, firstBody.audioUrl, "retry must return the original file");
+    assert.strictEqual(secondBody.deduplicated, true);
+
+    const listed = JSON.parse((await http("GET", "/api/recordings?limit=100")).text);
+    assert.strictEqual(
+      listed.recordings.filter((recording) => recording.id === firstBody.id).length,
+      1,
+      "idempotent retry must create exactly one recording",
+    );
+    await http("DELETE", `/api/recordings/${firstBody.id}`, {
+      headers: { "x-device-id": "durable-device-1" },
+    });
+  });
+
+  it("makes a completed delete retry idempotent", async (t) => {
+    if (!started) return t.skip();
+    const mp = multipartAudio("audio", Buffer.from("durable-delete"), "delete.webm", "audio/webm");
+    const upload = await http("POST", "/api/recordings", {
+      headers: {
+        "x-device-id": "durable-delete-device",
+        "x-operation-id": "upload-op-delete-0001",
+        "content-type": mp.contentType,
+        "content-length": String(mp.body.length),
+      },
+      body: mp.body,
+    });
+    assert.strictEqual(upload.status, 200);
+    const { id } = JSON.parse(upload.text);
+    const headers = {
+      "x-device-id": "durable-delete-device",
+      "x-operation-id": "delete-op-delete-0001",
+    };
+    const first = await http("DELETE", `/api/recordings/${id}`, { headers });
+    const retry = await http("DELETE", `/api/recordings/${id}`, { headers });
+    assert.strictEqual(first.status, 200);
+    assert.strictEqual(retry.status, 200);
+    assert.strictEqual(JSON.parse(retry.text).alreadyDeleted, true);
+
+    const unrelatedRetry = await http("DELETE", `/api/recordings/${id}`, {
+      headers: {
+        "x-device-id": "durable-delete-device",
+        "x-operation-id": "delete-op-delete-0002",
+      },
+    });
+    assert.strictEqual(unrelatedRetry.status, 404, "a different operation id must not match the tombstone");
+  });
 });
 
 describe("server integration: POST /api/recordings/:id/upvote (v78)", () => {

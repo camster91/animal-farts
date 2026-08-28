@@ -48,7 +48,7 @@ The `dist/` folder is a static bundle. The deploy script (`scripts/deploy-vps.sh
 - `src/pootbox/audioManager.ts` — single-voice audio policy (any new play stops the previous)
 - `src/audio/soundPool.ts` — auto-generated sound path pool
 - `src/audio/primeAudio.ts` — first-tap iOS Safari audio unlock
-- `src/pootbox/lib/uploadRecording.ts` — fire-and-forget POST to `/api/recordings`
+- `src/pootbox/syncQueue.ts` — IndexedDB-backed upload/delete queue with idempotent retries
 - `src/pootbox/lib/deviceId.ts` — per-device UUID stored in localStorage (used for v74 server-side identification)
 - `server/server.js` — Express + SQLite server, 22 endpoints
 - `scripts/scan-sounds.py` — auto-discovery scan that regenerates `src/pootbox/constants.ts`'s `BUILT_IN_SOUNDS` array

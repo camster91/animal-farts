@@ -11,7 +11,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { readFileSync, existsSync, readdirSync, mkdtempSync, cpSync, rmSync, statSync, readFile } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, mkdtempSync, mkdirSync, cpSync, rmSync, statSync, readFile } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -172,19 +172,21 @@ describe('v70: scan-sounds output invariants', () => {
     }
     if (pyRes.status !== 0) return;
 
-    // Copy public/sounds/, scripts/scan-sounds.py, and the
-    // current src/pootbox/constants.ts into a tmp dir. The scanner
-    // walks public/sounds/, reads constants.ts as a template,
-    // and rewrites the BUILT_IN_SOUNDS array. Running it on the
-    // copy and diffing against the original catches drift.
+    // Copy only the scanner inputs into a tmp dir. Copying the entire
+    // repository before deleting .git/node_modules made this small drift
+    // check require hundreds of megabytes of temporary free space.
     const tmp = mkdtempSync(join(tmpdir(), 'af-scan-'));
     try {
       const tmpRoot = join(tmp, 'project');
-      cpSync(join(import.meta.dirname, '..'), tmpRoot, { recursive: true });
-      // Skip node_modules / dist / .git — they're not inputs.
-      rmSync(join(tmpRoot, 'node_modules'), { recursive: true, force: true });
-      rmSync(join(tmpRoot, 'dist'), { recursive: true, force: true });
-      rmSync(join(tmpRoot, '.git'), { recursive: true, force: true });
+      mkdirSync(join(tmpRoot, 'public'), { recursive: true });
+      mkdirSync(join(tmpRoot, 'scripts'), { recursive: true });
+      mkdirSync(join(tmpRoot, 'src', 'pootbox'), { recursive: true });
+      cpSync(SOUNDS, join(tmpRoot, 'public', 'sounds'), { recursive: true });
+      cpSync(
+        fileURLToPath(new URL('../scripts/scan-sounds.py', import.meta.url)),
+        join(tmpRoot, 'scripts', 'scan-sounds.py'),
+      );
+      cpSync(CONSTANTS, join(tmpRoot, 'src', 'pootbox', 'constants.ts'));
 
       const res = spawnSync('python3', ['scripts/scan-sounds.py'], {
         cwd: tmpRoot,
