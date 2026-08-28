@@ -118,13 +118,14 @@ docker run -d --name "$NAME" --restart unless-stopped \
 curl --fail --silent --show-error --retry 30 --retry-delay 1 \
   "http://127.0.0.1:${PORT_HOST}/api/health" | jq -e '.ok == true' >/dev/null
 curl --fail --silent --show-error "${PUBLIC_ORIGIN}/" | grep -qi '<html'
-curl --fail --silent --show-error "${PUBLIC_ORIGIN}/api/recordings" | jq -e 'type == "array"' >/dev/null
+curl --fail --silent --show-error "${PUBLIC_ORIGIN}/api/recordings" | \
+  jq -e '.recordings | type == "array"' >/dev/null
 curl --fail --silent --show-error "${PUBLIC_ORIGIN}/manifest.webmanifest" | jq -e '.name' >/dev/null
 curl --fail --silent --show-error "${PUBLIC_ORIGIN}/sw.js" | grep -q 'CACHE_NAME'
 curl --fail --silent --show-error "${PUBLIC_ORIGIN}/api/health" | jq -e '.ok == true' >/dev/null
 /usr/local/sbin/animal-farts-ops-check
 
-FIRST_AUDIO="$(curl --fail --silent --show-error "${PUBLIC_ORIGIN}/api/recordings" | jq -r 'map(.audioUrl // empty) | first // empty')"
+FIRST_AUDIO="$(curl --fail --silent --show-error "${PUBLIC_ORIGIN}/api/recordings" | jq -r '.recordings | map(.audioUrl // empty) | first // empty')"
 if [[ -n "$FIRST_AUDIO" ]]; then
   curl --fail --silent --show-error --range 0-31 "${PUBLIC_ORIGIN}${FIRST_AUDIO}" >/dev/null
 fi
