@@ -16,9 +16,9 @@ Animal Farts / "PootBox" is a kids' PWA soundboard. It is one product delivered 
 
 ### Tests
 - TypeScript strict mode is enabled for app, Node config, and test compilation. Do not disable `strict` to work around a new error; fix or narrow the type instead.
-- `npm test` compiles the test targets and runs unit + server integration tests. The suite has historically contained 201 tests; treat the current test runner output as authoritative if that count changes.
+- `npm test` builds the production frontend, compiles the test targets, and runs unit + server integration tests. The production build is required because the server integration suite verifies the built SPA and static pages. The suite has historically contained 201 tests; treat the current test runner output as authoritative if that count changes.
 - `tests/server-integration.test.mjs` spawns the server on fixed port 5284 and sets `RATE_LIMIT_DISABLED=1` so its many uploads don't exhaust the 6/min upload limiter. If a stray `server.js` from an earlier run is holding 5284, kill leftovers (`ps aux | grep [s]erver.js`) before re-running.
-- `tests/unit-audio.test.mjs` is timing-sensitive. For CI or a loaded machine use the release-gate command: `node --test --test-concurrency=1 --test-timeout=30000 tests/unit-*.test.mjs tests/server-integration.test.mjs`.
+- `tests/unit-audio.test.mjs` is timing-sensitive. For CI or a loaded machine build first, then use the release-gate command: `npm run build && node --test --test-concurrency=1 --test-timeout=30000 tests/unit-*.test.mjs tests/server-integration.test.mjs`.
 - `server/moderation.js` is the single source of truth for the banned-word filter and is imported by both `server.js` and `tests/unit-v73-moderation-validation.test.mjs` (keep them in sync via the module, not copies).
 
 ### Lint / build / CI
