@@ -257,3 +257,7 @@ is warranted while these remain.
   exact staged Android stack passed lint, all 251 application tests, and all
   four E2E journeys. These additions affect tests, scripts, and documentation;
   the previously assembled application bundle and APK remain unchanged.
+- 2026-08-28: the final staged workflow-pinning reconciliation at `4c91ec7`
+  passed lint, all 254 application tests, the focused CI/operations/performance
+  contracts, and an npm audit with zero known vulnerabilities. Application
+  assets remain unchanged from the four-journey E2E and Android build evidence.
