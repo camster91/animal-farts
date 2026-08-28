@@ -98,7 +98,9 @@ completing the safeguards in `docs/v1-child-safety-boundary.md`.
 
 Current API, privacy, historical documents, and production authority are
 indexed in `docs/api.md`, `docs/v1-child-safety-boundary.md`,
-`docs/history.md`, and `docs/production-operations.md`.
+`docs/history.md`, and `docs/production-operations.md`. Product position,
+market evidence, metrics, decisions, access, risks, and the authoritative
+roadmap are maintained together in `docs/product-control.md`.
 
 ## Features
 

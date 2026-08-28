@@ -7,8 +7,9 @@ const ROOT = join(import.meta.dirname, "..");
 const read = (path) => readFileSync(join(ROOT, path), "utf8");
 
 describe("authoritative documentation", () => {
-  it("keeps the current API, privacy boundary, operations, and history index", () => {
+  it("keeps the current product, API, privacy, operations, and history authority", () => {
     for (const path of [
+      "docs/product-control.md",
       "docs/api.md",
       "docs/v1-child-safety-boundary.md",
       "docs/production-operations.md",
@@ -50,5 +51,23 @@ describe("authoritative documentation", () => {
     assert.doesNotMatch(api, /\/api\/recordings\/:id\/audio/);
     assert.match(readme, /never rebuilds source/);
     assert.doesNotMatch(readme, /builds the Docker image on the VPS/);
+  });
+
+  it("separates product evidence, hypotheses, metrics, access, and blockers", () => {
+    const product = read("docs/product-control.md");
+    for (const heading of [
+      "## Current truth",
+      "## Current market evidence",
+      "## Pricing and economics hypothesis",
+      "## Metrics and validation",
+      "## Access and approval register",
+      "## Authoritative roadmap",
+      "## Decisions and risks",
+      "## Work log",
+    ]) {
+      assert.ok(product.includes(heading), `missing ${heading}`);
+    }
+    assert.match(product, /not current results/i);
+    assert.match(product, /No .market-leading,. launch-ready, or customer-validated claim/i);
   });
 });
