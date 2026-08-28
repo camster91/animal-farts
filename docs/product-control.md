@@ -204,7 +204,7 @@ is warranted while these remain.
   enabled trusted ACME TLS, verified backup/restore, and installed ops checks.
 - 2026-08-28: fixed packaged Android routing for API and uploaded-audio access,
   added a strict Capacitor-origin CORS contract, repaired cross-origin native
-  audio playback, passed 243 application tests plus three mobile E2E journeys,
+  audio playback, passed 247 application tests plus three mobile E2E journeys,
   completed a security diff review with no reportable findings, and assembled a
   debug APK on JDK 21. Physical device QA and signed release approval remain
   open.
