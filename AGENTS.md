@@ -13,6 +13,7 @@ Animal Farts / "PootBox" is a kids' PWA soundboard. It is one product delivered 
 - Frontend-only dev: `npm run dev` (Vite on :5173). Gotcha: there is no Vite dev proxy, and the client calls the API via relative `/api/...` paths, so API-backed features (recording upload, share codes, social feed) do NOT work in this mode.
 - Full end-to-end (single origin, SPA + `/api` on one port): `PORT=3000 DATA_DIR=/workspace/.data bash scripts/serve-local.sh`. It builds `dist/` if missing and serves the built SPA and the API from one Express process, so relative `/api` paths resolve. Health check: `GET /api/health`. Run `npm run build` first if you changed frontend code (serve-local only auto-builds when `dist/` is absent).
 - Running `server/server.js` directly defaults to `PORT=5174`; `serve-local.sh` defaults to `3000`.
+- Production operations are defined in `docs/production-operations.md`; Traefik owns public ports 80/443 and ACME renewal. Do not reintroduce Caddy topology or overwrite shared fleet config from repository snapshots.
 
 ### Tests
 - TypeScript strict mode is enabled for app, Node config, and test compilation. Do not disable `strict` to work around a new error; fix or narrow the type instead.

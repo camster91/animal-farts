@@ -39,6 +39,10 @@ recording data.
 
 The `dist/` folder is a static bundle. The deploy script (`scripts/deploy-vps.sh`) bundles the source, builds the Docker image on the VPS (the Mac has no docker), and swaps in the new container with `camster91/animal-farts:<sha>`.
 
+Production topology, monitoring, backup, restore rehearsal, rollback, and the
+release checklist are in `docs/production-operations.md`. Traefik is the public
+TLS edge and owns ACME renewal as documented in `infra/traefik/README.md`.
+
 ## Stack
 
 - React 19 + TypeScript

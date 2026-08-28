@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+DOMAIN=${ANIMAL_FARTS_DOMAIN:-animals.ashbi.ca}
+BACKUP_DIR=${ANIMAL_FARTS_BACKUP_DIR:-/data/animal-farts/backups/daily}
+ALERT_URL=${ANIMAL_FARTS_ALERT_URL:-}
+failures=()
+
+fail() { failures+=("$1"); }
+notify() {
+  local status=$1 message=$2
+  [[ -n $ALERT_URL ]] || return 0
+  curl --fail --silent --show-error --max-time 10 \
+    --get --data-urlencode "status=$status" --data-urlencode "msg=$message" "$ALERT_URL" >/dev/null || true
+}
+
+health=$(curl --fail --silent --show-error --max-time 10 "https://$DOMAIN/api/health" 2>/dev/null || true)
+[[ $health == *'"ok":true'* ]] || fail 'public health failed'
+container_status=$(docker inspect animal-farts --format '{{.State.Status}}/{{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>/dev/null || true)
+[[ $container_status == running/healthy ]] || fail "container is $container_status"
+restart_count=$(docker inspect animal-farts --format '{{.RestartCount}}' 2>/dev/null || echo unknown)
+[[ $restart_count =~ ^[0-9]+$ ]] || fail 'container restart count unavailable'
+
+disk_used=$(df --output=pcent /data | tail -1 | tr -dc '0-9')
+inode_used=$(df --output=ipcent /data | tail -1 | tr -dc '0-9')
+((disk_used < 80)) || fail "disk usage is ${disk_used}%"
+((inode_used < 80)) || fail "inode usage is ${inode_used}%"
+
+cert_end=$(printf '' | openssl s_client -connect "$DOMAIN:443" -servername "$DOMAIN" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2-)
+if [[ -z $cert_end ]]; then
+  fail 'certificate expiry unavailable'
+else
+  seconds_left=$(( $(date -u -d "$cert_end" +%s) - $(date -u +%s) ))
+  days_left=$((seconds_left / 86400))
+  ((days_left >= 30)) || fail "certificate expires in ${days_left} days (30/14/7-day policy)"
+fi
+
+latest_backup=$(find "$BACKUP_DIR" -maxdepth 1 -type f -name 'animal-farts-????????T??????Z.tar.gz' -mmin -1560 -print -quit 2>/dev/null)
+[[ -n $latest_backup ]] || fail 'no successful backup in the last 26 hours'
+
+if ((${#failures[@]})); then
+  message=$(IFS='; '; echo "${failures[*]}")
+  notify down "$message"
+  printf 'OPS_CHECK=failed\n%s\n' "$message" >&2
+  exit 1
+fi
+notify up "health ok; disk ${disk_used}%; inodes ${inode_used}%; certificate ${days_left}d; backup current"
+printf 'OPS_CHECK=ok DISK=%s%% INODES=%s%% CERT_DAYS=%s RESTARTS=%s\n' "$disk_used" "$inode_used" "$days_left" "$restart_count"
