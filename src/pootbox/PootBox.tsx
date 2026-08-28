@@ -2,7 +2,7 @@
 // Rewritten from scratch to consume the v46 architecture:
 // multi-page tabs, random bubble spawn, library picker, and recording flow.
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
-import type { Page, BubbleState, Ripple, BuiltInSound } from "./types";
+import type { BubbleState, Ripple, BuiltInSound } from "./types";
 import { BUILT_IN_SOUNDS } from "./constants";
 import {
   addBubbleToPageDedup,
@@ -44,6 +44,12 @@ import {
   retryAllFailedOperations,
   type SyncStatus,
 } from "./syncQueue";
+import {
+  ShareMintError,
+  createSharedPage,
+  lookupShareCode,
+  mintShareCode,
+} from "./shareOrchestration";
 
 // ─── Main component ─────────────────────────────────────────────────────────
 
@@ -912,44 +918,22 @@ export default function PootBox() {
               // open in lookup mode doesn't show a stale code
           }}
           onGenerateCode={async () => {
-            // v76: actually mint a server-side share code. The previous
-            // code generated a 4-char code locally and never told the
-            // server about it, so the lookup endpoint always 404'd.
-            // Flow: pick the first bubble on the active page whose
-            // audioUrl is a /uploads/... path (the recording must be
-            // on the server; built-in /sounds/* paths aren't shareable
-            // via /api/share because the server only accepts /uploads/
-            // paths), then POST /api/share. Return the server's code.
             const page = pages.find(p => p.id === activePageId);
-            const shareable = page?.bubbles.find(b =>
-              typeof b.sound === "string" && b.sound.startsWith("/uploads/")
-            );
-            if (!shareable) {
-              showToast("Record a sound first to share it");
-              return "";
-            }
             try {
-              const r = await fetch("/api/share", {
-                method: "POST",
-                headers: {
-                  "content-type": "application/json",
-                  "x-device-id": getOrCreateDeviceId(),
-                },
-                body: JSON.stringify({
-                  audioUrl: shareable.sound,
-                  name: page?.name ?? "Shared sound",
-                  emoji: shareable.emoji,
-                }),
+              return await mintShareCode({
+                page,
+                deviceId: getOrCreateDeviceId(),
               });
-              if (!r.ok) {
-                const body = await r.json().catch(() => ({}));
-                showToast(kidSafeError(body.error, "Share failed — try again!"), { variant: "error" });
-                return "";
+            } catch (error) {
+              if (error instanceof ShareMintError) {
+                if (error.kind === "no-recording") {
+                  showToast(error.message);
+                } else {
+                  showToast(kidSafeError(error.message, "Share failed — try again!"), { variant: "error" });
+                }
+              } else {
+                showToast("Share failed — try again!", { variant: "error" });
               }
-              const data = await r.json();
-              return data.code ?? "";
-            } catch {
-              showToast("Share failed — are you online?", { variant: "error" });
               return "";
             }
           }}
@@ -974,34 +958,9 @@ export default function PootBox() {
             setLookupPrefill("");
             setShowShare("lookup");
           }}
-          onLookupCode={async (code) => {
-            if (!navigator.onLine) return { __offline: true, code };
-            try {
-              const r = await fetch(`/api/share/${code}`);
-              if (!r.ok) return null;
-              return await r.json();
-            } catch { return null; }
-          }}
+          onLookupCode={(code) => lookupShareCode({ code, online: navigator.onLine })}
           onAddAsPage={(data) => {
-            const newPage: Page = {
-              id: `page:share-${data.code}-${Date.now()}`,
-              name: data.name || `Shared ${data.code}`,
-              emoji: data.emoji || "🔗",
-              bubbles: [{
-                id: `b:shared:${data.code}:${Date.now()}`,
-                type: "custom",
-                emoji: data.emoji || "🔗",
-                blobUrl: data.audioUrl,
-                pos: { x: 0, y: 0 },
-                vel: { x: 0, y: 0 },
-                radius: 36,
-                mass: 1,
-                sound: data.audioUrl,
-                lastTouchedAt: -1,
-                lastReleasedAt: -1,
-              }],
-              createdAt: Date.now(),
-            };
+            const newPage = createSharedPage(data);
             setPages((prev) => [...prev, newPage]);
             setActivePageId(newPage.id);
             void savePage(newPage);
