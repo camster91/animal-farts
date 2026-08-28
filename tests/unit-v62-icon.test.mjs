@@ -8,8 +8,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const PUBLIC = new URL('../public/', import.meta.url).pathname;
+const PUBLIC = fileURLToPath(new URL('../public/', import.meta.url));
 
 function listPngsMatching(re) {
   return readdirSync(PUBLIC)
@@ -131,7 +132,7 @@ describe('v62 manifest — public/manifest.webmanifest', () => {
 
 describe('v62 index.html — meta + icon link invariants', () => {
   it('description matches v61 (not v46 "Tap circles, hold to hatch")', () => {
-    const html = readText(new URL('../index.html', import.meta.url).pathname);
+      const html = readText(fileURLToPath(new URL('../index.html', import.meta.url)));
     assert.ok(!html.includes('Tap circles, hold to hatch'),
       'description should not be the v46 copy');
     assert.ok(html.includes('Tap an animal card') || html.includes('card-grid'),
@@ -139,7 +140,7 @@ describe('v62 index.html — meta + icon link invariants', () => {
   });
 
   it('apple-touch-icon link is absolute (not relative)', () => {
-    const html = readText(new URL('../index.html', import.meta.url).pathname);
+      const html = readText(fileURLToPath(new URL('../index.html', import.meta.url)));
     // iOS ignores relative apple-touch-icon links. The link must
     // start with "/" (root-relative) or be a full URL.
     const m = html.match(/<link rel="apple-touch-icon"[^>]+href="([^"]+)"/);
@@ -149,7 +150,7 @@ describe('v62 index.html — meta + icon link invariants', () => {
   });
 
   it('icon-512 link is absolute', () => {
-    const html = readText(new URL('../index.html', import.meta.url).pathname);
+      const html = readText(fileURLToPath(new URL('../index.html', import.meta.url)));
     const m = html.match(/<link rel="icon"[^>]+sizes="512x512"[^>]+href="([^"]+)"/);
     assert.ok(m, 'index.html should have a 512x512 icon link');
     assert.ok(m[1].startsWith('/') || m[1].startsWith('http'),
@@ -157,7 +158,7 @@ describe('v62 index.html — meta + icon link invariants', () => {
   });
 
   it('manifest link is absolute', () => {
-    const html = readText(new URL('../index.html', import.meta.url).pathname);
+      const html = readText(fileURLToPath(new URL('../index.html', import.meta.url)));
     const m = html.match(/<link rel="manifest"[^>]+href="([^"]+)"/);
     assert.ok(m, 'index.html should have a manifest link');
     assert.ok(m[1].startsWith('/') || m[1].startsWith('http'),

@@ -120,7 +120,7 @@ const CardGrid: FC<CardGridProps> = ({
   // any state machinery. Suppressed under reduced-motion via
   // the .reduce-motion class on the outer CardGrid wrapper.
 
-  function handleCardTap(b: BubbleState, e: React.MouseEvent<HTMLButtonElement>) {
+  function handleCardTap(b: BubbleState, e: React.MouseEvent<HTMLElement>) {
     try { navigator.vibrate(20); } catch { /* ignore */ }
     // The bubble owns the audio — but to avoid a stack of audioManager
     // calls, route through the same path as BubbleCanvas did. The
@@ -134,6 +134,14 @@ const CardGrid: FC<CardGridProps> = ({
     onDeleteCard?.(b.id);
   }
 
+  function handleCardKeyDown(b: BubbleState, e: React.KeyboardEvent<HTMLDivElement>) {
+    // Action buttons inside the card own their keyboard events.
+    if (e.target !== e.currentTarget) return;
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    onTapBubble(b.id, 0, 0);
+  }
+
   // Inline styles here (no Tailwind) — the rest of the
   // app uses inline styles too (e.g. PootBox, SoundLibrary, etc.).
   function renderCard(b: BubbleState) {
@@ -141,11 +149,14 @@ const CardGrid: FC<CardGridProps> = ({
     const isCustom = b.type === "custom";
     const { name, isFart } = cardLabel(b);
     return (
-      <button
+      <div
         key={b.id}
         className="pootbox-card"
         data-bubble-id={b.id}
         onClick={(e) => handleCardTap(b, e)}
+        onKeyDown={(e) => handleCardKeyDown(b, e)}
+        role="button"
+        tabIndex={0}
         aria-label={`${name} — tap to play${isPlaying ? " (playing — tap to stop)" : ""}`}
         style={{
           position: "relative",
@@ -446,7 +457,7 @@ const CardGrid: FC<CardGridProps> = ({
             ×
           </button>
         )}
-      </button>
+      </div>
     );
   }
 

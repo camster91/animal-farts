@@ -1,6 +1,6 @@
 # 💥 Animal Farts
 
-A PWA for kids (5-7) — tap a sound tile, hear the sound. 30 built-in sounds across animal/fart/silly/instrument buckets, custom mic recording, page sharing via 4-character codes, combo + confetti feedback, fully offline-capable.
+A PWA for kids (5-7) — tap a sound tile, hear the sound. 30 built-in sounds across animal/fart/silly/instrument buckets, custom mic recording, page sharing via temporary codes, combo + confetti feedback, and offline playback.
 
 ## Run locally
 
@@ -35,7 +35,7 @@ The `dist/` folder is a static bundle. The deploy script (`scripts/deploy-vps.sh
 
 - **Primary:** 30 built-in sounds spanning animal (12), fart (6, with wet/dry/bubbly/squeaky/long/echo sub-buckets), silly (6), and instrument (6) categories. Sources include [MyInstants](https://www.myinstants.com) (CC-licensed user uploads) and a v70 scan that auto-discovers any new `.mp3` dropped into `public/sounds/`.
 - **Fallback:** Web Audio API synth per animal — kicks in automatically if a sample fails to load
-- **Custom:** the mic-capture flow uploads the kid's recording to `/api/recordings` and stores the blob URL locally in IndexedDB so recordings survive a reload
+- **Custom:** the mic-capture flow stores the recording locally in IndexedDB and attempts an online upload to `/api/recordings`; the local copy remains the offline fallback
 - iOS Safari audio unlock on first tap (muted-play warmup)
 
 ## Files

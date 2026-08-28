@@ -26,6 +26,8 @@ const BASE = `http://127.0.0.1:${PORT}`;
 let dataDir;
 let proc;
 let started = false;
+let startupStderr = "";
+let startupExit = null;
 
 function http(method, path, { headers = {}, body } = {}) {
   return new Promise((resolve, reject) => {
@@ -96,12 +98,10 @@ function multipartAudio(fieldName, fileBuffer, filename, mime) {
   };
 }
 
+describe("server integration", () => {
 before(async () => {
-  // Skip the whole suite if the server file isn't present (e.g. someone ran
-  // `git clean` and missed the server dir). The unit tests will still pass.
   if (!existsSync(SERVER)) {
-    console.warn(`[server-integration] skipping: ${SERVER} not found`);
-    return;
+    throw new Error(`[server-integration] ${SERVER} not found`);
   }
   dataDir = mkdtempSync(join(tmpdir(), "af-srv-int-"));
   proc = spawn("node", [SERVER], {
@@ -119,9 +119,23 @@ before(async () => {
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  proc.stderr.on("data", (chunk) => {
+    startupStderr += String(chunk);
+  });
+  proc.once("exit", (code, signal) => {
+    startupExit = { code, signal };
+  });
   // Wait for /api/health to return 200 (max 5s).
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
+    if (startupExit) {
+      throw new Error(
+        `[server-integration] server exited before becoming healthy ` +
+          `(code=${startupExit.code}, signal=${startupExit.signal ?? "none"}).${
+            startupStderr ? ` Startup stderr:\n${startupStderr.trim()}` : ""
+          }`,
+      );
+    }
     try {
       const r = await http("GET", "/api/health");
       if (r.status === 200) {
@@ -133,8 +147,12 @@ before(async () => {
     }
     await new Promise((res) => setTimeout(res, 100));
   }
-  // give up — subsequent tests will fail with connection errors
-});
+  throw new Error(
+    `[server-integration] server did not become healthy within 5s.${
+      startupStderr ? ` Startup stderr:\n${startupStderr.trim()}` : ""
+    }`,
+  );
+}, { timeout: 30000 });
 
 after(async () => {
   if (proc) proc.kill("SIGKILL");
@@ -881,4 +899,6 @@ describe("server integration: production audit security fixes", () => {
     assert.strictEqual(r.status, 400, `expected 400, got ${r.status} ${r.text}`);
     assert.match(JSON.parse(r.text).error, /webm|audio|valid/i);
   });
+});
+
 });
