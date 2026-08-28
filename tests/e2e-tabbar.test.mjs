@@ -94,8 +94,8 @@ describe("v80 regression: tab bar doesn't block FirstRunIntro", () => {
   });
 });
 
-describe("v80 QA: tab bar functionality (rebuilt in e231d82)", () => {
-  it("tab bar renders 3 buttons at the bottom of the viewport", async () => {
+describe("v1 child-safety navigation", () => {
+  it("tab bar exposes Play only at the bottom of the viewport", async () => {
     // Force the first-run modal to appear
     await page.evaluate(() => {
       localStorage.clear();
@@ -106,7 +106,7 @@ describe("v80 QA: tab bar functionality (rebuilt in e231d82)", () => {
     await page.locator('[role="dialog"] button').first().click({ timeout: 5000 });
     await page.waitForTimeout(500);
 
-    // Verify tab bar exists and has 3 buttons
+    // Public social navigation is disabled in the normal v1 build.
     const tabInfo = await page.evaluate(() => {
       const nav = document.querySelector('nav[role="navigation"]');
       if (!nav) return { exists: false };
@@ -120,11 +120,11 @@ describe("v80 QA: tab bar functionality (rebuilt in e231d82)", () => {
       };
     });
     assert.ok(tabInfo.exists, "tab bar nav should exist");
-    assert.strictEqual(tabInfo.buttonCount, 3, "tab bar should have 3 buttons");
+    assert.strictEqual(tabInfo.buttonCount, 1, "tab bar should expose only Play");
     assert.deepStrictEqual(
       tabInfo.labels.sort(),
-      ["Friends", "Me", "Play"],
-      "tab buttons should be Play / Friends / Me",
+      ["Play"],
+      "public Friends and Me navigation must not ship in v1",
     );
     // Nav should be at the bottom of the viewport
     assert.ok(
@@ -133,45 +133,7 @@ describe("v80 QA: tab bar functionality (rebuilt in e231d82)", () => {
     );
   });
 
-  it("tapping Friends tab switches to feed view", async () => {
-    await page.evaluate(() => {
-      localStorage.clear();
-      localStorage.setItem("pootbox-current-view-v1", "play");
-    });
-    await page.reload({ waitUntil: "commit" });
-    await page.waitForTimeout(2500);
-    await page.locator('[role="dialog"] button').first().click({ timeout: 5000 });
-    await page.waitForTimeout(500);
-
-    // Find the Friends tab button
-    await page.locator('button[aria-label="Friends"]').first().click({ timeout: 5000 });
-    await page.waitForTimeout(500);
-
-    // The Friends view renders <Feed> with a "Friends" header
-    const hasFriendsHeader = await page.locator("h1:has-text('Friends')").count();
-    assert.ok(hasFriendsHeader >= 1, "Friends view should render the Friends header");
-  });
-
-  it("tapping Me tab switches to profile view", async () => {
-    await page.evaluate(() => {
-      localStorage.clear();
-      localStorage.setItem("pootbox-current-view-v1", "play");
-    });
-    await page.reload({ waitUntil: "commit" });
-    await page.waitForTimeout(2500);
-    await page.locator('[role="dialog"] button').first().click({ timeout: 5000 });
-    await page.waitForTimeout(500);
-
-    await page.locator('button[aria-label="Me"]').first().click({ timeout: 5000 });
-    await page.waitForTimeout(500);
-
-    const hasProfileHeader = await page.locator("h1:has-text('You')").count();
-    assert.ok(hasProfileHeader >= 1, "Me view should render the You header");
-  });
-
-  it("tapping Play tab returns to play view", async () => {
-    // Start in profile view (no modal since dismiss key is set from
-    // the previous test)
+  it("stored social view state is ignored and Play renders", async () => {
     await page.evaluate(() => {
       localStorage.setItem("pootbox-firstrun-done", "1");
       localStorage.setItem("pootbox-onboarded-v2", "1");
@@ -180,10 +142,6 @@ describe("v80 QA: tab bar functionality (rebuilt in e231d82)", () => {
     await page.reload({ waitUntil: "commit" });
     await page.waitForTimeout(2500);
 
-    await page.locator('button[aria-label="Play"]').first().click({ timeout: 5000 });
-    await page.waitForTimeout(500);
-
-    // Should see card grid (tap-to-play buttons)
     const cardCount = await page.locator('button[aria-label*="— tap to play"]').count();
     assert.ok(cardCount > 0, `Play view should render the card grid, got ${cardCount} cards`);
   });

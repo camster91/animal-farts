@@ -1,5 +1,5 @@
 // FirstRunIntro — crisp 3-step FTUE walkthrough for core features.
-// Steps: Tap to play → Change & record → Friends & share.
+// Steps: Tap to play → Change & record → private sharing.
 // Persisted via pootbox-firstrun-done (same key Settings can reset).
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -21,9 +21,9 @@ const STEPS = [
     body: "Change any card’s sound, or record your own with the mic.",
   },
   {
-    icon: "👥",
+    icon: "🔗",
     title: "Share with friends",
-    body: "Visit Friends to hear pals, follow them, and swap share codes.",
+    body: "Ask a grown-up to help swap a private share code with someone you know.",
   },
 ] as const;
 

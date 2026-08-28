@@ -7,7 +7,7 @@ Animal Farts / "PootBox" is a kids' PWA soundboard. It is one product delivered 
 ### Layout / services
 - Two independent npm projects, each with its own lockfile: the repo root (frontend + Vite + Capacitor tooling) and `server/` (Express + `better-sqlite3` + `multer`). Install both before running integration tests.
 - The only backend service is `server/server.js`. SQLite (`better-sqlite3`) is embedded and the uploads dir is on the local filesystem — there is no external database, cache, or third-party dependency. Both are auto-created on startup from `DB_PATH` / `UPLOAD_DIR`.
-- Top-level Play / Friends / profile views are code-split with `React.lazy` and `Suspense`. Do not reintroduce eager imports in `src/App.tsx` without a measured reason.
+- Play and the dormant Friends/profile views are code-split with `React.lazy` and `Suspense`. The v1 production default exposes Play only; do not enable the social feature flags or reintroduce eager imports without the safeguards documented in `docs/v1-child-safety-boundary.md`.
 
 ### Running
 - Frontend-only dev: `npm run dev` (Vite on :5173). Gotcha: there is no Vite dev proxy, and the client calls the API via relative `/api/...` paths, so API-backed features (recording upload, share codes, social feed) do NOT work in this mode.
@@ -18,7 +18,7 @@ Animal Farts / "PootBox" is a kids' PWA soundboard. It is one product delivered 
 - TypeScript strict mode is enabled for app, Node config, and test compilation. Do not disable `strict` to work around a new error; fix or narrow the type instead.
 - `npm test` builds the production frontend, compiles the test targets, and runs unit + server integration tests. The production build is required because the server integration suite verifies the built SPA and static pages. The suite has historically contained 201 tests; treat the current test runner output as authoritative if that count changes.
 - `tests/server-integration.test.mjs` spawns the server on fixed port 5284 and sets `RATE_LIMIT_DISABLED=1` so its many uploads don't exhaust the 6/min upload limiter. If a stray `server.js` from an earlier run is holding 5284, kill leftovers (`ps aux | grep [s]erver.js`) before re-running.
-- `tests/unit-audio.test.mjs` is timing-sensitive. For CI or a loaded machine build first, then use the release-gate command: `npm run build && node --test --test-concurrency=1 --test-timeout=30000 tests/unit-*.test.mjs tests/server-integration.test.mjs`.
+- `tests/unit-audio.test.mjs` is timing-sensitive. For CI or a loaded machine build first, then use the release-gate command: `npm run build && node --test --test-concurrency=1 --test-timeout=30000 tests/unit-*.test.mjs tests/server-integration.test.mjs tests/server-social-disabled.test.mjs`.
 - `server/moderation.js` is the single source of truth for the banned-word filter and is imported by both `server.js` and `tests/unit-v73-moderation-validation.test.mjs` (keep them in sync via the module, not copies).
 
 ### Lint / build / CI
@@ -30,3 +30,4 @@ Animal Farts / "PootBox" is a kids' PWA soundboard. It is one product delivered 
 ### Product safety
 - This app is aimed at young children. Treat public profiles, discovery, follows, comments, reactions, recording uploads, and sharing as child-safety/privacy surfaces, not ordinary social features.
 - Prefer controlled family/friend sharing over broader discovery when it meets the same product goal. Do not expand public social functionality without an explicit product decision covering discoverability, public data, moderation/reporting, parent controls, and data retention/deletion.
+- The current product decision is `docs/v1-child-safety-boundary.md`: social/discovery routes and UI are disabled by default. Controlled tests must set both frontend and server flags explicitly.

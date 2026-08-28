@@ -59,7 +59,7 @@ jobs:
           CI: true
 
       - name: Test
-        run: node --test --test-concurrency=1 --test-timeout=30000 tests/unit-*.test.mjs tests/server-integration.test.mjs
+        run: node --test --test-concurrency=1 --test-timeout=30000 tests/unit-*.test.mjs tests/server-integration.test.mjs tests/server-social-disabled.test.mjs
         env:
           CI: true
 

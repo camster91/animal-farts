@@ -26,6 +26,7 @@
 
 import { lazy, Suspense, useState, useEffect } from "react";
 import { ToastProvider } from "./pootbox/ui/ToastContext";
+import { SOCIAL_FEATURES_ENABLED } from "./config/features";
 
 const PootBox = lazy(() => import("./pootbox/PootBox"));
 const Feed = lazy(() => import("./pootbox/components/Feed"));
@@ -59,6 +60,7 @@ function ViewFallback() {
 
 export default function App() {
   const [view, setView] = useState<View>(() => {
+    if (!SOCIAL_FEATURES_ENABLED) return "play";
     try {
       const stored = localStorage.getItem(VIEW_KEY);
       if (stored === "play" || stored === "feed" || stored === "profile") return stored;
@@ -97,13 +99,13 @@ export default function App() {
           {view === "play" && (
             <PootBox />
           )}
-          {view === "feed" && (
+          {SOCIAL_FEATURES_ENABLED && view === "feed" && (
             <Feed
               onBack={() => setView("play")}
               onOpenProfile={(handle) => openPublicProfile(handle)}
             />
           )}
-          {view === "profile" && (
+          {SOCIAL_FEATURES_ENABLED && view === "profile" && (
             profileHandle
               ? <PublicProfile handle={profileHandle} onBack={backToOwnProfile} onOpenFeed={() => setView("feed")} />
               : <Profile onBack={() => setView("play")} />
@@ -140,18 +142,22 @@ export default function App() {
             active={view === "play"}
             onClick={() => { setProfileHandle(null); setView("play"); }}
           />
-          <TabButton
-            label="Friends"
-            icon="👥"
-            active={view === "feed"}
-            onClick={() => { setProfileHandle(null); setView("feed"); }}
-          />
-          <TabButton
-            label="Me"
-            icon="🙂"
-            active={view === "profile" && profileHandle === null}
-            onClick={() => { setProfileHandle(null); setView("profile"); }}
-          />
+          {SOCIAL_FEATURES_ENABLED && (
+            <>
+              <TabButton
+                label="Friends"
+                icon="👥"
+                active={view === "feed"}
+                onClick={() => { setProfileHandle(null); setView("feed"); }}
+              />
+              <TabButton
+                label="Me"
+                icon="🙂"
+                active={view === "profile" && profileHandle === null}
+                onClick={() => { setProfileHandle(null); setView("profile"); }}
+              />
+            </>
+          )}
         </nav>
       </div>
     </ToastProvider>

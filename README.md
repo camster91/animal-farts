@@ -1,6 +1,8 @@
 # 💥 Animal Farts
 
-A PWA for kids (5-7) — tap a sound tile, hear the sound. 30 built-in sounds across animal/fart/silly/instrument buckets, custom mic recording, page sharing via 4-character codes, combo + confetti feedback, fully offline-capable.
+A PWA for kids (5-7) — tap a sound tile, hear the sound. It includes built-in sounds, custom microphone recording, controlled sharing via expiring eight-character codes, combo/confetti feedback, and offline play.
+
+The v1 safety boundary keeps public profiles, discovery, follows, feeds, comments, reactions, and public recording listings disabled by default. See `docs/v1-child-safety-boundary.md`.
 
 ## Run locally
 
@@ -52,6 +54,10 @@ The `dist/` folder is a static bundle. The deploy script (`scripts/deploy-vps.sh
 - `scripts/scan-sounds.py` — auto-discovery scan that regenerates `src/pootbox/constants.ts`'s `BUILT_IN_SOUNDS` array
 - `public/sw.js` — service worker for offline-first precache (shell + Fredoka fonts)
 - `public/sounds/*.mp3` — the sound library
+
+## Child-safety feature gate
+
+Normal builds and production containers expose Play plus controlled share codes only. For controlled regression testing of the dormant social implementation, build with `VITE_SOCIAL_FEATURES_ENABLED=true` and run the server with `SOCIAL_FEATURES_ENABLED=1`. Do not enable these flags in production without completing the safeguards in `docs/v1-child-safety-boundary.md`.
 
 ## Features
 

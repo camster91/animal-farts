@@ -89,7 +89,8 @@ ssh "${VPS}" "
   docker run -d --name ${NAME} --restart unless-stopped \
     -p 127.0.0.1:${PORT_HOST}:${PORT_CONT} \
     -v ${DATA_DIR}:/app/data \
-    -e NODE_ENV=production -e DB_PATH=/app/data/farts.db -e UPLOAD_DIR=/app/data/uploads -e PORT=${PORT_CONT} \
+    -e NODE_ENV=production -e SOCIAL_FEATURES_ENABLED=0 \
+    -e DB_PATH=/app/data/farts.db -e UPLOAD_DIR=/app/data/uploads -e PORT=${PORT_CONT} \
     --health-cmd='wget -q -O - http://127.0.0.1:${PORT_CONT}/api/health || exit 1' \
     --health-interval=30s --health-timeout=5s --health-retries=3 --health-start-period=10s \
     ${IMAGE}

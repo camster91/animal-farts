@@ -25,10 +25,11 @@ DATA_DIR="${DATA_DIR:-$PWD/.data}"
 DB_PATH="${DB_PATH:-$DATA_DIR/farts.db}"
 UPLOAD_DIR="${UPLOAD_DIR:-$DATA_DIR/uploads}"
 NODE_ENV="${NODE_ENV:-production}"
+SOCIAL_FEATURES_ENABLED="${SOCIAL_FEATURES_ENABLED:-0}"
 
 mkdir -p "$DATA_DIR" "$UPLOAD_DIR"
 
-echo "[serve-local] port=$PORT db=$DB_PATH uploads=$UPLOAD_DIR node_env=$NODE_ENV"
+echo "[serve-local] port=$PORT db=$DB_PATH uploads=$UPLOAD_DIR node_env=$NODE_ENV social=$SOCIAL_FEATURES_ENABLED"
 
 # 1. Make sure the SPA is built
 if [[ ! -f dist/index.html ]]; then
@@ -48,4 +49,5 @@ exec env \
   DB_PATH="$DB_PATH" \
   UPLOAD_DIR="$UPLOAD_DIR" \
   NODE_ENV="$NODE_ENV" \
+  SOCIAL_FEATURES_ENABLED="$SOCIAL_FEATURES_ENABLED" \
   node server/server.js

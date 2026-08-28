@@ -1,10 +1,10 @@
 # Current gaps — Animal Farts / PootBox
 
-Updated 2026-08-11. This file supersedes the June 13, 2026 gap review, which described the app before the Friends / Me social surfaces and production-hardening work landed.
+Updated 2026-08-28. This file supersedes the June 13, 2026 gap review and the earlier August state that exposed Friends / Me by default.
 
 ## Current product state
 
-The app now has three top-level experiences: **Play**, **Friends**, and **Me**, plus public profiles opened from the Friends feed. Custom recordings, share codes, server-backed social APIs, offline PWA behavior, Android/Capacitor packaging, moderation, rate limiting, upload validation, and device-scoped write authorization are all implemented.
+The v1 default is **Play** plus controlled, expiring share codes. Friends, Me, public profiles/discovery, follows, feeds, upvotes, reactions, comments, and public recording listings are dormant behind explicit frontend and server test flags under `docs/v1-child-safety-boundary.md`. Custom recordings, offline PWA behavior, Android/Capacitor packaging, moderation, rate limiting, upload validation, and device-scoped write authorization remain implemented.
 
 The old statement that "the social app exists on the server and nowhere else" is no longer true. Historical review documents should be treated as point-in-time references, not implementation instructions.
 
@@ -26,9 +26,9 @@ Animal Farts works best when the first interaction is immediate: open the app, t
 
 ### 3. Treat social features as a child-safety surface
 
-Because the product is aimed at young children, any public sharing, profiles, comments, reactions, following, search, or discovery must be reviewed as a safety/privacy feature rather than ordinary social-app functionality. Prefer controlled sharing and family/friend codes over broader discovery when the same product goal can be met.
+Because the product is aimed at young children, public social and discovery surfaces are disabled for v1. `docs/v1-child-safety-boundary.md` records the decision and the safeguards required before reconsidering them.
 
-Before expanding the social surface, require an explicit product decision covering:
+Before expanding the social surface, require a new reviewed product decision covering:
 
 - who can discover whom;
 - what information is public;

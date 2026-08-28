@@ -38,6 +38,7 @@ import VolumeSlider from "./components/VolumeSlider";
 import InstallPrompt from "./components/InstallPrompt";
 import UpdatePrompt from "./components/UpdatePrompt";
 import FooterBar from "./components/FooterBar";
+import { SOCIAL_FEATURES_ENABLED } from "../config/features";
 
 // ─── Main component ─────────────────────────────────────────────────────────
 
@@ -191,6 +192,7 @@ export default function PootBox() {
   // out in parallel; errors are caught per-recording so one
   // network hiccup doesn't lose the rest.
   useEffect(() => {
+    if (!SOCIAL_FEATURES_ENABLED) return;
     const ids = Object.entries(serverRecordingIds);
     if (ids.length === 0) return;
     const deviceId = getOrCreateDeviceId();
@@ -605,8 +607,8 @@ export default function PootBox() {
         // The server endpoint is idempotent (POST toggles the
         // device's vote on/off per the votes table), so we don't
         // need client-side state. Just fire and toast.
-        upvoteEligible={new Set(Object.keys(serverRecordingIds))}
-        onUpvoteBubble={async (id) => {
+        upvoteEligible={SOCIAL_FEATURES_ENABLED ? new Set(Object.keys(serverRecordingIds)) : undefined}
+        onUpvoteBubble={SOCIAL_FEATURES_ENABLED ? async (id) => {
           const serverId = serverRecordingIds[id];
           if (typeof serverId !== "number") return;
           try {
@@ -618,15 +620,15 @@ export default function PootBox() {
           } catch {
             showToast("Upvote failed — are you online?", { variant: "error" });
           }
-        }}
+        } : undefined}
         // v78: emoji reactions (👍/😂/💀). Same gating as upvote:
         // only for uploaded custom cards. reactions is a Map of
         // bubbleId → {counts, mine}, populated by the batch-fetch
         // effect above and updated optimistically when the kid
         // taps an emoji. The CardGrid renders 3 emoji buttons in
         // a row above the action bar.
-        reactions={reactions}
-        onReactBubble={async (id, emoji) => {
+        reactions={SOCIAL_FEATURES_ENABLED ? reactions : undefined}
+        onReactBubble={SOCIAL_FEATURES_ENABLED ? async (id, emoji) => {
           const serverId = serverRecordingIds[id];
           if (typeof serverId !== "number") return;
           try {
@@ -652,9 +654,9 @@ export default function PootBox() {
           } catch {
             showToast("Reaction failed — are you online?", { variant: "error" });
           }
-        }}
+        } : undefined}
         // v78: open the comments sheet for a bubble.
-        onOpenComments={(id) => setCommentsBubbleId(id)}
+        onOpenComments={SOCIAL_FEATURES_ENABLED ? (id) => setCommentsBubbleId(id) : undefined}
         onDeleteCard={async (id) => {
           // v61: delete a custom card. The original onRemoveBubble
           // also revokes the blob: URL; for v61 share-imported
@@ -924,7 +926,7 @@ export default function PootBox() {
           and the kid can't post. The key is commentsBubbleId so
           the sheet remounts with fresh state when the kid opens
           a different recording's comments. */}
-      {commentsBubbleId && (
+      {SOCIAL_FEATURES_ENABLED && commentsBubbleId && (
         (() => {
           const serverId = serverRecordingIds[commentsBubbleId];
           if (typeof serverId !== "number") {
