@@ -390,10 +390,7 @@ export default function PootBox() {
     };
     window.addEventListener("devicemotion", handler);
     return () => window.removeEventListener("devicemotion", handler);
-    // setSoundPlaying and showToast are stable (useState setter), so
-    // an empty deps array is intentional — the handler captures the
-    // latest refs but doesn't need to auto-update when they change.
-  }, []);
+  }, [bubblesRef, setShowSettings, setSoundPlaying, showToast]);
 
   // ── Sound playing poll (extracted to useSoundPlaying) ─────────────────
   // v59: also reads the currently-playing bubble id (3rd tuple element)
@@ -425,9 +422,10 @@ export default function PootBox() {
   // ── Cleanup ────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    const blankHoldTimerId = blankHoldTimer.current;
     return () => {
       if (comboResetTimerRef.current) window.clearTimeout(comboResetTimerRef.current);
-      if (blankHoldTimer.current) window.clearTimeout(blankHoldTimer.current);
+      if (blankHoldTimerId) window.clearTimeout(blankHoldTimerId);
       if (shakeWindowTimerRef.current) window.clearTimeout(shakeWindowTimerRef.current);
     };
   }, []);
@@ -482,7 +480,7 @@ export default function PootBox() {
       return { ...p, bubbles: [...p.bubbles, bubble] };
     }));
     setShowLibrary(false);
-  }, [activePageId, pages, showToast]);
+  }, [activePageId, setPages, setShowLibrary]);
 
   // v72 (code review 2026-06-16 #5): removed the dead onRemoveBubble
   // callback. The v52-era code had it as a separate useCallback that
@@ -499,7 +497,7 @@ export default function PootBox() {
     const id = ++rippleIdRef.current;
     setRipples((prev: Ripple[]) => [...prev, { id, x, y, color }]);
     setTimeout(() => setRipples((prev: Ripple[]) => prev.filter((r: Ripple) => r.id !== id)), 700);
-  }, []);
+  }, [setRipples]);
 
   // Play a sound from a bubble. The single-voice policy in audioManager.ts
   // already stops the previous sound before playing the new one, so we
@@ -568,7 +566,7 @@ export default function PootBox() {
       setShowOnboarding(false);
       try { localStorage.setItem("pootbox-onboarded-v2", "1"); } catch { /* ignore */ }
     }
-  }, [playFromBubble, spawnRipple, showOnboarding, triggerComboBurst, triggerConfetti]);
+  }, [bubblesRef, playFromBubble, setComboCount, setShowOnboarding, settingsRef, setSoundPlaying, showOnboarding, spawnRipple, triggerComboBurst, triggerConfetti]);
 
   // v61: only the blank-canvas pointer handlers are still used
   // (5-second long-press to open settings, retained as a parent
