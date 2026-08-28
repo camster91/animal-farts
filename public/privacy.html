@@ -61,33 +61,43 @@
     <h1>💨 PootBox Privacy</h1>
 
     <section>
+      <h2>Current notice</h2>
+      <p>Last updated August 28, 2026. PootBox v1 is a sound toy with private, code-based sharing. Public profiles, discovery, follows, feeds, comments, reactions, and public recording lists are turned off.</p>
+    </section>
+
+    <section>
       <h2>No account needed</h2>
-      <p>We don't ask for your name, email, or any account. Just open the app and start playing.</p>
+      <p>We don't ask for an email address or account. The app creates a random identifier in this browser so the server can recognize which recordings this device may delete. Clearing browser data removes the local identifier and may prevent the app from proving ownership of an earlier upload.</p>
     </section>
 
     <section>
-      <h2>What is stored</h2>
-      <p>Built-in sounds, pages, and local recordings are stored in browser storage on this device. When the app is online, a recorded sound is also uploaded to the PootBox server so it can survive a reload and support sharing. The server stores the audio, its display name and emoji, a random device identifier, and basic timestamps.</p>
+      <h2>What stays on the device</h2>
+      <p>Pages, settings, recording names, and local recording copies are stored in browser storage. They can be removed with the app's controls or by clearing this site's browser data.</p>
     </section>
 
     <section>
-      <h2>Microphone</h2>
-      <p>The microphone is only used while you are actively recording a sound. We never listen in the background. Local recordings remain playable offline. Online uploads happen only after a recording is made and can be removed from the app; shared recordings may be accessible to anyone who has the share code.</p>
+      <h2>Microphone and uploads</h2>
+      <p>The microphone is used only after you start a recording, never in the background. When the app is online, a completed recording is uploaded to the PootBox server so it can survive a reload and be shared. The server stores the audio file, its name and emoji, the random device identifier, and timestamps. A device may store up to 40 server recordings.</p>
     </section>
 
     <section>
       <h2>Sharing and deletion</h2>
-      <p>Sharing creates a temporary code for a recorded sound. Share codes expire after 30 days. Deleting a recording from the app requests deletion of its server copy, while local browser storage may retain the offline copy until it is removed from the device or browser data is cleared.</p>
+      <p>Sharing creates an eight-character code that expires after 30 days. Anyone who has a valid code can play that recording, so a grown-up should help choose recipients. Deleting a recording asks the server to remove its metadata and audio file. If the device is offline, server deletion may be delayed or fail; durable retry work is in progress. Clearing only browser data does not delete an existing server copy.</p>
+    </section>
+
+    <section>
+      <h2>Operations and safety</h2>
+      <p>The server rate-limits requests, validates uploaded audio, and filters blocked words. Error and feedback reports may write a sanitized message, stack, page URL, browser user agent, timestamp, and legacy profile identifier to operator logs. We do not intentionally log recorded audio or request bodies. Public social features remain unavailable until guardian controls, reporting, blocking, retention, deletion, and human abuse-response processes are defined and tested.</p>
     </section>
 
     <section>
       <h2>No ads, no analytics</h2>
-      <p>We don't track you, we don't show ads, and we don't sell your data. PootBox is made for kids and families.</p>
+      <p>The v1 app has no advertising or analytics SDK and we don't sell data. PootBox is made for kids and families.</p>
     </section>
 
     <section>
       <h2>Questions?</h2>
-      <p>Contact us at<a href="mailto:hello@pootbox.app">hello@pootbox.app</a> or visit our store listing for more information.</p>
+      <p>Contact us at <a href="mailto:hello@pootbox.app">hello@pootbox.app</a>.</p>
     </section>
   </div>
 </body>

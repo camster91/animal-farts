@@ -220,6 +220,10 @@ app.set("trust proxy", 1);
 // asserts on are still emitted. `fixed` limiters keep their real cap even in
 // test mode (a test asserts the share-lookup header reports 30).
 const RATE_LIMIT_DISABLED = process.env.RATE_LIMIT_DISABLED === "1";
+// Public social/discovery is outside the approved v1 child-safety boundary.
+// It is opt-in for controlled testing only; production defaults to private
+// play, durable uploads/deletes, and possession-based share codes.
+const SOCIAL_FEATURES_ENABLED = process.env.SOCIAL_FEATURES_ENABLED === "1";
 if (RATE_LIMIT_DISABLED && process.env.NODE_ENV === "production") {
   // Integration tests intentionally set both. Never enable this on a
   // real production deploy — it raises every abuse ceiling to ~1M/min.
@@ -256,6 +260,23 @@ const telemetryLimiter = makeLimiter(30);
 // SPA shell bypass the limiter so a service-worker pre-cache or a kid's
 // first play can't be 429-throttled out of a legit request.
 app.use("/api", generalLimiter);
+
+function isDisabledSocialRoute(req) {
+  const p = req.path;
+  if (p === "/api/recordings" && req.method === "GET") return true;
+  if (/^\/api\/recordings\/[^/]+\/(upvote|comments|reactions)$/.test(p)) return true;
+  if (/^\/api\/comments\/[^/]+$/.test(p)) return true;
+  if (p === "/api/me" || p === "/api/feed" || p === "/api/users") return true;
+  if (p.startsWith("/api/users/")) return true;
+  return false;
+}
+
+app.use((req, res, next) => {
+  if (!SOCIAL_FEATURES_ENABLED && isDisabledSocialRoute(req)) {
+    return res.status(404).json({ error: "Not found" });
+  }
+  next();
+});
 
 // Map of file extension → audio/* MIME type. Express's static middleware
 // infers `video/webm` for .webm files (webm is registered as a video
