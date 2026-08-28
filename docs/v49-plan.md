@@ -1,3 +1,5 @@
+> Historical snapshot. Not a current roadmap; see `history.md`.
+
 # PootBox v49 — UI polish pass
 
 **Date:** 2026-06-11

@@ -7,11 +7,14 @@ The v1 safety boundary keeps public profiles, discovery, follows, feeds, comment
 ## Run locally
 
 ```bash
-npm install
-npm run dev
+npm ci
+npm ci --prefix server
+PORT=3000 DATA_DIR="$PWD/.data" bash scripts/serve-local.sh
 ```
 
-Open http://localhost:5173.
+Open http://localhost:3000. The single-origin server is required for recording,
+sharing, and every other `/api` flow. `npm run dev` on port 5173 is useful for
+frontend-only work, but it has no API proxy.
 
 ## Build
 
@@ -42,7 +45,11 @@ device/network evidence and a recorded product tradeoff.
 
 ## Deploy
 
-The `dist/` folder is a static bundle. The deploy script (`scripts/deploy-vps.sh`) bundles the source, builds the Docker image on the VPS (the Mac has no docker), and swaps in the new container with `camster91/animal-farts:<sha>`.
+Merges to `main` publish a provenance-attested, SBOM-enabled GHCR image tagged
+with the commit. `scripts/deploy-vps.sh <main-commit>` promotes that exact image
+digest; the VPS never rebuilds source. Deployment verifies a fresh backup and
+restore rehearsal, records the prior image and backup, runs strict smoke checks,
+and automatically rolls back a failed promotion.
 
 Production topology, monitoring, backup, restore rehearsal, rollback, and the
 release checklist are in `docs/production-operations.md`. Traefik is the public
@@ -74,14 +81,24 @@ TLS edge and owns ACME renewal as documented in `infra/traefik/README.md`.
 - `src/audio/primeAudio.ts` — first-tap iOS Safari audio unlock
 - `src/pootbox/syncQueue.ts` — IndexedDB-backed upload/delete queue with idempotent retries
 - `src/pootbox/lib/deviceId.ts` — per-device UUID stored in localStorage (used for v74 server-side identification)
-- `server/server.js` — Express + SQLite server, 22 endpoints
+- `server/server.js` — Express + SQLite API; see `docs/api.md`
 - `scripts/scan-sounds.py` — auto-discovery scan that regenerates `src/pootbox/constants.ts`'s `BUILT_IN_SOUNDS` array
 - `public/sw.js` — service worker for offline-first precache (shell + Fredoka fonts)
 - `public/sounds/*.mp3` — the sound library
 
 ## Child-safety feature gate
 
-Normal builds and production containers expose Play plus controlled share codes only. For controlled regression testing of the dormant social implementation, build with `VITE_SOCIAL_FEATURES_ENABLED=true` and run the server with `SOCIAL_FEATURES_ENABLED=1`. Do not enable these flags in production without completing the safeguards in `docs/v1-child-safety-boundary.md`.
+The codebase contains Play, Friends, and Me surfaces, but normal builds and
+production containers expose Play plus controlled share codes only. Friends,
+Me, discovery, feed, and social API routes are dormant behind two independent
+flags. For controlled regression testing, build with
+`VITE_SOCIAL_FEATURES_ENABLED=true` and run the server with
+`SOCIAL_FEATURES_ENABLED=1`. Do not enable these flags in production without
+completing the safeguards in `docs/v1-child-safety-boundary.md`.
+
+Current API, privacy, historical documents, and production authority are
+indexed in `docs/api.md`, `docs/v1-child-safety-boundary.md`,
+`docs/history.md`, and `docs/production-operations.md`.
 
 ## Features
 

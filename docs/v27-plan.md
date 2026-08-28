@@ -1,3 +1,5 @@
+> Historical snapshot. Not a current roadmap; see `history.md`.
+
 # Poot Party v27 — Premium tier + Custom sound upload + Voice pitch shift
 
 ## Decisions (Maya, 2026-06-06, default-on-no-response)

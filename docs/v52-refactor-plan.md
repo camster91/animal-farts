@@ -1,3 +1,5 @@
+> Historical snapshot. Not a current refactor plan; see `history.md`.
+
 # PootBox refactor — 1361 lines → ~300
 
 **Date:** 2026-06-11

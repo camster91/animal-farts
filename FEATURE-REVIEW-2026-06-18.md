@@ -1,3 +1,5 @@
+> Historical snapshot. Not a current feature inventory; see `docs/history.md`.
+
 # Animal Farts — Feature Review (2026-06-18)
 
 App surface at `main` @ `f01208b` (v75). Live at `https://animals.ashbi.ca/`,

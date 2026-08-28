@@ -1,3 +1,5 @@
+> Historical snapshot. Not a current roadmap; see `history.md`.
+
 # PootBox v3.0 — Complete Product Plan
 
 **Author:** Maya (Product Manager)  

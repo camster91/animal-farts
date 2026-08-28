@@ -1,3 +1,5 @@
+> Historical snapshot. Not a current roadmap; see `history.md`.
+
 # Poot Party v28 — Poot Party TV + Share codes + Welcome screen
 
 ## Why v28
