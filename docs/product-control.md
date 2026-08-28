@@ -146,12 +146,15 @@ and aggregate product learning must remain separate from recordings and names.
 
 ## Authoritative roadmap
 
-1. **Release provenance (#37, in progress):** restore image publication, prove
-   the immutable artifact, then request approval for production promotion.
+1. **Release provenance (#37, implementation merged):** immutable pull-only
+   deployment tooling passed Local CI and merged in PR #48. Restore hosted image
+   publication, prove the commit-addressed artifact, then request approval for
+   production promotion; no production deployment has occurred.
 2. **Child-safety boundary (#31, verified/merged):** confirm issue evidence and
    keep public social surfaces disabled.
-3. **Durable data (#39, implemented; CI pending):** merge only after the exact
-   head passes the independent Local CI gate.
+3. **Durable data (#39, implemented; CI pending):** exact PR #44 head
+   `252dbdd` passes lint and 229 local tests. Merge only after the independent
+   Local CI gate validates that same head.
 4. **Core browser proof (#33, implemented locally):** reconcile, pass CI, merge,
    and preserve failure artifacts without production/child data.
 5. **Operations/TLS (#34/#35, partially verified):** merge runbooks and scripts;
@@ -160,8 +163,10 @@ and aggregate product learning must remain separate from recordings and names.
    privacy, deployment, and product-control authority.
 7. **Maintainability (#40, implemented locally):** land tested recording and
    sharing interfaces after E2E protection.
-8. **Physical/device and Android (#36/#32, externally blocked):** complete the
-   signed physical QA record before internal-track or production submission.
+8. **Physical/device and Android (#36/#32, prepared on staged branch):** native
+   API/audio routing, constrained CORS, store metadata, security diff review,
+   and debug APK assembly are verified locally. Complete physical QA, signing,
+   policy review, and approval before an internal-track submission.
 9. **Pilot and commercial validation (proposed):** only after release gates,
    recruit a small consenting family cohort and measure the hypotheses above.
 
@@ -193,3 +198,11 @@ is warranted while these remain.
   enabled trusted ACME TLS, verified backup/restore, and installed ops checks.
 - 2026-08-28: established the first dated competitor/policy evidence and the
   focused ad-free family-play hypothesis. Real customer validation remains open.
+- 2026-08-28: merged immutable deployment tooling in PR #48 without deploying
+  production; reconciled PR #44 onto current `main`; replaced a statistically
+  flaky random-code assertion; and verified its exact head with lint plus 229
+  tests. Hosted Actions remain blocked by account billing and Local CI still
+  needs its reviewed profile activated at a safe worker restart window.
+- 2026-08-28: on the staged Android stack, passed 247 application tests, three
+  mobile E2E journeys, a no-findings security diff scan, and JDK 21 debug APK
+  assembly. No physical device was connected, so device QA remains open.
