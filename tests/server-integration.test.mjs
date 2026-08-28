@@ -140,7 +140,7 @@ before(async () => {
       startupStderr ? ` Startup stderr:\n${startupStderr.trim()}` : ""
     }`,
   );
-});
+}, { timeout: 30000 });
 
 after(async () => {
   if (proc) proc.kill("SIGKILL");
