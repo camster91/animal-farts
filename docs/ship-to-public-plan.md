@@ -94,7 +94,7 @@ Make PootBox reachable by anyone (not just Cam's iPhone), so a real audience can
    - Move to `https://ashbi.ca/pootbox/privacy.html` (a separate static page)
    - Or accept the current URL
 9. **App signing by Google** — optional but recommended. Play App Signing means the AAB is signed with a separate key after upload.
-10. **Data safety form** — Play Store asks: does the app collect data, share with third parties, etc. We collect microphone (with permission), store locally. Form answers: yes, audio recordings, only on device, no third parties, encrypted in transit (HTTPS), can be deleted.
+10. **Data safety form** — Play Store asks: does the app collect data, share with third parties, etc. The app stores recordings locally and attempts to upload recordings made while online so they can survive reloads and support sharing. Form answers must disclose audio, display name/emoji, a random device identifier, timestamps, temporary share-code access, no third-party sharing, HTTPS in transit, and the available deletion flow. Confirm the final answers against the deployed build.
 11. **Target API level** — currently 34. Play Store 2024 requires 34+. ✓
 12. **App-ads.txt** — only if you run ads. We don't.
 13. **Content rating questionnaire** — IARC questionnaire on Play Console. Will probably rate "Everyone."
@@ -135,7 +135,7 @@ Because we record audio (which is "personal info" for COPPA), Play Store require
 - **B)** Mark as "not for children" but require a gate — we already have a 4-digit parent PIN gate, which Play considers sufficient for "mixed audience" apps
 - **C)** Mark as "general audience" with a privacy policy — risky, could get rejected
 
-**Recommended: B** — we already have the PIN-gated /parent dashboard. Document this in the privacy policy.
+**Decision required before launch:** the current build records child audio and supports temporary-code sharing. Do not treat the existing parent UI as legal or store-policy approval; obtain a current COPPA/privacy review and document the final audience, consent, retention, and sharing model.
 
 ---
 
@@ -169,10 +169,10 @@ Because we record audio (which is "personal info" for COPPA), Play Store require
 
 ## Risk register
 
-- **COPPA compliance risk** — recording audio from children is sensitive. The PIN-gated /parent dashboard should satisfy Play Store, but rejection is possible. Plan B: remove the recording feature entirely and ship without it.
+- **COPPA compliance risk** — recording audio from children is sensitive, and the current build uploads recordings made online and supports share-code access. A parent UI alone is not verified compliance. Obtain legal/store-policy review, or remove online upload and sharing before a child-directed launch.
 - **iOS App Store** — not in this plan. PWA on iPhone Safari is the workaround. Adding iOS via Capacitor is similar to Android but needs Apple Developer account ($99/yr) and Mac for Xcode builds.
 - **Server cost** — currently on Coolify self-hosted, no cost. If we get 100+ users, the SQLite + uploads directory will need to scale. For now: fine.
-- **Hostile use** — kids sharing recordings of their voices publicly. We have an "Adult Mode" flag in /parent but not on the kid's side. Mitigation: keep recordings local-only, no public sharing. We're already doing this.
+- **Hostile use** — kids sharing recordings of their voices. Current online upload and share-code flows mean recordings are not local-only; require parent consent/gating and abuse/retention controls, or disable online upload and sharing before launch.
 - **DMCA / inappropriate content** — kids could record sounds and share. We don't have a public feed anymore (the v1 explore page is gone), so this is mostly contained.
 
 ---
