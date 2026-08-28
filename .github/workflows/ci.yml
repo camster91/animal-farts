@@ -50,15 +50,17 @@ jobs:
         env:
           CI: true
 
-      - name: Test
-        run: node --test --test-concurrency=1 --test-timeout=30000 tests/unit-*.test.mjs tests/server-integration.test.mjs
-        env:
-          CI: true
-
+      # The server integration suite verifies the production SPA/static routes,
+      # so dist/ must exist before the server subprocess starts.
       - name: Build frontend
         run: npm run build
         env:
           NODE_ENV: production
+          CI: true
+
+      - name: Test
+        run: node --test --test-concurrency=1 --test-timeout=30000 tests/unit-*.test.mjs tests/server-integration.test.mjs
+        env:
           CI: true
 
       - name: Syntax check server
