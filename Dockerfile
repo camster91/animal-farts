@@ -8,9 +8,9 @@ FROM node:20-alpine AS client
 WORKDIR /app
 
 # Copy only the package files first for cache-friendly install
-# Use `npm install` (not --omit=dev) here so TypeScript + Vite are available for the build
+# Use the committed lockfile and include dev tools needed by the client build.
 COPY package*.json ./
-RUN npm install --no-audit --no-fund --include=dev
+RUN npm ci --no-audit --no-fund --include=dev
 
 # Copy the source and build
 COPY . .
@@ -26,7 +26,7 @@ WORKDIR /app
 
 # Server-only deps (Express, sqlite, multer, express-rate-limit)
 COPY server/package*.json ./server/
-RUN cd server && npm install --omit=dev --no-audit --no-fund && cd ..
+RUN npm ci --prefix server --omit=dev --no-audit --no-fund
 
 # Copy the built client + server source from the previous stage
 COPY --from=client /app/dist ./dist
