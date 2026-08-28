@@ -44,6 +44,8 @@ current child-safety, privacy, moderation, or operating cost.
 - Unit/integration coverage and a four-journey mobile Playwright suite cover
   recording, persistence, controlled sharing, deletion, offline recovery,
   keyboard onboarding/update behavior, and minimum touch targets.
+- The build enforces measured bundle ceilings: 380 KiB raw / 115 KiB gzip for
+  all JavaScript, 70 KiB gzip for the initial entry, and 5 KiB gzip for CSS.
 - Production has trusted Traefik-managed ACME TLS, verified daily SQLite plus
   uploads backups, a rehearsed isolated restore, and a five-minute ops check.
 - There is no billing, advertising, third-party analytics, or AI provider in the
@@ -216,6 +218,9 @@ is warranted while these remain.
   passed its unit contract and a read-only production execution at 72% disk,
   3% inode use, 89 certificate days, zero restarts, current backup, and healthy
   public/container health. External paging remains unconfigured.
+- 2026-08-28: added a production bundle regression gate. The verified core
+  build uses 346.5 KiB raw / 98.6 KiB gzip JavaScript, a 62.0 KiB gzip entry,
+  and 3.5 KiB gzip CSS; all 231 tests and four E2E journeys passed.
 - 2026-08-28: on the staged Android stack before that E2E expansion, passed 247
   application tests, three mobile E2E journeys, a no-findings security diff
   scan, and JDK 21 debug APK assembly. No physical device was connected, so
