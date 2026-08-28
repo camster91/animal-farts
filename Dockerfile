@@ -39,6 +39,7 @@ USER node
 
 ENV PORT=3000 \
     NODE_ENV=production \
+    SOCIAL_FEATURES_ENABLED=0 \
     DB_PATH=/app/data/farts.db \
     UPLOAD_DIR=/app/data/uploads
 

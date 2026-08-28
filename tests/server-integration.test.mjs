@@ -114,6 +114,9 @@ before(async () => {
       // Limiters stay active (RateLimit-* headers still emitted) — see
       // makeLimiter in server.js.
       RATE_LIMIT_DISABLED: "1",
+      // This suite covers the dormant social implementation. Production
+      // defaults it off; server-social-disabled.test.mjs pins that boundary.
+      SOCIAL_FEATURES_ENABLED: "1",
       DB_PATH: join(dataDir, "farts.db"),
       UPLOAD_DIR: join(dataDir, "uploads"),
     },
