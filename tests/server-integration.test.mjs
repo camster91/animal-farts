@@ -27,6 +27,7 @@ let dataDir;
 let proc;
 let started = false;
 let startupStderr = "";
+let startupExit = null;
 
 function http(method, path, { headers = {}, body } = {}) {
   return new Promise((resolve, reject) => {
@@ -121,9 +122,20 @@ before(async () => {
   proc.stderr.on("data", (chunk) => {
     startupStderr += String(chunk);
   });
+  proc.once("exit", (code, signal) => {
+    startupExit = { code, signal };
+  });
   // Wait for /api/health to return 200 (max 5s).
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
+    if (startupExit) {
+      throw new Error(
+        `[server-integration] server exited before becoming healthy ` +
+          `(code=${startupExit.code}, signal=${startupExit.signal ?? "none"}).${
+            startupStderr ? ` Startup stderr:\n${startupStderr.trim()}` : ""
+          }`,
+      );
+    }
     try {
       const r = await http("GET", "/api/health");
       if (r.status === 200) {
