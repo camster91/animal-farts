@@ -309,7 +309,10 @@ def main() -> int:
 
     # Read the existing constants.ts to preserve the non-sound
     # constants. We replace only the BUILT_IN_SOUNDS block.
-    src = CONSTANTS.read_text()
+    # The generated TypeScript contains emoji. Always use UTF-8 explicitly so
+    # the scanner behaves the same on Windows locales (often cp1252) and on
+    # Linux/macOS CI.
+    src = CONSTANTS.read_text(encoding="utf-8")
 
     # Find the BUILT_IN_SOUNDS block (start marker through the
     # closing `];` of the array).
@@ -358,7 +361,7 @@ def main() -> int:
 
     # Splice: keep [0:start_idx] + new_block + [end_idx:]
     new_src = src[:start_idx] + new_block + src[end_idx:]
-    CONSTANTS.write_text(new_src)
+    CONSTANTS.write_text(new_src, encoding="utf-8")
 
     # Print a one-liner summary
     bucket_counts: dict[str, int] = {}

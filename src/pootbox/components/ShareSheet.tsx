@@ -83,12 +83,14 @@ export default function ShareSheet({
     setLookupResult(null);
     try {
       const result = await onLookupCode(trimmed);
-      if (result && "__offline" in result) {
+      if (!result) {
+        setLookupError(true);
+      } else if ("__offline" in result) {
         setLookupOffline(true);
         return;
+      } else {
+        setLookupResult(result);
       }
-      setLookupResult(result);
-      if (!result) setLookupError(true);
     } catch {
       setLookupError(true);
     } finally {
