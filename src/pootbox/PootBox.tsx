@@ -16,6 +16,7 @@ import {
 import { playSingle, stopAllSounds, getCurrentBubbleId } from "./audioManager";
 import { getOrCreateDeviceId } from "./lib/deviceId";
 import { kidSafeError } from "./lib/kidSafeError";
+import { serverUrl } from "./lib/serverUrl";
 import { useSettings } from "./hooks/useSettings";
 import { useToast } from "./hooks/useToast";
 import { useModalState } from "./hooks/useModalState";
@@ -247,7 +248,7 @@ export default function PootBox() {
     Promise.all(
       ids.map(async ([bubbleId, serverId]) => {
         try {
-          const r = await fetch(`/api/recordings/${serverId}/reactions`, {
+          const r = await fetch(serverUrl(`/api/recordings/${serverId}/reactions`), {
             headers: { "x-device-id": deviceId },
           });
           if (!r.ok) return;
@@ -657,7 +658,7 @@ export default function PootBox() {
           const serverId = serverRecordingIds[id];
           if (typeof serverId !== "number") return;
           try {
-            const r = await fetch(`/api/recordings/${serverId}/upvote`, {
+            const r = await fetch(serverUrl(`/api/recordings/${serverId}/upvote`), {
               method: "POST",
               headers: { "x-device-id": getOrCreateDeviceId() },
             });
@@ -677,7 +678,7 @@ export default function PootBox() {
           const serverId = serverRecordingIds[id];
           if (typeof serverId !== "number") return;
           try {
-            const r = await fetch(`/api/recordings/${serverId}/reactions`, {
+            const r = await fetch(serverUrl(`/api/recordings/${serverId}/reactions`), {
               method: "POST",
               headers: {
                 "x-device-id": getOrCreateDeviceId(),

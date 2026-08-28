@@ -12,6 +12,7 @@
 import { useState, useEffect } from "react";
 import { playSingle, stopAllSounds, isAnySoundPlaying } from "../audioManager";
 import { getOrCreateDeviceId } from "../lib/deviceId";
+import { serverUrl } from "../lib/serverUrl";
 import { FeedSkeleton } from "../ui/Skeleton";
 import EmptyState from "../ui/EmptyState";
 import InlineBanner from "../ui/InlineBanner";
@@ -122,7 +123,7 @@ export default function Feed({ onBack, onOpenProfile }: FeedProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError(null);
-    fetch("/api/feed?limit=30", { headers: { "x-device-id": getOrCreateDeviceId() } })
+    fetch(serverUrl("/api/feed?limit=30"), { headers: { "x-device-id": getOrCreateDeviceId() } })
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -146,7 +147,7 @@ export default function Feed({ onBack, onOpenProfile }: FeedProps) {
     setLoadingMore(true);
     try {
       const r = await fetch(
-        `/api/feed?limit=30&cursor=${encodeURIComponent(nextCursor)}`,
+        serverUrl(`/api/feed?limit=30&cursor=${encodeURIComponent(nextCursor)}`),
         { headers: { "x-device-id": getOrCreateDeviceId() } },
       );
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -190,7 +191,7 @@ export default function Feed({ onBack, onOpenProfile }: FeedProps) {
     const newCount = prev.count + (newMine ? 1 : -1);
     setUpvoteCounts((p) => ({ ...p, [rec.id]: { count: newCount, mine: newMine } }));
     try {
-      const r = await fetch(`/api/recordings/${rec.id}/upvote`, {
+      const r = await fetch(serverUrl(`/api/recordings/${rec.id}/upvote`), {
         method: "POST",
         headers: { "x-device-id": getOrCreateDeviceId() },
       });
@@ -220,7 +221,7 @@ export default function Feed({ onBack, onOpenProfile }: FeedProps) {
       };
     }));
     try {
-      const r = await fetch(`/api/users/${author.handle}/follow`, {
+      const r = await fetch(serverUrl(`/api/users/${author.handle}/follow`), {
         method: "POST",
         headers: { "x-device-id": getOrCreateDeviceId() },
       });

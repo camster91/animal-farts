@@ -19,6 +19,7 @@
 
 import { useState, useEffect, useRef, type FC } from "react";
 import { getOrCreateDeviceId } from "../lib/deviceId";
+import { serverUrl } from "../lib/serverUrl";
 import { kidSafeError } from "../lib/kidSafeError";
 import { CommentsSkeleton } from "../ui/Skeleton";
 import InlineBanner from "../ui/InlineBanner";
@@ -78,7 +79,7 @@ const CommentsSheet: FC<CommentsSheetProps> = ({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError(null);
-    fetch(`/api/recordings/${recordingId}/comments`)
+    fetch(serverUrl(`/api/recordings/${recordingId}/comments`))
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -112,7 +113,7 @@ const CommentsSheet: FC<CommentsSheetProps> = ({
     setPosting(true);
     setError(null);
     try {
-      const r = await fetch(`/api/recordings/${recordingId}/comments`, {
+      const r = await fetch(serverUrl(`/api/recordings/${recordingId}/comments`), {
         method: "POST",
         headers: {
           "x-device-id": getOrCreateDeviceId(),
@@ -147,7 +148,7 @@ const CommentsSheet: FC<CommentsSheetProps> = ({
 
   async function handleDelete(id: number) {
     try {
-      const r = await fetch(`/api/comments/${id}`, {
+      const r = await fetch(serverUrl(`/api/comments/${id}`), {
         method: "DELETE",
         headers: { "x-device-id": getOrCreateDeviceId() },
       });

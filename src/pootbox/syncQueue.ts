@@ -1,4 +1,5 @@
 import { getOrCreateDeviceId } from "./lib/deviceId.js";
+import { serverUrl } from "./lib/serverUrl.js";
 
 const DB_NAME = "pootbox";
 const DB_VERSION = 3;
@@ -205,7 +206,7 @@ async function requestUpload(op: UploadSyncOperation): Promise<UploadSyncResult>
   form.append("name", op.name);
   form.append("emoji", op.emoji);
   if (op.durationSec !== undefined) form.append("durationSec", String(op.durationSec));
-  const response = await fetch("/api/recordings", {
+  const response = await fetch(serverUrl("/api/recordings"), {
     method: "POST",
     headers: {
       "x-device-id": getOrCreateDeviceId(),
@@ -236,7 +237,7 @@ async function requestDelete(op: DeleteSyncOperation): Promise<void> {
   if (typeof op.serverRecordingId !== "number") {
     throw Object.assign(new Error("Waiting for upload reconciliation"), { status: 0 });
   }
-  const response = await fetch(`/api/recordings/${op.serverRecordingId}`, {
+  const response = await fetch(serverUrl(`/api/recordings/${op.serverRecordingId}`), {
     method: "DELETE",
     headers: {
       "x-device-id": getOrCreateDeviceId(),

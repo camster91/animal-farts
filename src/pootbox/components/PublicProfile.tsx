@@ -10,6 +10,7 @@
 
 import { useState, useEffect } from "react";
 import { getOrCreateDeviceId } from "../lib/deviceId";
+import { serverUrl } from "../lib/serverUrl";
 import { playSingle, stopAllSounds, isAnySoundPlaying } from "../audioManager";
 import { ProfileSkeleton } from "../ui/Skeleton";
 import InlineBanner from "../ui/InlineBanner";
@@ -71,8 +72,8 @@ export default function PublicProfile({ handle, onBack, onOpenFeed }: PublicProf
     setLoading(true);
     setError(null);
     Promise.all([
-      fetch(`/api/users/${handle}`, { headers: { "x-device-id": getOrCreateDeviceId() } }),
-      fetch(`/api/users/${handle}/recordings`, { headers: { "x-device-id": getOrCreateDeviceId() } }),
+      fetch(serverUrl(`/api/users/${handle}`), { headers: { "x-device-id": getOrCreateDeviceId() } }),
+      fetch(serverUrl(`/api/users/${handle}/recordings`), { headers: { "x-device-id": getOrCreateDeviceId() } }),
     ])
       .then(async ([profileRes, recRes]) => {
         if (cancelled) return;
@@ -125,7 +126,7 @@ export default function PublicProfile({ handle, onBack, onOpenFeed }: PublicProf
     const newCount = prev.count + (newMine ? 1 : -1);
     setUpvoteCounts((p) => ({ ...p, [rec.id]: { count: newCount, mine: newMine } }));
     try {
-      const r = await fetch(`/api/recordings/${rec.id}/upvote`, {
+      const r = await fetch(serverUrl(`/api/recordings/${rec.id}/upvote`), {
         method: "POST",
         headers: { "x-device-id": getOrCreateDeviceId() },
       });
@@ -145,7 +146,7 @@ export default function PublicProfile({ handle, onBack, onOpenFeed }: PublicProf
       followerCount: Math.max(0, user.followerCount + (nextFollowing ? 1 : -1)),
     });
     try {
-      const r = await fetch(`/api/users/${user.handle}/follow`, {
+      const r = await fetch(serverUrl(`/api/users/${user.handle}/follow`), {
         method: "POST",
         headers: { "x-device-id": getOrCreateDeviceId() },
       });

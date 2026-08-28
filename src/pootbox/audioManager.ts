@@ -11,6 +11,8 @@
 // can show a visual "playing" state and let the user tap the
 // playing bubble to stop it.
 
+import { serverUrl } from "./lib/serverUrl.js";
+
 const activeAudioElements = new Set<HTMLAudioElement>();
 
 // The bubble that the currently-playing audio was triggered by.
@@ -34,7 +36,10 @@ export function playSingle(sound: string, volume: number, bubbleId?: string): vo
   activeAudioElements.clear();
   currentBubbleId = null;
 
-  const a = new Audio(sound);
+  const source = typeof sound === "string" && sound.startsWith("/uploads/")
+    ? serverUrl(sound)
+    : sound;
+  const a = new Audio(source);
   a.volume = volume;
   const remove = () => {
     activeAudioElements.delete(a);

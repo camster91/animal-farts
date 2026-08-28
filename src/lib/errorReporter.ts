@@ -1,6 +1,7 @@
 // v29: lightweight self-hosted error monitoring.
 // Samples 10% of errors, strips PII, logs to stderr on the Express server.
 // No external services, no third-party SDKs.
+import { serverUrl } from '../pootbox/lib/serverUrl.js';
 
 // v29-errors-fix: bump to 100% — for a kids' app shipping to <1000 users
 // the error volume is low, we need to know about every error. If volume
@@ -34,7 +35,7 @@ async function report(error: { message: string; stack?: string; lineno?: number;
   };
 
   try {
-    await fetch('/api/errors', {
+    await fetch(serverUrl('/api/errors'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

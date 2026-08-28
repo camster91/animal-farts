@@ -169,9 +169,10 @@ and aggregate product learning must remain separate from recordings and names.
 7. **Maintainability (#40, implemented locally):** land tested recording and
    sharing interfaces after E2E protection.
 8. **Physical/device and Android (#36/#32, prepared on staged branch):** native
-   API/audio routing, constrained CORS, store metadata, security diff review,
-   and debug APK assembly are verified locally. Complete physical QA, signing,
-   policy review, and approval before an internal-track submission.
+   API and uploaded-audio routing, constrained WebView CORS, store metadata,
+   security diff review, and debug APK assembly are verified locally. Complete
+   the signed physical QA record, release signing, and Play policy review before
+   internal-track or production submission.
 9. **Pilot and commercial validation (proposed):** only after release gates,
    recruit a small consenting family cohort and measure the hypotheses above.
 
@@ -201,6 +202,12 @@ is warranted while these remain.
   implemented durable recording sync, mobile E2E, operational recovery, current
   docs, Android release preparation, and sharing extraction on staged branches;
   enabled trusted ACME TLS, verified backup/restore, and installed ops checks.
+- 2026-08-28: fixed packaged Android routing for API and uploaded-audio access,
+  added a strict Capacitor-origin CORS contract, repaired cross-origin native
+  audio playback, passed 243 application tests plus three mobile E2E journeys,
+  completed a security diff review with no reportable findings, and assembled a
+  debug APK on JDK 21. Physical device QA and signed release approval remain
+  open.
 - 2026-08-28: established the first dated competitor/policy evidence and the
   focused ad-free family-play hypothesis. Real customer validation remains open.
 - 2026-08-28: merged immutable deployment tooling in PR #48 without deploying

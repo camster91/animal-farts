@@ -206,9 +206,22 @@ db.exec(`
 })();
 
 const app = express();
-// CORS: same-origin SPA, so no cross-origin headers needed. The previous
-// `app.use(cors())` was a wildcard that let any third-party site hit the API
-// with a custom x-device-id and exercise the full social graph + uploads.
+// The website is same-origin. Packaged Capacitor apps have a local WebView
+// origin, so permit only those origins to call the production API.
+const CAPACITOR_ORIGINS = new Set([
+  "https://localhost",
+]);
+app.use((req, res, next) => {
+  if (!req.path.startsWith("/api") && !req.path.startsWith("/uploads")) return next();
+  const origin = req.get("origin");
+  if (!origin || !CAPACITOR_ORIGINS.has(origin)) return next();
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Device-Id, X-Operation-Id");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
 app.use(express.json({ limit: "1mb" })); // for social endpoints (users, follows, comments)
 
 // Baseline security headers for every response (API + static + SPA).
@@ -324,9 +337,10 @@ app.use(
       const ext = path.extname(filePath).slice(1).toLowerCase();
       const mime = AUDIO_MIME[ext];
       if (mime) res.setHeader("Content-Type", mime);
-      // Audio responses are read by <audio> elements and service workers,
-      // not executed by scripts — explicit no-CORS to keep a tight CSP story.
-      res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+      // Upload URLs are intentionally possession-addressed playback resources.
+      // Native WebViews load them from https://localhost, so allow embedding;
+      // API response reads remain protected by the narrow CORS middleware.
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     },
   }),
 );
