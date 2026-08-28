@@ -1,115 +1,152 @@
 #!/usr/bin/env bash
-# deploy-vps.sh — build the image on the VPS from local source, run it
-# with a bind-mounted /data volume, and verify.
-#
-# This is the v54+ deploy recipe. The Mac has no docker, so the build
-# happens on the VPS. Caddy on the VPS routes animals.ashbi.ca →
-# 127.0.0.1:3015 → animal-farts:3000 inside the container.
-#
-# v60+ note: the fleet experimented with Traefik (2026-06-14)
-# but the public *.ashbi.ca routes still run on Caddy because
-# that's where the LE certs live. A sibling project's
-# deploy brought Caddy back to life on 2026-06-15; Traefik
-# is on :8080 only. Caddy is the active front proxy.
-#
-# Why build on VPS instead of `docker pull` from ghcr.io:
-# - The repo's build-and-push workflow is set up but the image has never
-#   been pushed for this project. The Mac has no docker to build locally
-#   and push. The "build on VPS from local tarball" path is what works.
-# - This mirrors the v52 deploy runbook that was in production before the
-#   2026-06-11 prune. The volume mount is the persistence story.
-#
-# Usage (from the repo root on the Mac):
-#   bash scripts/deploy-vps.sh [commit-ish]
-#
-# Idempotent. Re-running stops the old container, rebuilds, and starts.
+# Promote the immutable GHCR image produced from an exact main commit.
+# The VPS never rebuilds source. A verified backup and restore rehearsal run
+# before the container swap, and failed validation restores the previous image.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SHA="${1:-$(git rev-parse --short HEAD)}"
 VPS="${VPS:-hostinger}"
+SSH_KEY="${SSH_KEY:-}"
 NAME="animal-farts"
-PORT_HOST=3015
-PORT_CONT=3000
+PORT_HOST="3015"
+PORT_CONT="3000"
 DATA_DIR="/data/${NAME}"
-IMAGE="camster91/${NAME}:${SHA}"
+REGISTRY_IMAGE="ghcr.io/camster91/${NAME}"
 
-# 1. Make sure the build is fresh locally.
-echo "[deploy] verifying local build (commit ${SHA})…"
-if ! git diff --quiet HEAD -- .; then
-  echo "[deploy] working tree is dirty — commit or stash first" >&2
+usage() {
+  echo "usage: $0 <main-commit>" >&2
+  exit 2
+}
+
+[[ $# -eq 1 ]] || usage
+git diff --quiet HEAD -- . || {
+  echo "[deploy] working tree is dirty; commit or stash it first" >&2
   exit 1
+}
+
+FULL_SHA="$(git rev-parse --verify "${1}^{commit}")" || usage
+git merge-base --is-ancestor "$FULL_SHA" origin/main || {
+  echo "[deploy] ${FULL_SHA} is not contained in origin/main" >&2
+  exit 1
+}
+SHORT_SHA="${FULL_SHA:0:7}"
+IMAGE="${REGISTRY_IMAGE}:main-${SHORT_SHA}"
+
+SSH=(ssh)
+if [[ -n "$SSH_KEY" ]]; then
+  SSH+=(-i "$SSH_KEY")
 fi
-git rev-parse "${SHA}" >/dev/null || { echo "[deploy] bad ref: ${SHA}" >&2; exit 1; }
+SSH+=("$VPS")
 
-# 2. Bundle the source (no node_modules, no dist — Dockerfile rebuilds).
-TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
-echo "[deploy] bundling source…"
-tar -czf "${TMP}/${NAME}.tar.gz" \
-  --exclude=node_modules --exclude=dist --exclude=.data \
-  --exclude=android --exclude=.git --exclude=server-package-snapshot \
-  -C "$(pwd)" .
+echo "[deploy] promoting ${IMAGE} (${FULL_SHA}) on ${VPS}"
+"${SSH[@]}" bash -s -- "$IMAGE" "$FULL_SHA" "$NAME" "$PORT_HOST" "$PORT_CONT" "$DATA_DIR" <<'REMOTE'
+set -euo pipefail
 
-# 3. Ship + extract + build + run.
-# Use `cat | ssh` instead of scp — some VPS configurations block scp's
-# protocol while keeping raw ssh working. The tarball streams through
-# the same sshd process either way.
-echo "[deploy] uploading to ${VPS} (via cat | ssh)…"
-ssh "${VPS}" "mkdir -p ${DATA_DIR} /opt/${NAME}"
-cat "${TMP}/${NAME}.tar.gz" | ssh "${VPS}" "cat > /tmp/${NAME}.tar.gz"
+IMAGE="$1"
+FULL_SHA="$2"
+NAME="$3"
+PORT_HOST="$4"
+PORT_CONT="$5"
+DATA_DIR="$6"
+PUBLIC_ORIGIN="https://animals.ashbi.ca"
+RELEASE_DIR="${DATA_DIR}/releases"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+RECORD="${RELEASE_DIR}/${STAMP}-${FULL_SHA:0:12}.env"
 
-echo "[deploy] extracting + building image on ${VPS}…"
-ssh "${VPS}" "
-  set -e
-  cd /opt/${NAME}
-  rm -rf ./*
-  tar -xzf /tmp/${NAME}.tar.gz
-  # Tar may have wrapped in a top dir; flatten.
-  INNER=\$(ls | head -1)
-  if [ \"\${INNER}\" != '.' ] && [ -f \"\${INNER}/Dockerfile\" ]; then
-    shopt -s dotglob
-    mv \${INNER}/* .
-    rmdir \${INNER}
-  fi
-  docker build -t ${IMAGE} .
-"
-
-echo "[deploy] swapping container…"
-ssh "${VPS}" "
-  set -e
-  # Pre-create the data dir tree and chown to the in-container node user
-  # (UID 1000 in the node:20-alpine base image). Without this, the bind
-  # mount inherits root:root from the host and the container's
-  # fs.mkdirSync('/app/data/uploads', { recursive: true }) fails EACCES.
-  mkdir -p ${DATA_DIR}/uploads
-  chown -R 1000:1000 ${DATA_DIR}
-  docker rm -f ${NAME} 2>/dev/null || true
-  docker run -d --name ${NAME} --restart unless-stopped \
-    -p 127.0.0.1:${PORT_HOST}:${PORT_CONT} \
-    -v ${DATA_DIR}:/app/data \
-    -e NODE_ENV=production -e DB_PATH=/app/data/farts.db -e UPLOAD_DIR=/app/data/uploads -e PORT=${PORT_CONT} \
-    --health-cmd='wget -q -O - http://127.0.0.1:${PORT_CONT}/api/health || exit 1' \
-    --health-interval=30s --health-timeout=5s --health-retries=3 --health-start-period=10s \
-    ${IMAGE}
-"
-
-# 4. Verify.
-echo "[deploy] waiting for /api/health…"
-for i in {1..30}; do
-  if ssh "${VPS}" "docker exec ${NAME} wget -q -O - http://127.0.0.1:${PORT_CONT}/api/health" 2>/dev/null; then
-    echo "[deploy] container is healthy"
-    break
-  fi
-  sleep 1
+command -v docker >/dev/null
+command -v curl >/dev/null
+command -v jq >/dev/null
+for helper in animal-farts-backup animal-farts-restore-rehearsal animal-farts-ops-check; do
+  test -x "/usr/local/sbin/${helper}"
 done
 
-echo "[deploy] skipping legacy Caddy re-assertion (Caddy is gone — Traefik is the front proxy)"
+mkdir -p "$RELEASE_DIR" "${DATA_DIR}/uploads"
+chmod 0700 "$RELEASE_DIR"
+chown -R 1000:1000 "${DATA_DIR}/uploads"
 
-echo "[deploy] checking live site…"
-curl -sI https://animals.ashbi.ca/ | head -3
-echo "[deploy] share-code POST as a final smoke…"
-curl -s https://animals.ashbi.ca/api/health && echo
+PREVIOUS_IMAGE="$(docker inspect "$NAME" --format '{{.Config.Image}}')"
+PREVIOUS_ID="$(docker inspect "$NAME" --format '{{.Image}}')"
+PREVIOUS_DIGEST="$(docker image inspect "$PREVIOUS_ID" --format '{{index .RepoDigests 0}}')"
 
-echo "[deploy] done — verify at https://animals.ashbi.ca/"
+echo "[deploy] pulling commit-addressed artifact"
+docker pull "$IMAGE"
+NEW_ID="$(docker image inspect "$IMAGE" --format '{{.Id}}')"
+NEW_DIGEST="$(docker image inspect "$IMAGE" --format '{{index .RepoDigests 0}}')"
+NEW_REVISION="$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+[[ "$NEW_REVISION" == "$FULL_SHA" ]] || {
+  echo "[deploy] image revision mismatch: expected ${FULL_SHA}, got ${NEW_REVISION}" >&2
+  exit 1
+}
+[[ "$NEW_DIGEST" == *@sha256:* ]] || {
+  echo "[deploy] pulled image has no immutable repository digest" >&2
+  exit 1
+}
+
+echo "[deploy] creating verified pre-release backup"
+BACKUP_OUTPUT="$(/usr/local/sbin/animal-farts-backup)"
+printf '%s\n' "$BACKUP_OUTPUT"
+BACKUP_ARCHIVE="$(printf '%s\n' "$BACKUP_OUTPUT" | sed -n 's/^BACKUP_ARCHIVE=//p' | tail -1)"
+[[ -n "$BACKUP_ARCHIVE" && -f "$BACKUP_ARCHIVE" ]]
+/usr/local/sbin/animal-farts-restore-rehearsal "$BACKUP_ARCHIVE"
+
+rollback() {
+  local status=$?
+  trap - ERR
+  echo "[deploy] validation failed; restoring ${PREVIOUS_IMAGE} (${PREVIOUS_ID})" >&2
+  docker rm -f "$NAME" >/dev/null 2>&1 || true
+  docker run -d --name "$NAME" --restart unless-stopped \
+    -p "127.0.0.1:${PORT_HOST}:${PORT_CONT}" \
+    -v "${DATA_DIR}:/app/data" \
+    -e NODE_ENV=production -e DB_PATH=/app/data/farts.db \
+    -e UPLOAD_DIR=/app/data/uploads -e PORT="$PORT_CONT" \
+    "$PREVIOUS_ID" >/dev/null
+  curl --fail --silent --show-error --retry 20 --retry-delay 1 \
+    "http://127.0.0.1:${PORT_HOST}/api/health" >/dev/null
+  exit "$status"
+}
+trap rollback ERR
+
+docker rm -f "$NAME" >/dev/null
+docker run -d --name "$NAME" --restart unless-stopped \
+  -p "127.0.0.1:${PORT_HOST}:${PORT_CONT}" \
+  -v "${DATA_DIR}:/app/data" \
+  -e NODE_ENV=production -e DB_PATH=/app/data/farts.db \
+  -e UPLOAD_DIR=/app/data/uploads -e PORT="$PORT_CONT" \
+  "$NEW_DIGEST" >/dev/null
+
+curl --fail --silent --show-error --retry 30 --retry-delay 1 \
+  "http://127.0.0.1:${PORT_HOST}/api/health" | jq -e '.ok == true' >/dev/null
+curl --fail --silent --show-error "${PUBLIC_ORIGIN}/" | grep -qi '<html'
+curl --fail --silent --show-error "${PUBLIC_ORIGIN}/api/recordings" | jq -e 'type == "array"' >/dev/null
+curl --fail --silent --show-error "${PUBLIC_ORIGIN}/manifest.webmanifest" | jq -e '.name' >/dev/null
+curl --fail --silent --show-error "${PUBLIC_ORIGIN}/sw.js" | grep -q 'CACHE_NAME'
+curl --fail --silent --show-error "${PUBLIC_ORIGIN}/api/health" | jq -e '.ok == true' >/dev/null
+/usr/local/sbin/animal-farts-ops-check
+
+FIRST_AUDIO="$(curl --fail --silent --show-error "${PUBLIC_ORIGIN}/api/recordings" | jq -r 'map(.audioUrl // empty) | first // empty')"
+if [[ -n "$FIRST_AUDIO" ]]; then
+  curl --fail --silent --show-error --range 0-31 "${PUBLIC_ORIGIN}${FIRST_AUDIO}" >/dev/null
+fi
+
+trap - ERR
+umask 077
+{
+  printf 'DEPLOYED_AT=%q\n' "$STAMP"
+  printf 'COMMIT_SHA=%q\n' "$FULL_SHA"
+  printf 'IMAGE=%q\n' "$IMAGE"
+  printf 'IMAGE_ID=%q\n' "$NEW_ID"
+  printf 'IMAGE_DIGEST=%q\n' "$NEW_DIGEST"
+  printf 'PREVIOUS_IMAGE=%q\n' "$PREVIOUS_IMAGE"
+  printf 'PREVIOUS_IMAGE_ID=%q\n' "$PREVIOUS_ID"
+  printf 'PREVIOUS_IMAGE_DIGEST=%q\n' "$PREVIOUS_DIGEST"
+  printf 'BACKUP_ARCHIVE=%q\n' "$BACKUP_ARCHIVE"
+} >"$RECORD"
+chmod 0600 "$RECORD"
+
+echo "[deploy] release verified"
+echo "[deploy] digest=${NEW_DIGEST}"
+echo "[deploy] rollback_image=${PREVIOUS_ID}"
+echo "[deploy] backup=${BACKUP_ARCHIVE}"
+echo "[deploy] record=${RECORD}"
+REMOTE
