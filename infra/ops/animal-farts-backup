@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+DATA_DIR=${ANIMAL_FARTS_DATA_DIR:-/data/animal-farts}
+BACKUP_DIR=${ANIMAL_FARTS_BACKUP_DIR:-$DATA_DIR/backups/daily}
+RETENTION_DAYS=${ANIMAL_FARTS_BACKUP_RETENTION_DAYS:-30}
+
+die() { printf 'animal-farts backup error: %s\n' "$*" >&2; exit 1; }
+[[ $(id -u) == 0 ]] || die 'must run as root'
+[[ $DATA_DIR == /data/* && $DATA_DIR != /data ]] || die 'data directory must be a child of /data'
+[[ $BACKUP_DIR == "$DATA_DIR"/backups/* ]] || die 'backup directory must be below the app data directory'
+if ! [[ $RETENTION_DAYS =~ ^[0-9]+$ ]] || ((RETENTION_DAYS < 7 || RETENTION_DAYS > 365)); then
+  die 'retention must be 7-365 days'
+fi
+for command in sqlite3 sha256sum tar flock; do command -v "$command" >/dev/null || die "missing command: $command"; done
+[[ -f $DATA_DIR/farts.db && -d $DATA_DIR/uploads ]] || die 'database or uploads directory is missing'
+
+mkdir -p "$BACKUP_DIR"
+chmod 0700 "$DATA_DIR/backups" "$BACKUP_DIR"
+exec 9>"$DATA_DIR/backups/backup.lock"
+flock -n 9 || die 'another backup is already running'
+
+stamp=$(date -u +%Y%m%dT%H%M%SZ)
+work=$(mktemp -d "$DATA_DIR/backups/.work-${stamp}-XXXXXX")
+archive="$BACKUP_DIR/animal-farts-${stamp}.tar.gz"
+archive_tmp="$archive.tmp"
+trap 'rm -rf -- "$work"; rm -f -- "$archive_tmp"' EXIT
+chmod 0700 "$work"
+
+# SQLite's online backup API produces one transactionally consistent database,
+# including committed WAL state, without stopping the running container.
+sqlite3 "$DATA_DIR/farts.db" ".timeout 10000" ".backup '$work/farts.db'"
+integrity=$(sqlite3 "$work/farts.db" 'PRAGMA integrity_check;')
+[[ $integrity == ok ]] || die "SQLite integrity check failed: $integrity"
+mkdir "$work/uploads"
+cp -a "$DATA_DIR/uploads/." "$work/uploads/"
+
+sqlite3 "$work/farts.db" 'SELECT COUNT(*) FROM recordings;' > "$work/recording-count.txt"
+printf '%s\n' "$stamp" > "$work/created-at.txt"
+(cd "$work" && find farts.db uploads recording-count.txt created-at.txt -type f -print0 | sort -z | xargs -0 sha256sum > manifest.sha256)
+tar -C "$work" -czf "$archive_tmp" .
+chmod 0600 "$archive_tmp"
+mv "$archive_tmp" "$archive"
+
+sha256=$(sha256sum "$archive" | awk '{print $1}')
+bytes=$(stat -c %s "$archive")
+find "$BACKUP_DIR" -maxdepth 1 -type f -name 'animal-farts-????????T??????Z.tar.gz' -mtime "+$RETENTION_DAYS" -delete
+printf 'BACKUP_ARCHIVE=%s\nBACKUP_SHA256=%s\nBACKUP_BYTES=%s\nRECORDINGS=%s\n' \
+  "$archive" "$sha256" "$bytes" "$(cat "$work/recording-count.txt")"

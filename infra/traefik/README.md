@@ -1,116 +1,57 @@
-# Traefik cutover (v74 setup, v75 complete)
+# Production ingress and TLS
 
-This directory contains the Traefik config that the v74 turn
-left on the host. The goal was to route `animals.ashbi.ca`
-through Traefik (TLS terminated by Traefik using the existing
-LE cert) instead of Caddy terminating TLS and reverse-proxying
-to the container.
+Verified on the production VPS on 2026-08-28.
 
-## v75 status: cutover complete for animals
+## Authoritative topology
 
-The live path is now:
+Traefik is the only public edge and binds host ports 80 and 443. The
+`animals.ashbi.ca` file-provider router terminates TLS, uses the `letsencrypt`
+resolver, and proxies to the Animal Farts container on
+`http://127.0.0.1:3015`. The container maps that loopback port to Express port
+3000 and mounts `/data/animal-farts` at `/app/data`.
 
-```
-curl https://animals.ashbi.ca/ →
-  Caddy :443 (public TLS terminator) →
-  Traefik :8443 (loopback, re-terminates TLS using the
-    animals.ashbi.ca cert from /opt/traefik/certs/) →
-  animal-farts container :3015 (Express)
-```
+Canonical host files:
 
-The other 9 *.ashbi.ca subdomains still go direct from Caddy
-to their containers (lull/lull-relay/splash/hub/markup/
-contractions/relay/photogen/arcan-painting). Only animals
-goes through Traefik for now — full cutover would need
-coordinating the lull/markup/contraction/splash caddy-guard
-crons to no-op or be deleted.
+- `/opt/traefik/traefik.yml`: static entrypoints, providers, and ACME resolver.
+- `/opt/traefik/dynamic/routers.yml`: fleet routers and services.
+- `/opt/traefik/acme.json`: Traefik-managed ACME account/certificates, mode 0600.
+- `/opt/traefik/dynamic/tls.yml`: exceptional static certificates only.
 
-## What was done
+Repository files document the route but must not overwrite shared fleet
+configuration wholesale. Change only the relevant production stanza and retain
+a timestamped rollback copy.
 
-1. **Cert staging**: The animals cert (and lull + lull-relay
-   certs) was copied from Caddy's on-disk store
-   (`/root/.local/share/caddy/certificates/...`) to
-   `/opt/traefik/certs/animals.ashbi.ca.{crt,key}`. The cert
-   is valid until 2026-09-11 (90 days from LE issuance).
+## TLS ownership and renewal
 
-2. **Config files in place**:
-   - `traefik.yml` (this dir) — Traefik's static config.
-     entrypoints: `plain_http:8880` + `tls_https:8443`
-     (loopback only, behind Caddy). File provider watches
-     `/etc/traefik/dynamic`.
-   - `routers.yml` (this dir) — 4 routes (animals + lull +
-     lull-relay + splash), all using `tls_https` entrypoint.
-   - `tls.yml` (this dir) — 3 certs (animals + lull +
-     lull-relay) loaded by Traefik's cert store.
+Traefik's `letsencrypt` resolver is the sole owner for `animals.ashbi.ca`. It
+uses Let's Encrypt production ACME with HTTP-01 on the public `web` entrypoint.
+Traefik stores, renews, and hot-activates the certificate through
+`/opt/traefik/acme.json`; no Certbot, Caddy, cron, or key-copy job is involved.
 
-3. **On the host**, the same files are at:
-   - `/opt/traefik/traefik.yml` (canonical, no symlink)
-   - `/opt/traefik/dynamic/routers.yml`
-   - `/opt/traefik/dynamic/tls.yml`
-   - `/opt/traefik/certs/animals.ashbi.ca.{crt,key}`
+On 2026-08-28 the obsolete static animals pair was removed from
+`dynamic/tls.yml`. Traefik obtained and activated a trusted certificate without
+restarting the edge or sibling applications. The prior file is retained at
+`/opt/traefik/dynamic/tls.yml.bak.animals-acme-20260828T171830Z`; the old pair
+under `/opt/traefik/certs` remains available for rollback but is not loaded.
+The new certificate is valid through 2026-11-26.
 
-4. **Traefik container running** as a sidecar:
-   - `docker run -d --name traefik --restart unless-stopped
-     --network host
-     -v /etc/traefik:/etc/traefik
-     -v /var/run/docker.sock:/var/run/docker.sock:ro
-     traefik:v3.2`
-   - The `--network host` flag is critical: without it, the
-     container's `127.0.0.1` is the container's own loopback,
-     not the host's, so the upstream dial fails with
-     "connection refused". With `--network host`, the
-     container shares the host's network namespace and
-     `127.0.0.1:3015` correctly reaches the animal-farts
-     container's exposed port.
+Validate externally:
 
-5. **Caddy forwards animals → Traefik**:
-   - The animals block in /opt/caddy/Caddyfile (curated by
-     scripts/sync-caddy.py) was changed from
-     `reverse_proxy 127.0.0.1:3015` to
-     `reverse_proxy https://127.0.0.1:8443` with
-     `tls_insecure_skip_verify` (loopback cert validation).
-
-## How to verify
-
-```sh
-# from the host
-curl -sk -H 'Host: animals.ashbi.ca' https://127.0.0.1:8443/
-# should return the PootBox index.html
-
-# from anywhere
-curl -sI https://animals.ashbi.ca/
-# should return HTTP/2 200 with server: Caddy (Caddy
-# is still the public front on :443)
+```bash
+curl --fail --silent https://animals.ashbi.ca/api/health
+printf '' | openssl s_client -connect animals.ashbi.ca:443 \
+  -servername animals.ashbi.ca 2>/dev/null | \
+  openssl x509 -noout -subject -issuer -dates -fingerprint -sha256
 ```
 
-The Traefik debug log (`docker logs traefik`) shows the route
-match (`Service selected by WRR: d50d8058... = animal-farts
-backend`) when animals.ashbi.ca is requested.
+`animal-farts-ops-check.timer` checks strict public health, externally served
+certificate age, container health/restarts, capacity, and backup freshness
+every five minutes. Certificate age below 30 days fails the check, covering the
+30/14/7-day escalation windows until renewal succeeds.
 
-## Next steps (not done)
+## Rollback
 
-1. **Coordinate the sibling caddy-guard crons** (lull,
-   markup, contraction, splash) so they don't re-assert
-   their Caddy blocks on the :443 port for hosts that
-   should be Traefik-routed. Currently those crons add
-   `lull.ashbi.ca`, `markup.ashbi.ca`, `contractions.ashbi.ca`,
-   `splash.ashbi.ca` blocks to /opt/caddy/Caddyfile every
-   minute. For a full cutover, those crons would need to
-   no-op or be deleted from the sibling repos.
-
-2. **Move the remaining 9 *.ashbi.ca subdomains to Traefik**.
-   Each one needs (a) a route in `/opt/traefik/dynamic/routers.yml`
-   (b) a cert in `/opt/traefik/certs/` (c) a Caddy block
-   that forwards to Traefik. Pattern is identical to the
-   animals block.
-
-3. **Full Traefik-on-:443 cutover** (what the user
-   actually asked for): the current setup has Caddy on
-   :80/:443 (public). For Traefik to take over, Caddy
-   needs to be stopped on :443, Traefik needs to be
-   reconfigured to bind :443 directly (not just :8443),
-   and the caddy-guard crons need to no-op. The lull
-   AGENTS.md says the prior attempt to remove Caddy
-   entirely caused multi-hour deadlocks with the
-   caddy-guard crons — so this step is **not** a one-line
-   change.
+If ACME serving fails, restore only the timestamped `tls.yml` backup to
+`/opt/traefik/dynamic/tls.yml`; the file provider hot-reloads it. Verify the
+certificate and `/api/health` externally. Do not restart shared Traefik unless
+file rollback fails and sibling-site impact has been assessed.
