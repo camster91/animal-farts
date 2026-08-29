@@ -35,6 +35,11 @@ The Playwright suite starts the production server with a temporary database
 and upload directory. It never reads or modifies normal local or deployed
 recording data.
 
+The normal test command also enforces production bundle ceilings after its
+clean build: 380 KiB raw / 115 KiB gzip for all JavaScript, 70 KiB gzip for the
+initial entry, and 5 KiB gzip for CSS. Raise a ceiling only with measured
+device/network evidence and a recorded product tradeoff.
+
 ## Deploy
 
 The `dist/` folder is a static bundle. The deploy script (`scripts/deploy-vps.sh`) bundles the source, builds the Docker image on the VPS (the Mac has no docker), and swaps in the new container with `camster91/animal-farts:<sha>`.

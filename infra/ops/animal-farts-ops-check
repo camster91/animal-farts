@@ -4,6 +4,7 @@ set -Eeuo pipefail
 DOMAIN=${ANIMAL_FARTS_DOMAIN:-animals.ashbi.ca}
 BACKUP_DIR=${ANIMAL_FARTS_BACKUP_DIR:-/data/animal-farts/backups/daily}
 ALERT_URL=${ANIMAL_FARTS_ALERT_URL:-}
+MAX_RESTARTS=${ANIMAL_FARTS_MAX_RESTARTS:-2}
 failures=()
 
 fail() { failures+=("$1"); }
@@ -19,7 +20,13 @@ health=$(curl --fail --silent --show-error --max-time 10 "https://$DOMAIN/api/he
 container_status=$(docker inspect animal-farts --format '{{.State.Status}}/{{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>/dev/null || true)
 [[ $container_status == running/healthy ]] || fail "container is $container_status"
 restart_count=$(docker inspect animal-farts --format '{{.RestartCount}}' 2>/dev/null || echo unknown)
-[[ $restart_count =~ ^[0-9]+$ ]] || fail 'container restart count unavailable'
+if ! [[ $MAX_RESTARTS =~ ^[0-9]+$ ]]; then
+  fail 'restart threshold is invalid'
+elif ! [[ $restart_count =~ ^[0-9]+$ ]]; then
+  fail 'container restart count unavailable'
+elif ((restart_count > MAX_RESTARTS)); then
+  fail "container restarted ${restart_count} times (threshold ${MAX_RESTARTS})"
+fi
 
 disk_used=$(df --output=pcent /data | tail -1 | tr -dc '0-9')
 inode_used=$(df --output=ipcent /data | tail -1 | tr -dc '0-9')

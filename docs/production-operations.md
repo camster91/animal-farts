@@ -21,7 +21,10 @@ Verified against the VPS on 2026-08-28. Owner: Cameron Ashley. Public service:
 `animal-farts-ops-check.timer` runs every five minutes. It emits no request
 bodies, audio, device IDs, profile data, or recording names. It checks strict
 external health, container state, restart count availability, disk/inode use
-(80% threshold), certificate lifetime (30/14/7-day policy), and backup age.
+(80% threshold), certificate lifetime (30/14/7-day policy), and backup age. A
+container with more than two lifetime restarts is treated as a possible restart
+loop; set `ANIMAL_FARTS_MAX_RESTARTS` in the root-only environment file only
+after investigating and recording an intentional restart.
 
 Failures appear in `journalctl -u animal-farts-ops-check.service`. For external
 notification, create a dedicated Uptime Kuma push monitor owned by Cameron and
