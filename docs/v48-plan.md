@@ -1,3 +1,5 @@
+> Historical snapshot. Not a current launch plan; see `history.md`.
+
 # PootBox v48 — Remaining items + Launch polish
 
 **Date:** 2026-06-11

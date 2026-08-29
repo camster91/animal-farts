@@ -1,3 +1,5 @@
+> Historical snapshot. Not a current release gate; see `history.md`.
+
 # Poot Party v31 — Ship-readiness polish
 
 ## Why v31

@@ -1,3 +1,5 @@
+> Historical snapshot. Not a current audit; see `history.md`.
+
 # PootBox v50 — UI cleanup (the "messy" audit)
 
 **Date:** 2026-06-11

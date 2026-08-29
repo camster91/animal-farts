@@ -1,3 +1,5 @@
+> Historical snapshot. Not a current launch plan; see `history.md`.
+
 # PootBox v3.0 — Public Launch Plan
 
 ## Vision

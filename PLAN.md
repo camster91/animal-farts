@@ -1,3 +1,5 @@
+> Historical snapshot. Not a current roadmap or release instruction; see `docs/history.md`.
+
 # Plan: animal-farts v56 — "make it a proper web game"
 
 State: HEAD at `941c53c` (v55 corner-fling fix + sync-caddy resilience). Live site

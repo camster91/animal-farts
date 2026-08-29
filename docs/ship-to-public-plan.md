@@ -1,3 +1,5 @@
+> Historical snapshot. Not a current launch plan; see `history.md`.
+
 # PootBox — Ship to Public — v1.0 (post-test) Plan
 
 ## Goal

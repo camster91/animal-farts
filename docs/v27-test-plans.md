@@ -1,3 +1,5 @@
+> Historical snapshot. Not a current QA matrix; see `history.md`.
+
 # v27 Test Plans
 
 ## Feature 1: Custom sound upload (parent)

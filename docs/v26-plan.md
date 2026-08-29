@@ -1,3 +1,5 @@
+> Historical snapshot. Not a current roadmap; see `history.md`.
+
 # v26 — Poot Party
 
 ## Brand
