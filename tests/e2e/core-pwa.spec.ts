@@ -68,11 +68,22 @@ test("core record, persist, share, and delete journey", async ({ page, browser }
 });
 
 test("mobile shell remains usable offline and explains share lookup", async ({ page, context }) => {
+  await page.addInitScript(() => {
+    class DeterministicAudio extends EventTarget {
+      volume = 1;
+      play() { return Promise.resolve(); }
+      pause() {}
+    }
+    Object.defineProperty(window, "Audio", { configurable: true, value: DeterministicAudio });
+  });
   await openFreshApp(page);
   await page.getByRole("button", { name: /tap to play/ }).first().click();
   await context.setOffline(true);
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByText("PootBox")).toBeVisible();
+  const cachedSound = page.getByRole("button", { name: /tap to play/ }).first();
+  await cachedSound.click();
+  await expect(page.getByRole("button", { name: /tap to stop/ }).first()).toBeVisible();
   await page.evaluate(() => {
     Object.defineProperty(navigator, "onLine", { configurable: true, get: () => false });
   });
@@ -84,6 +95,34 @@ test("mobile shell remains usable offline and explains share lookup", async ({ p
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
   await context.setOffline(false);
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "onLine", { configurable: true, get: () => true });
+    window.dispatchEvent(new Event("online"));
+  });
+  await page.getByRole("button", { name: "Look up" }).click();
+  await expect(page.getByText(/You're offline/)).toHaveCount(0);
+  await expect(page.getByText(/couldn't find|not found/i)).toBeVisible();
+});
+
+test("onboarding, update prompt, and focus flows work from the keyboard", async ({ page }) => {
+  await page.goto("/");
+  const intro = page.getByRole("dialog", { name: "Tap to play" });
+  await expect(intro).toBeVisible();
+  const next = page.getByRole("button", { name: "Next" });
+  await expect(next).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "Make it yours" })).toBeVisible();
+  await expect(next).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  await page.evaluate(() => {
+    navigator.serviceWorker.dispatchEvent(new Event("controllerchange"));
+  });
+  await expect(page.getByText("New version available")).toBeVisible();
+  await page.getByRole("button", { name: "Later" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("New version available")).toHaveCount(0);
 });
 
 test("primary mobile controls meet the minimum touch target", async ({ page }) => {
@@ -100,6 +139,11 @@ test("primary mobile controls meet the minimum touch target", async ({ page }) =
 
 test("card labels stay clear of Change controls at supported responsive widths", async ({ page }) => {
   await openFreshApp(page);
+
+  await page.getByRole("button", { name: /^Change .* sound$/ }).first().click();
+  await expect(page.getByText("Pick a sound", { exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Search sounds" })).toBeVisible();
+  await page.getByRole("button", { name: "Close library" }).click();
 
   for (const viewport of [
     { width: 320, height: 568 },
