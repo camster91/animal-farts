@@ -11,13 +11,14 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { readFileSync, existsSync, readdirSync, mkdtempSync, cpSync, rmSync, statSync, readFile } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, mkdtempSync, mkdirSync, cpSync, rmSync, statSync, readFile } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const CONSTANTS = new URL('../src/pootbox/constants.ts', import.meta.url).pathname;
-const SOUNDS = new URL('../public/sounds/', import.meta.url).pathname;
+const CONSTANTS = fileURLToPath(new URL('../src/pootbox/constants.ts', import.meta.url));
+const SOUNDS = fileURLToPath(new URL('../public/sounds/', import.meta.url));
 
 function listPngsMatching(re) {
   return readdirSync(SOUNDS, { recursive: true })
@@ -48,7 +49,7 @@ function extractEntries() {
 
 describe('v70: scan-sounds output invariants', () => {
   it('scan-sounds.py exists and is runnable', () => {
-    const p = new URL('../scripts/scan-sounds.py', import.meta.url).pathname;
+    const p = fileURLToPath(new URL('../scripts/scan-sounds.py', import.meta.url));
     assert.ok(existsSync(p), 'scripts/scan-sounds.py should exist');
   });
 
@@ -155,7 +156,7 @@ describe('v70: scan-sounds output invariants', () => {
   // or adds a .mp3 to public/sounds/ without re-scanning, this
   // catches it. The scan is fast (~150ms for 376 files).
   it('v75: scanner output matches the committed constants.ts (no drift)', () => {
-    if (!existsSync(new URL('../scripts/scan-sounds.py', import.meta.url).pathname)) {
+    if (!existsSync(fileURLToPath(new URL('../scripts/scan-sounds.py', import.meta.url)))) {
       return; // scanner missing — earlier test already asserts that
     }
     // Skip if python3 isn't available (the Dockerfile is alpine
@@ -171,19 +172,21 @@ describe('v70: scan-sounds output invariants', () => {
     }
     if (pyRes.status !== 0) return;
 
-    // Copy public/sounds/, scripts/scan-sounds.py, and the
-    // current src/pootbox/constants.ts into a tmp dir. The scanner
-    // walks public/sounds/, reads constants.ts as a template,
-    // and rewrites the BUILT_IN_SOUNDS array. Running it on the
-    // copy and diffing against the original catches drift.
+    // Copy only the scanner inputs into a tmp dir. Copying the entire
+    // repository before deleting .git/node_modules made this small drift
+    // check require hundreds of megabytes of temporary free space.
     const tmp = mkdtempSync(join(tmpdir(), 'af-scan-'));
     try {
       const tmpRoot = join(tmp, 'project');
-      cpSync(join(import.meta.dirname, '..'), tmpRoot, { recursive: true });
-      // Skip node_modules / dist / .git — they're not inputs.
-      rmSync(join(tmpRoot, 'node_modules'), { recursive: true, force: true });
-      rmSync(join(tmpRoot, 'dist'), { recursive: true, force: true });
-      rmSync(join(tmpRoot, '.git'), { recursive: true, force: true });
+      mkdirSync(join(tmpRoot, 'public'), { recursive: true });
+      mkdirSync(join(tmpRoot, 'scripts'), { recursive: true });
+      mkdirSync(join(tmpRoot, 'src', 'pootbox'), { recursive: true });
+      cpSync(SOUNDS, join(tmpRoot, 'public', 'sounds'), { recursive: true });
+      cpSync(
+        fileURLToPath(new URL('../scripts/scan-sounds.py', import.meta.url)),
+        join(tmpRoot, 'scripts', 'scan-sounds.py'),
+      );
+      cpSync(CONSTANTS, join(tmpRoot, 'src', 'pootbox', 'constants.ts'));
 
       const res = spawnSync('python3', ['scripts/scan-sounds.py'], {
         cwd: tmpRoot,
