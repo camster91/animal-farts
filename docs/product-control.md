@@ -169,9 +169,10 @@ and aggregate product learning must remain separate from recordings and names.
 7. **Maintainability (#40, implemented locally):** land tested recording and
    sharing interfaces after E2E protection.
 8. **Physical/device and Android (#36/#32, prepared on staged branch):** native
-   API/audio routing, constrained CORS, store metadata, security diff review,
-   and debug APK assembly are verified locally. Complete physical QA, signing,
-   policy review, and approval before an internal-track submission.
+   API and uploaded-audio routing, constrained WebView CORS, store metadata,
+   security diff review, and debug APK assembly are verified locally. Complete
+   the signed physical QA record, release signing, and Play policy review before
+   internal-track or production submission.
 9. **Pilot and commercial validation (proposed):** only after release gates,
    recruit a small consenting family cohort and measure the hypotheses above.
 
@@ -201,6 +202,12 @@ is warranted while these remain.
   implemented durable recording sync, mobile E2E, operational recovery, current
   docs, Android release preparation, and sharing extraction on staged branches;
   enabled trusted ACME TLS, verified backup/restore, and installed ops checks.
+- 2026-08-28: fixed packaged Android routing for API and uploaded-audio access,
+  added a strict Capacitor-origin CORS contract, repaired cross-origin native
+  audio playback, passed 247 application tests plus three mobile E2E journeys,
+  completed a security diff review with no reportable findings, and assembled a
+  debug APK on JDK 21. Physical device QA and signed release approval remain
+  open.
 - 2026-08-28: established the first dated competitor/policy evidence and the
   focused ad-free family-play hypothesis. Real customer validation remains open.
 - 2026-08-28: merged immutable deployment tooling in PR #48 without deploying
@@ -234,3 +241,23 @@ is warranted while these remain.
   application tests, three mobile E2E journeys, a no-findings security diff
   scan, and JDK 21 debug APK assembly. No physical device was connected, so
   device QA remains open; the reconciled stack must be revalidated.
+- 2026-08-28: the reconciled staged Android stack passed lint, all 247
+  application tests, all four mobile E2E journeys, Capacitor sync, and JDK 21
+  debug APK assembly. The APK SHA-256 is
+  `9a15b5c64accdacb6fcab64bc2a914cc2c6c63f48d0fffe0923af242aaf699d3`.
+  The earlier Android security diff scan had no reportable findings. No physical
+  device was connected, so device QA remains open.
+- 2026-08-28: a fresh detached checkout of the staged Android commit completed
+  root and server `npm ci`, lint, all 247 application tests, and all four E2E
+  journeys. The clean install exposed a moderate `xcode -> uuid@7` advisory in
+  the Capacitor CLI toolchain; the Android branch now overrides it with the
+  compatible patched `uuid@11.1.1`, after which `npm audit` reports zero known
+  vulnerabilities and Capacitor sync plus the JDK 21 debug build still pass.
+- 2026-08-28: after reconciling the operations and bundle-budget contracts, the
+  exact staged Android stack passed lint, all 251 application tests, and all
+  four E2E journeys. These additions affect tests, scripts, and documentation;
+  the previously assembled application bundle and APK remain unchanged.
+- 2026-08-28: the final staged workflow-pinning reconciliation at `4c91ec7`
+  passed lint, all 254 application tests, the focused CI/operations/performance
+  contracts, and an npm audit with zero known vulnerabilities. Application
+  assets remain unchanged from the four-journey E2E and Android build evidence.

@@ -1,4 +1,5 @@
 import type { Page } from "./types.js";
+import { serverUrl } from "./lib/serverUrl.js";
 
 export interface SharedSound {
   code: string;
@@ -49,7 +50,7 @@ export async function mintShareCode(options: {
   }
 
   try {
-    const response = await (options.fetchImpl ?? fetch)("/api/share", {
+    const response = await (options.fetchImpl ?? fetch)(serverUrl("/api/share"), {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -87,7 +88,7 @@ export async function lookupShareCode(options: {
   if (!options.online) return { __offline: true, code };
   try {
     const response = await (options.fetchImpl ?? fetch)(
-      `/api/share/${encodeURIComponent(code)}`,
+      serverUrl(`/api/share/${encodeURIComponent(code)}`),
       { signal: options.signal },
     );
     if (!response.ok) return null;

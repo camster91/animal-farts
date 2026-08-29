@@ -23,6 +23,7 @@
     "src/pootbox/types.ts",
     "src/pootbox/components/recordSheetUtils.ts",
     "src/pootbox/lib/kidSafeError.ts",
-    "src/pootbox/lib/deviceId.ts"
+    "src/pootbox/lib/deviceId.ts",
+    "src/pootbox/lib/serverUrl.ts"
   ]
 }

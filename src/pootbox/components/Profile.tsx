@@ -16,6 +16,7 @@
 import { useState, useEffect } from "react";
 import { getOrCreateDeviceId } from "../lib/deviceId";
 import { kidSafeError } from "../lib/kidSafeError";
+import { serverUrl } from "../lib/serverUrl";
 import { ProfileSkeleton } from "../ui/Skeleton";
 import InlineBanner from "../ui/InlineBanner";
 
@@ -50,7 +51,7 @@ export default function Profile({ onBack }: ProfileProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError(null);
-    fetch("/api/me", { headers: { "x-device-id": getOrCreateDeviceId() } })
+    fetch(serverUrl("/api/me"), { headers: { "x-device-id": getOrCreateDeviceId() } })
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -78,7 +79,7 @@ export default function Profile({ onBack }: ProfileProps) {
     setSaving(true);
     setError(null);
     try {
-      const r = await fetch("/api/me", {
+      const r = await fetch(serverUrl("/api/me"), {
         method: "PATCH",
         headers: {
           "x-device-id": getOrCreateDeviceId(),

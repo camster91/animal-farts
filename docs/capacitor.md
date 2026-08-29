@@ -18,7 +18,7 @@ Capacitor packages the web app into a WebView with a proper `AndroidManifest.xml
 ```ts
 const config: CapacitorConfig = {
   appId: 'com.ashbi.pootparty',
-  appName: 'Poot Party',
+  appName: 'PootBox',
   webDir: 'dist',
   android: {
     allowMixedContent: false,  // HTTPS only
@@ -50,7 +50,16 @@ The same bundle works in both:
 - Chrome PWA (existing)
 - Capacitor WebView (new)
 
-No code changes to `PootBox.tsx` were needed. The WebView's `getUserMedia`, `Permissions API`, `IndexedDB`, and `localStorage` all work identically to Chrome.
+The WebView keeps bundled UI and built-in sounds offline. Server-backed paths
+(`/api/*` and `/uploads/*`) are resolved to `https://animals.ashbi.ca` on a
+native platform; the web build keeps same-origin relative URLs. The server
+permits only Android's secure `https://localhost` WebView origin and never
+enables wildcard CORS. Uploaded audio is cross-origin embeddable because its
+random URL is already the possession-based playback capability; API response
+reads retain the strict origin allowlist.
+
+`getUserMedia`, IndexedDB, and localStorage still run inside the WebView. These
+behaviors require physical-device verification before release.
 
 ## NPM scripts
 
@@ -64,16 +73,20 @@ No code changes to `PootBox.tsx` were needed. The WebView's `getUserMedia`, `Per
 
 After any web change:
 1. `npm run cap:build` — builds web app + syncs to Android
-2. `cd android && ./gradlew assembleDebug` — builds APK (requires JDK 17+)
+2. `cd android && ./gradlew assembleDebug` — builds APK (requires JDK 21)
 3. `adb install android/app/build/outputs/apk/debug/app-debug.apk` — installs on device
 
 ## Testing on real device
 
 The Android emulator mic does not work. **Real device required** to test recording.
 
-## Release signing (TBD)
+## Release signing
 
-Cam needs to set up a keystore. Until then, only debug builds are possible.
+Release builds fail closed unless `POOTBOX_KEYSTORE_PATH`,
+`POOTBOX_KEYSTORE_PASSWORD`, `POOTBOX_KEY_ALIAS`, and
+`POOTBOX_KEY_PASSWORD` are supplied externally. Never commit the keystore or
+these secrets. A signed release and Play submission require action-time
+approval.
 
 ## Files
 

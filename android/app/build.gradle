@@ -1,5 +1,16 @@
 apply plugin: 'com.android.application'
 
+def releaseKeystorePath = System.getenv('POOTBOX_KEYSTORE_PATH')
+def releaseKeystorePassword = System.getenv('POOTBOX_KEYSTORE_PASSWORD')
+def releaseKeyAlias = System.getenv('POOTBOX_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('POOTBOX_KEY_PASSWORD')
+def releaseSigningReady = [
+    releaseKeystorePath,
+    releaseKeystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+].every { it != null && !it.isBlank() }
+
 android {
     namespace = "com.ashbi.pootparty"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +18,8 @@ android {
         applicationId "com.ashbi.pootparty"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "1.0"
+        versionCode 3
+        versionName "1.0.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,11 +27,40 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (releaseSigningReady) {
+            release {
+                storeFile file(releaseKeystorePath)
+                storePassword releaseKeystorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
+            }
+        }
+    }
     buildTypes {
         release {
-            minifyEnabled false
+            if (releaseSigningReady) {
+                signingConfig signingConfigs.release
+            }
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    def requestedRelease = graph.allTasks.any {
+        it.path == ':app:bundleRelease' || it.path == ':app:assembleRelease'
+    }
+    if (requestedRelease && !releaseSigningReady) {
+        throw new GradleException(
+            'Release signing is required. Set POOTBOX_KEYSTORE_PATH, ' +
+            'POOTBOX_KEYSTORE_PASSWORD, POOTBOX_KEY_ALIAS, and POOTBOX_KEY_PASSWORD.'
+        )
     }
 }
 

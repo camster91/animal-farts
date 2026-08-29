@@ -215,6 +215,27 @@ describe("server integration: security gates", () => {
     assert.ok(!r.headers["access-control-allow-origin"], "CORS must be off");
   });
 
+  it("allows only packaged Capacitor origins to call the API", async (t) => {
+    if (!started) return t.skip();
+    const preflight = await http("OPTIONS", "/api/recordings", {
+      headers: {
+        origin: "https://localhost",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "content-type,x-device-id,x-operation-id",
+      },
+    });
+    assert.strictEqual(preflight.status, 204);
+    assert.strictEqual(preflight.headers["access-control-allow-origin"], "https://localhost");
+    assert.match(preflight.headers["access-control-allow-methods"], /POST/);
+    assert.match(preflight.headers["access-control-allow-headers"], /X-Device-Id/i);
+
+    const insecureOrigin = await http("GET", "/api/health", {
+      headers: { origin: "http://localhost" },
+    });
+    assert.strictEqual(insecureOrigin.status, 200);
+    assert.ok(!insecureOrigin.headers["access-control-allow-origin"]);
+  });
+
   it("serves /uploads/*.webm as audio/webm (not video/webm)", async (t) => {
     if (!started) return t.skip();
     const webm = Buffer.from("fake webm");
@@ -241,6 +262,7 @@ describe("server integration: security gates", () => {
       `expected audio/* Content-Type, got ${r.headers["content-type"]}`,
     );
     assert.strictEqual(r.headers["x-content-type-options"], "nosniff");
+    assert.strictEqual(r.headers["cross-origin-resource-policy"], "cross-origin");
   });
 
   it("does NOT rate-limit /uploads/* under the general limiter", async (t) => {
