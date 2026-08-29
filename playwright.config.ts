@@ -1,34 +1,32 @@
-// Playwright test suite for PootBox
-// Run with: npm run test:e2e
-// Requires: npx playwright install --with-deps chromium
-//
-// For CI/local dev without browser deps, use node --test instead:
-//   node --test tests/unit-*.test.mjs
-
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
-  testDir: './tests',
-  timeout: 30_000,
-  retries: 2,
+  testDir: "./tests/e2e",
+  outputDir: ".artifacts/playwright/results",
+  timeout: 45_000,
+  expect: { timeout: 10_000 },
+  fullyParallel: false,
+  workers: 1,
+  retries: process.env.CI ? 1 : 0,
+  reporter: process.env.CI
+    ? [["line"], ["html", { outputFolder: ".artifacts/playwright/report", open: "never" }]]
+    : "list",
   use: {
-    baseURL: 'http://localhost:5173',
+    ...devices["Pixel 5"],
+    baseURL: "http://127.0.0.1:5290",
     headless: true,
+    permissions: ["microphone"],
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
+    video: "retain-on-failure",
+    launchOptions: {
+      args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
+    },
   },
   webServer: {
-    command: 'npm run dev',
-    port: 5173,
-    reuseExistingServer: true,
-    timeout: 15_000,
+    command: "node scripts/serve-e2e.mjs",
+    url: "http://127.0.0.1:5290/api/health",
+    reuseExistingServer: false,
+    timeout: 30_000,
   },
-  projects: [
-    {
-      name: 'local',
-      use: { baseURL: 'http://localhost:5173' },
-    },
-    {
-      name: 'production',
-      use: { baseURL: 'https://animals.ashbi.ca' },
-    },
-  ],
 });

@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "test:build": "tsc -p tsconfig.test.json",
     "test": "npm run build && npm run test:build && node --test --test-concurrency=1 --test-timeout=30000 tests/unit-*.test.mjs tests/server-integration.test.mjs tests/server-social-disabled.test.mjs",
+    "test:e2e": "npm run build && playwright test",
     "preview": "vite preview",
     "cap:sync": "cap sync android",
     "cap:build": "npm run build && cap sync android",
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",

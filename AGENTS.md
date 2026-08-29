@@ -17,6 +17,7 @@ Animal Farts / "PootBox" is a kids' PWA soundboard. It is one product delivered 
 ### Tests
 - TypeScript strict mode is enabled for app, Node config, and test compilation. Do not disable `strict` to work around a new error; fix or narrow the type instead.
 - `npm test` builds the production frontend, compiles the test targets, and runs unit + server integration tests. The production build is required because the server integration suite verifies the built SPA and static pages. The suite has historically contained 201 tests; treat the current test runner output as authoritative if that count changes.
+- `npm run test:e2e` builds the app and runs the mobile Chromium release journeys against an isolated temporary SQLite database and upload directory. Install its pinned browser once with `npx playwright install chromium`.
 - `tests/server-integration.test.mjs` spawns the server on fixed port 5284 and sets `RATE_LIMIT_DISABLED=1` so its many uploads don't exhaust the 6/min upload limiter. If a stray `server.js` from an earlier run is holding 5284, kill leftovers (`ps aux | grep [s]erver.js`) before re-running.
 - `tests/unit-audio.test.mjs` is timing-sensitive. For CI or a loaded machine build first, then use the release-gate command: `npm run build && node --test --test-concurrency=1 --test-timeout=30000 tests/unit-*.test.mjs tests/server-integration.test.mjs tests/server-social-disabled.test.mjs`.
 - `server/moderation.js` is the single source of truth for the banned-word filter and is imported by both `server.js` and `tests/unit-v73-moderation-validation.test.mjs` (keep them in sync via the module, not copies).
@@ -24,7 +25,7 @@ Animal Farts / "PootBox" is a kids' PWA soundboard. It is one product delivered 
 ### Lint / build / CI
 - `npm run lint` must not produce errors. Existing warnings should be reduced when touching the affected code rather than normalized as a permanent baseline.
 - `npm run build` = `tsc -b && vite build && node scripts/inject-sw-assets.mjs`.
-- `.github/workflows/ci.yml` is the merge gate: install root + server dependencies, lint, compile test targets, run the serial test suite, build the production frontend, and syntax-check `server/server.js`.
+- `.github/workflows/ci.yml` is the merge gate: install root + server dependencies and Chromium, lint, compile test targets, run the serial and Playwright suites, build the production frontend, and syntax-check `server/server.js`.
 - Do not merge a change that affects Play, recording, sharing, offline behavior, Friends, profiles, or build/runtime configuration unless the exact PR head commit has passed CI.
 
 ### Product safety
