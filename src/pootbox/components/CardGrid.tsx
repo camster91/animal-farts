@@ -166,7 +166,7 @@ const CardGrid: FC<CardGridProps> = ({
           justifyContent: "center",
           gap: 6,
           padding: 12,
-          minHeight: 124,
+          minHeight: 168,
           borderRadius: 20,
           background: isPlaying
             ? "rgba(245, 158, 11, 0.18)"
@@ -181,7 +181,8 @@ const CardGrid: FC<CardGridProps> = ({
           userSelect: "none",
           WebkitUserSelect: "none",
           WebkitTapHighlightColor: "transparent",
-          paddingBottom: 52, // room for 44px action bar
+          paddingTop: isCustom ? 52 : 16, // keep the delete control clear of the emoji
+          paddingBottom: 60, // reserve a real lane for the 44px action bar
           // The transform transition is set in the <style> block
           // above (.pootbox-card) so the :active state can override
           // it. Inline `transition` here would win specificity.
@@ -191,6 +192,7 @@ const CardGrid: FC<CardGridProps> = ({
         }}
       >
         <span
+          data-card-label
           style={{
             fontSize: 56,
             lineHeight: 1,
@@ -209,6 +211,11 @@ const CardGrid: FC<CardGridProps> = ({
             color: isFart ? "#BE185D" : "#3D2C1E",
             lineHeight: 1.1,
             textAlign: "center",
+            minHeight: "2.2em",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            overflowWrap: "anywhere",
           }}
         >
           {name}
@@ -284,6 +291,7 @@ const CardGrid: FC<CardGridProps> = ({
             card. The delete (×) button is at the top-right (a
             red dot) — out of the way but still discoverable. */}
         <div
+          data-card-actions
           style={{
             position: "absolute",
             bottom: 4,
@@ -470,11 +478,11 @@ const CardGrid: FC<CardGridProps> = ({
         right: 8,
         bottom: 80, // clear the tab bar
         overflowY: "auto",
-        // CSS grid: as many 124px columns as fit, min 100px. The
-        // gap is small so the cards look like one big sheet, not
-        // spaced out like Apple widgets.
+        // Keep two usable columns on narrow phones. The previous 108px
+        // minimum let the absolutely-positioned Change controls overlap
+        // labels and made custom action rows wider than their cards.
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(108px, 1fr))",
+        gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
         gap: 10,
         padding: "8px 0 24px",
         // The card is the touch target; the page itself doesn't
@@ -513,7 +521,7 @@ const CardGrid: FC<CardGridProps> = ({
           justifyContent: "center",
           gap: 6,
           padding: 12,
-          minHeight: 124,
+          minHeight: 168,
           borderRadius: 20,
           background: "rgba(255, 255, 255, 0.4)",
           border: "2px dashed rgba(61,44,30,0.35)",
