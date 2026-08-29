@@ -8,6 +8,7 @@ Animal Farts / "PootBox" is a kids' PWA soundboard. It is one product delivered 
 - Two independent npm projects, each with its own lockfile: the repo root (frontend + Vite + Capacitor tooling) and `server/` (Express + `better-sqlite3` + `multer`). Install both before running integration tests.
 - The only backend service is `server/server.js`. SQLite (`better-sqlite3`) is embedded and the uploads dir is on the local filesystem — there is no external database, cache, or third-party dependency. Both are auto-created on startup from `DB_PATH` / `UPLOAD_DIR`.
 - Play and the dormant Friends/profile views are code-split with `React.lazy` and `Suspense`. The v1 production default exposes Play only; do not enable the social feature flags or reintroduce eager imports without the safeguards documented in `docs/v1-child-safety-boundary.md`.
+- `docs/pootbox-architecture.md` maps orchestration ownership. Keep durable recording/upload work in `useRecording` + `syncQueue`, and controlled sharing in `shareOrchestration`; PootBox should compose those interfaces rather than absorb their effects again.
 
 ### Running
 - Frontend-only dev: `npm run dev` (Vite on :5173). Gotcha: there is no Vite dev proxy, and the client calls the API via relative `/api/...` paths, so API-backed features (recording upload, share codes, social feed) do NOT work in this mode.

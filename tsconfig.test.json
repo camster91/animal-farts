@@ -18,6 +18,7 @@
     "src/pootbox/audioManager.ts",
     "src/pootbox/recordings.ts",
     "src/pootbox/syncQueue.ts",
+    "src/pootbox/shareOrchestration.ts",
     "src/pootbox/constants.ts",
     "src/pootbox/types.ts",
     "src/pootbox/components/recordSheetUtils.ts",

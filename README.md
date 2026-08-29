@@ -80,11 +80,14 @@ TLS edge and owns ACME renewal as documented in `infra/traefik/README.md`.
 - `src/audio/soundPool.ts` — auto-generated sound path pool
 - `src/audio/primeAudio.ts` — first-tap iOS Safari audio unlock
 - `src/pootbox/syncQueue.ts` — IndexedDB-backed upload/delete queue with idempotent retries
+- `src/pootbox/shareOrchestration.ts` — controlled share mint/lookup/import service
 - `src/pootbox/lib/deviceId.ts` — per-device UUID stored in localStorage (used for v74 server-side identification)
 - `server/server.js` — Express + SQLite API; see `docs/api.md`
 - `scripts/scan-sounds.py` — auto-discovery scan that regenerates `src/pootbox/constants.ts`'s `BUILT_IN_SOUNDS` array
 - `public/sw.js` — service worker for offline-first precache (shell + Fredoka fonts)
 - `public/sounds/*.mp3` — the sound library
+
+The UI ownership map is documented in `docs/pootbox-architecture.md`.
 
 ## Child-safety feature gate
 
