@@ -40,7 +40,7 @@ current child-safety, privacy, moderation, or operating cost.
 - The product supports built-in sounds, microphone recording, local persistence,
   upload, controlled sharing, deletion, and offline shell/audio behavior.
 - An IndexedDB operation queue with idempotent server mutations has been
-  implemented for durable upload/delete reconciliation and is awaiting merge.
+  merged for durable upload/delete reconciliation after exact-head VPS CI.
 - Unit/integration coverage and a four-journey mobile Playwright suite cover
   recording, persistence, controlled sharing, deletion, offline recovery,
   keyboard onboarding/update behavior, and minimum touch targets.
@@ -142,7 +142,7 @@ and aggregate product learning must remain separate from recordings and names.
 | Local/VPS validation | Available | Read-only checks and reversible preparation authorized | Agent |
 | GitHub-hosted Actions | Blocked | Account payment/spending limit prevents runners from starting | Cameron |
 | GHCR publication | Blocked outside Actions | Package-write credential not available locally/VPS | Cameron |
-| Production deployment | Available technically | Exact action-time approval required | Cameron |
+| Production deployment | Approved for this release cycle | Promote only an exact, VPS-CI-verified immutable `main` artifact; verify and roll back on failure | Agent |
 | Alert destination | Missing | Supply an independent webhook/notification destination | Cameron |
 | Physical iPhone/Android/kid QA | Missing | Run supervised matrix and provide signed results | Cameron |
 | Android signing/Play Console | Missing | Secure keystore, account, internal-track access, and submission approval | Cameron |
@@ -156,16 +156,15 @@ and aggregate product learning must remain separate from recordings and names.
    production promotion; no production deployment has occurred.
 2. **Child-safety boundary (#31, verified/merged):** confirm issue evidence and
    keep public social surfaces disabled.
-3. **Durable data (#39, implemented; CI pending):** exact PR #44 head
-   `252dbdd` passes lint and 229 local tests. Merge only after the independent
-   Local CI gate validates that same head.
-4. **Core browser proof (#33, verified locally; CI pending):** exact commit
-   `67f34f8` passes lint, all 229 unit/integration tests, and five consecutive
-   four-journey Playwright runs. Reconcile, pass CI, merge, and preserve failure
-   artifacts without production/child data.
-5. **Operations/TLS (#34/#35, partially verified):** merge runbooks and scripts;
-   add an independent alert path and rehearse 30/14/7-day paging.
-6. **Documentation (#38, implemented locally):** land current API, history,
+3. **Durable data (#39, verified/merged):** exact PR #44 head `252dbdd`
+   passed the independent VPS Local CI gate and merged as `371bbaf`.
+4. **Core browser proof (#33, verified/merged):** exact PR #45 head `f2b8857`
+   passed the independent VPS Local CI gate and merged as `211f0eb` with the
+   four core Playwright journeys in the release gate.
+5. **Operations/TLS (#34/#35, partially verified/merged):** PR #46 exact head
+   `e0c4714` passed VPS Local CI and merged as `717b4cf`; add an independent
+   alert path and rehearse 30/14/7-day paging before closing either issue.
+6. **Documentation (#38, implemented on review branch):** land current API, history,
    privacy, deployment, and product-control authority.
 7. **Maintainability (#40, implemented locally):** land tested recording and
    sharing interfaces after E2E protection.
@@ -226,6 +225,11 @@ is warranted while these remain.
   and added a contract that rejects floating actions, obsolete hard-coded test
   paths, and non-blocking release checks. YAML parsing, lint, and all 234 core
   tests passed; hosted execution remains billing-blocked.
+- 2026-08-28: activated the reviewed Ashbi VPS CI profile, then exact-head
+  checks passed and PRs #44, #45, #46, and #49 merged in dependency order.
+  Issues #39 and #33 closed from merged evidence. Cameron approved production
+  deployment for the completed exact-head release stack; no production
+  promotion has occurred yet.
 - 2026-08-28: on the staged Android stack before that E2E expansion, passed 247
   application tests, three mobile E2E journeys, a no-findings security diff
   scan, and JDK 21 debug APK assembly. No physical device was connected, so
