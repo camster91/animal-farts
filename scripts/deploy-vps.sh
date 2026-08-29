@@ -101,7 +101,7 @@ rollback() {
     -e NODE_ENV=production -e DB_PATH=/app/data/farts.db \
     -e UPLOAD_DIR=/app/data/uploads -e PORT="$PORT_CONT" \
     "$PREVIOUS_ID" >/dev/null
-  curl --fail --silent --show-error --retry 20 --retry-delay 1 \
+  curl --fail --silent --show-error --retry 20 --retry-all-errors --retry-delay 1 \
     "http://127.0.0.1:${PORT_HOST}/api/health" >/dev/null
   exit "$status"
 }
@@ -115,20 +115,22 @@ docker run -d --name "$NAME" --restart unless-stopped \
   -e UPLOAD_DIR=/app/data/uploads -e PORT="$PORT_CONT" \
   "$NEW_DIGEST" >/dev/null
 
-curl --fail --silent --show-error --retry 30 --retry-delay 1 \
+curl --fail --silent --show-error --retry 30 --retry-all-errors --retry-delay 1 \
   "http://127.0.0.1:${PORT_HOST}/api/health" | jq -e '.ok == true' >/dev/null
 curl --fail --silent --show-error "${PUBLIC_ORIGIN}/" | grep -qi '<html'
-curl --fail --silent --show-error "${PUBLIC_ORIGIN}/api/recordings" | \
-  jq -e '.recordings | type == "array"' >/dev/null
+# Public recording discovery is intentionally hidden in the production
+# child-safety configuration. Backup/restore rehearsal above verifies the
+# recording count and audio object instead.
+RECORDINGS_STATUS="$(curl --silent --show-error --output /tmp/animal-farts-recordings-response \
+  --write-out '%{http_code}' "${PUBLIC_ORIGIN}/api/recordings")"
+[[ "$RECORDINGS_STATUS" == "404" ]]
+jq -e '.error == "Not found"' /tmp/animal-farts-recordings-response >/dev/null
 curl --fail --silent --show-error "${PUBLIC_ORIGIN}/manifest.webmanifest" | jq -e '.name' >/dev/null
 curl --fail --silent --show-error "${PUBLIC_ORIGIN}/sw.js" | grep -q 'CACHE_NAME'
 curl --fail --silent --show-error "${PUBLIC_ORIGIN}/api/health" | jq -e '.ok == true' >/dev/null
 /usr/local/sbin/animal-farts-ops-check
 
-FIRST_AUDIO="$(curl --fail --silent --show-error "${PUBLIC_ORIGIN}/api/recordings" | jq -r '.recordings | map(.audioUrl // empty) | first // empty')"
-if [[ -n "$FIRST_AUDIO" ]]; then
-  curl --fail --silent --show-error --range 0-31 "${PUBLIC_ORIGIN}${FIRST_AUDIO}" >/dev/null
-fi
+rm -f /tmp/animal-farts-recordings-response
 
 trap - ERR
 umask 077

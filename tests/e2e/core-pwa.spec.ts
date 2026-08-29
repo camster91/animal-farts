@@ -97,3 +97,40 @@ test("primary mobile controls meet the minimum touch target", async ({ page }) =
     expect.soft(box.height, `button ${index} height`).toBeGreaterThanOrEqual(40);
   }
 });
+
+test("card labels stay clear of Change controls at supported responsive widths", async ({ page }) => {
+  await openFreshApp(page);
+
+  for (const viewport of [
+    { width: 320, height: 568 },
+    { width: 393, height: 851 },
+    { width: 768, height: 1024 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const cards = page.locator("[data-bubble-id]");
+    await expect(cards.first()).toBeVisible();
+
+    const geometry = await cards.evaluateAll((elements) => elements.map((card) => {
+      const label = card.querySelector<HTMLElement>("[data-card-label]");
+      const actions = card.querySelector<HTMLElement>("[data-card-actions]");
+      if (!label || !actions) return null;
+      const labelRect = label.getBoundingClientRect();
+      const actionRect = actions.getBoundingClientRect();
+      return {
+        labelBottom: labelRect.bottom,
+        actionsTop: actionRect.top,
+        scrollWidth: (card as HTMLElement).scrollWidth,
+        clientWidth: (card as HTMLElement).clientWidth,
+      };
+    }));
+
+    for (const card of geometry) {
+      expect(card).not.toBeNull();
+      expect.soft(card!.labelBottom, `${viewport.width}px label bottom`).toBeLessThanOrEqual(card!.actionsTop);
+      expect.soft(card!.scrollWidth, `${viewport.width}px card width`).toBeLessThanOrEqual(card!.clientWidth + 1);
+    }
+
+    const pageOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect.soft(pageOverflow, `${viewport.width}px page overflow`).toBeLessThanOrEqual(1);
+  }
+});
