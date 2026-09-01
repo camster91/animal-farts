@@ -32,6 +32,9 @@ describe("immutable deployment contract", () => {
     assert.match(deploy, /\/api\/health/);
     assert.match(deploy, /manifest\.webmanifest/);
     assert.match(deploy, /sw\.js/);
+    assert.match(deploy, /grep -q 'const CACHE = '/);
+    assert.match(deploy, /--retry-all-errors/);
+    assert.doesNotMatch(deploy, /grep -q 'CACHE_NAME'/);
     assert.match(deploy, /animal-farts-ops-check/);
   });
 

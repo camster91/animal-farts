@@ -54,6 +54,13 @@ RELEASE_DIR="${DATA_DIR}/releases"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 RECORD="${RELEASE_DIR}/${STAMP}-${FULL_SHA:0:12}.env"
 
+curl_to_file() {
+  local target="$1"
+  shift
+  curl --fail --silent --show-error --retry 30 --retry-all-errors \
+    --retry-delay 1 --output "$target" "$@"
+}
+
 command -v docker >/dev/null
 command -v curl >/dev/null
 command -v jq >/dev/null
@@ -101,8 +108,9 @@ rollback() {
     -e NODE_ENV=production -e DB_PATH=/app/data/farts.db \
     -e UPLOAD_DIR=/app/data/uploads -e PORT="$PORT_CONT" \
     "$PREVIOUS_ID" >/dev/null
-  curl --fail --silent --show-error --retry 20 --retry-all-errors --retry-delay 1 \
-    "http://127.0.0.1:${PORT_HOST}/api/health" >/dev/null
+  curl_to_file /tmp/animal-farts-rollback-health \
+    "http://127.0.0.1:${PORT_HOST}/api/health"
+  jq -e '.ok == true' /tmp/animal-farts-rollback-health >/dev/null
   exit "$status"
 }
 trap rollback ERR
@@ -115,9 +123,11 @@ docker run -d --name "$NAME" --restart unless-stopped \
   -e UPLOAD_DIR=/app/data/uploads -e PORT="$PORT_CONT" \
   "$NEW_DIGEST" >/dev/null
 
-curl --fail --silent --show-error --retry 30 --retry-all-errors --retry-delay 1 \
-  "http://127.0.0.1:${PORT_HOST}/api/health" | jq -e '.ok == true' >/dev/null
-curl --fail --silent --show-error "${PUBLIC_ORIGIN}/" | grep -qi '<html'
+curl_to_file /tmp/animal-farts-local-health \
+  "http://127.0.0.1:${PORT_HOST}/api/health"
+jq -e '.ok == true' /tmp/animal-farts-local-health >/dev/null
+curl_to_file /tmp/animal-farts-home "${PUBLIC_ORIGIN}/"
+grep -qi '<html' /tmp/animal-farts-home
 # Public recording discovery is intentionally hidden in the production
 # child-safety configuration. Backup/restore rehearsal above verifies the
 # recording count and audio object instead.
@@ -125,12 +135,15 @@ RECORDINGS_STATUS="$(curl --silent --show-error --output /tmp/animal-farts-recor
   --write-out '%{http_code}' "${PUBLIC_ORIGIN}/api/recordings")"
 [[ "$RECORDINGS_STATUS" == "404" ]]
 jq -e '.error == "Not found"' /tmp/animal-farts-recordings-response >/dev/null
-curl --fail --silent --show-error "${PUBLIC_ORIGIN}/manifest.webmanifest" | jq -e '.name' >/dev/null
-curl --fail --silent --show-error "${PUBLIC_ORIGIN}/sw.js" | grep -q 'CACHE_NAME'
-curl --fail --silent --show-error "${PUBLIC_ORIGIN}/api/health" | jq -e '.ok == true' >/dev/null
+curl_to_file /tmp/animal-farts-manifest "${PUBLIC_ORIGIN}/manifest.webmanifest"
+jq -e '.name' /tmp/animal-farts-manifest >/dev/null
+curl_to_file /tmp/animal-farts-sw "${PUBLIC_ORIGIN}/sw.js"
+grep -q 'const CACHE = ' /tmp/animal-farts-sw
+curl_to_file /tmp/animal-farts-public-health "${PUBLIC_ORIGIN}/api/health"
+jq -e '.ok == true' /tmp/animal-farts-public-health >/dev/null
 /usr/local/sbin/animal-farts-ops-check
 
-rm -f /tmp/animal-farts-recordings-response
+rm -f /tmp/animal-farts-{local-health,home,recordings-response,manifest,sw,public-health}
 
 trap - ERR
 umask 077
