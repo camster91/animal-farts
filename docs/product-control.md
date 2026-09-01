@@ -202,8 +202,7 @@ and aggregate product learning must remain separate from recordings and names.
 Top residual risks are child audio/privacy, an untested physical-device journey,
 unavailable GitHub artifact publication, unsigned Android release material,
 absent customer evidence, and single-host SQLite plus uploads capacity. The
-latest responsive fix is merged but unreleased. No “market-leading,”
-launch-ready, or customer-validated claim is warranted while these remain.
+latest responsive fix is merged but unreleased. No “market-leading,” launch-ready, or customer-validated claim is warranted while these remain.
 
 ## Work log
 
