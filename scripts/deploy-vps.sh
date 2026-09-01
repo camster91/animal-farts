@@ -61,6 +61,19 @@ curl_to_file() {
     --retry-delay 1 --output "$target" "$@"
 }
 
+wait_for_container_health() {
+  local status
+  local attempt
+  for attempt in $(seq 1 45); do
+    status="$(docker inspect "$NAME" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')"
+    [[ "$status" == "healthy" ]] && return 0
+    [[ "$status" == "unhealthy" || "$status" == "exited" || "$status" == "dead" ]] && return 1
+    sleep 1
+  done
+  echo "[deploy] container did not become healthy within 45 seconds" >&2
+  return 1
+}
+
 command -v docker >/dev/null
 command -v curl >/dev/null
 command -v jq >/dev/null
@@ -111,6 +124,7 @@ rollback() {
   curl_to_file /tmp/animal-farts-rollback-health \
     "http://127.0.0.1:${PORT_HOST}/api/health"
   jq -e '.ok == true' /tmp/animal-farts-rollback-health >/dev/null
+  wait_for_container_health
   exit "$status"
 }
 trap rollback ERR
@@ -126,6 +140,7 @@ docker run -d --name "$NAME" --restart unless-stopped \
 curl_to_file /tmp/animal-farts-local-health \
   "http://127.0.0.1:${PORT_HOST}/api/health"
 jq -e '.ok == true' /tmp/animal-farts-local-health >/dev/null
+wait_for_container_health
 curl_to_file /tmp/animal-farts-home "${PUBLIC_ORIGIN}/"
 grep -qi '<html' /tmp/animal-farts-home
 # Public recording discovery is intentionally hidden in the production

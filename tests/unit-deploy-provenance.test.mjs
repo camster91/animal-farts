@@ -35,6 +35,8 @@ describe("immutable deployment contract", () => {
     assert.match(deploy, /grep -q 'const CACHE = '/);
     assert.match(deploy, /--retry-all-errors/);
     assert.doesNotMatch(deploy, /grep -q 'CACHE_NAME'/);
+    assert.match(deploy, /wait_for_container_health/);
+    assert.match(deploy, /container did not become healthy within 45 seconds/);
     assert.match(deploy, /animal-farts-ops-check/);
   });
 
