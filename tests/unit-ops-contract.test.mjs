@@ -18,7 +18,8 @@ describe("production operations contract", () => {
     assert.match(check, /inode_used < 80/);
     assert.match(check, /days_left >= 30/);
     assert.match(check, /no successful backup/);
-    assert.match(runbook, /Uptime Kuma push monitor owned by Cameron/);
+    assert.match(runbook, /Uptime Kuma monitor 29/);
+    assert.match(runbook, /controlled DOWN\/UP test/);
     assert.match(runbook, /ANIMAL_FARTS_MAX_RESTARTS/);
   });
 });

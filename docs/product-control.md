@@ -1,6 +1,6 @@
 # PootBox product control
 
-Last reconciled: 2026-08-28. Owner: Cameron Ashley. Status: **in progress**.
+Last reconciled: 2026-09-01. Owner: Cameron Ashley. Status: **in progress**.
 
 This is the durable product-level source of truth. GitHub issue #28 and its
 linked child issues remain the implementation backlog. Current API, safety,
@@ -32,22 +32,28 @@ current child-safety, privacy, moderation, or operating cost.
 
 ### Verified facts
 
-- The web PWA is deployed at `https://animals.ashbi.ca`; its public health,
-  homepage, manifest, service worker, recording list, and one audio object were
-  verified during the 2026-08-28 operations work.
+- The web PWA is deployed at `https://animals.ashbi.ca`. Production currently
+  runs SSH-built image `camster91/animal-farts:ssh-7f8b0698fa93` from exact
+  `main` commit `7f8b0698fa9306437c79779db66f529a3bdcaaa6`; health, homepage,
+  manifest, service worker, the intentionally hidden public recording route,
+  backup integrity, restored recording count, and restored audio playback were
+  verified during the release.
 - Normal builds expose Play and controlled, expiring share codes. Public social
   UI and server routes are disabled behind independent client/server flags.
 - The product supports built-in sounds, microphone recording, local persistence,
   upload, controlled sharing, deletion, and offline shell/audio behavior.
 - An IndexedDB operation queue with idempotent server mutations has been
   merged for durable upload/delete reconciliation after exact-head VPS CI.
-- Unit/integration coverage and a four-journey mobile Playwright suite cover
+- Unit/integration coverage and a five-journey mobile Playwright suite cover
   recording, persistence, controlled sharing, deletion, offline recovery,
-  keyboard onboarding/update behavior, and minimum touch targets.
+  keyboard onboarding/update behavior, minimum touch targets, the Change sound
+  library, and responsive card/control geometry.
 - The build enforces measured bundle ceilings: 380 KiB raw / 115 KiB gzip for
   all JavaScript, 70 KiB gzip for the initial entry, and 5 KiB gzip for CSS.
 - Production has trusted Traefik-managed ACME TLS, verified daily SQLite plus
-  uploads backups, a rehearsed isolated restore, and a five-minute ops check.
+  uploads backups, a rehearsed isolated restore, a five-minute ops check, and
+  a Uptime Kuma health monitor connected to the active Mailgun destination.
+  A controlled DOWN/UP notification rehearsal succeeded.
 - There is no billing, advertising, third-party analytics, or AI provider in the
   product.
 
@@ -142,18 +148,18 @@ and aggregate product learning must remain separate from recordings and names.
 | Local/VPS validation | Available | Read-only checks and reversible preparation authorized | Agent |
 | GitHub-hosted Actions | Blocked | Account payment/spending limit prevents runners from starting | Cameron |
 | GHCR publication | Blocked outside Actions | Package-write credential not available locally/VPS | Cameron |
-| Production deployment | Approved for this release cycle | Promote only an exact, VPS-CI-verified immutable `main` artifact; verify and roll back on failure | Agent |
-| Alert destination | Missing | Supply an independent webhook/notification destination | Cameron |
+| Production deployment | Current release complete; next release unapproved | Production is at `7f8b0698`; obtain action-time approval before promoting later merged work | Cameron |
+| Alert destination | Configured and rehearsed | Uptime Kuma monitor 29 checks `/api/health`; maintain the active Mailgun destination | Agent |
 | Physical iPhone/Android/kid QA | Missing | Run supervised matrix and provide signed results | Cameron |
 | Android signing/Play Console | Missing | Secure keystore, account, internal-track access, and submission approval | Cameron |
 | Customer interviews/pilot | Not started | Recruit consenting parents; never publish child identity/content | Cameron |
 
 ## Authoritative roadmap
 
-1. **Release provenance (#37, implementation merged):** immutable pull-only
-   deployment tooling passed Local CI and merged in PR #48. Restore hosted image
-   publication, prove the commit-addressed artifact, then request approval for
-   production promotion; no production deployment has occurred.
+1. **Release provenance (#37, released through approved SSH path):** immutable
+   pull-only tooling remains available, while the billing-blocked hosted image
+   path was bypassed for this release using an exact-commit VPS build. Production
+   runs `7f8b0698`; the deployment record and rollback image are retained.
 2. **Child-safety boundary (#31, verified/merged):** confirm issue evidence and
    keep public social surfaces disabled.
 3. **Durable data (#39, verified/merged):** exact PR #44 head `252dbdd`
@@ -161,19 +167,23 @@ and aggregate product learning must remain separate from recordings and names.
 4. **Core browser proof (#33, verified/merged):** exact PR #45 head `f2b8857`
    passed the independent VPS Local CI gate and merged as `211f0eb` with the
    four core Playwright journeys in the release gate.
-5. **Operations/TLS (#34/#35, partially verified/merged):** PR #46 exact head
-   `e0c4714` passed VPS Local CI and merged as `717b4cf`; add an independent
-   alert path and rehearse 30/14/7-day paging before closing either issue.
-6. **Documentation (#38, implemented on review branch):** land current API, history,
-   privacy, deployment, and product-control authority.
-7. **Maintainability (#40, implemented locally):** land tested recording and
-   sharing interfaces after E2E protection.
-8. **Physical/device and Android (#36/#32, prepared on staged branch):** native
-   API and uploaded-audio routing, constrained WebView CORS, store metadata,
-   security diff review, and debug APK assembly are verified locally. Complete
-   the signed physical QA record, release signing, and Play policy review before
+5. **Operations/TLS (#34/#35, verified/closed):** trusted TLS, backup/restore,
+   strict ops checks, independent Uptime Kuma monitoring, and controlled
+   DOWN/UP notification delivery are proven.
+6. **Documentation (#38, verified/closed):** current API, history, privacy,
+   deployment, and product-control authority are merged.
+7. **Maintainability (#40, verified/closed):** tested recording and sharing
+   interfaces are merged behind E2E protection.
+8. **Responsive feature review (PR #60, merged/pending release):** the Change
+   control no longer overlaps labels at the tested mobile/tablet widths. Exact
+   head `63ba52b` passed Ashbi CI and all five remote Chromium journeys. This is
+   merged as `21abd448` but is not yet in production.
+9. **Physical/device and Android (#36/#32, externally blocked):** native API and
+   uploaded-audio routing, constrained WebView CORS, store metadata, security
+   diff review, and debug APK assembly are verified. Complete the signed
+   physical QA record, release signing, and Play policy review before an
    internal-track or production submission.
-9. **Pilot and commercial validation (proposed):** only after release gates,
+10. **Pilot and commercial validation (proposed):** only after release gates,
    recruit a small consenting family cohort and measure the hypotheses above.
 
 ## Decisions and risks
@@ -190,12 +200,24 @@ and aggregate product learning must remain separate from recordings and names.
   require owner approval.
 
 Top residual risks are child audio/privacy, an untested physical-device journey,
-missing independent paging, unavailable GitHub artifact publication, unsigned
-Android release material, absent customer evidence, and single-host SQLite plus
-uploads capacity. No “market-leading,” launch-ready, or customer-validated claim
-is warranted while these remain.
+unavailable GitHub artifact publication, unsigned Android release material,
+absent customer evidence, and single-host SQLite plus uploads capacity. The
+latest responsive fix is merged but unreleased. No “market-leading,” launch-ready, or customer-validated claim is warranted while these remain.
 
 ## Work log
+
+- 2026-09-01: merged the responsive card/control correction in PR #60 after
+  exact-head Ashbi CI and a five-journey remote mobile/tablet Chromium run. The
+  run verified recording, persistence, share/import/delete, deterministic
+  offline playback and reconnect, keyboard onboarding/update behavior, touch
+  targets, Change-library interaction, and non-overlapping geometry. Production
+  remains on the earlier approved `7f8b0698` release pending new approval.
+- 2026-08-29: promoted exact `main` commit `7f8b0698` by the approved SSH build
+  path, retained immutable current/rollback image IDs and a dated deployment
+  record, rehearsed the fresh backup with eight recordings and audio playback,
+  and passed post-release health/TLS/capacity/restart checks. Uptime Kuma monitor
+  29 and its Mailgun destination then passed a controlled DOWN/UP rehearsal;
+  issues #34 and #35 were closed.
 
 - 2026-08-28: reconciled deployed fixes into `main`; repaired and proved the
   independent Local CI profile; merged the conservative child-safety boundary;
