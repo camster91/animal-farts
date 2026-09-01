@@ -148,7 +148,7 @@ and aggregate product learning must remain separate from recordings and names.
 | Local/VPS validation | Available | Read-only checks and reversible preparation authorized | Agent |
 | GitHub-hosted Actions | Blocked | Account payment/spending limit prevents runners from starting | Cameron |
 | GHCR publication | Blocked outside Actions | Package-write credential not available locally/VPS | Cameron |
-| Production deployment | Current release complete; next release unapproved | Production is at `7f8b0698`; obtain action-time approval before promoting later merged work | Cameron |
+| Production deployment | Current release complete; next release unapproved | Production is at `6104f280`; obtain action-time approval before promoting later merged work | Cameron |
 | Alert destination | Configured and rehearsed | Uptime Kuma monitor 29 checks `/api/health`; maintain the active Mailgun destination | Agent |
 | Physical iPhone/Android/kid QA | Missing | Run supervised matrix and provide signed results | Cameron |
 | Android signing/Play Console | Missing | Secure keystore, account, internal-track access, and submission approval | Cameron |
@@ -159,7 +159,7 @@ and aggregate product learning must remain separate from recordings and names.
 1. **Release provenance (#37, released through approved SSH path):** immutable
    pull-only tooling remains available, while the billing-blocked hosted image
    path was bypassed for this release using an exact-commit VPS build. Production
-   runs `7f8b0698`; the deployment record and rollback image are retained.
+   runs `6104f280`; the deployment record and rollback image are retained.
 2. **Child-safety boundary (#31, verified/merged):** confirm issue evidence and
    keep public social surfaces disabled.
 3. **Durable data (#39, verified/merged):** exact PR #44 head `252dbdd`
@@ -174,10 +174,10 @@ and aggregate product learning must remain separate from recordings and names.
    deployment, and product-control authority are merged.
 7. **Maintainability (#40, verified/closed):** tested recording and sharing
    interfaces are merged behind E2E protection.
-8. **Responsive feature review (PR #60, merged/pending release):** the Change
+8. **Responsive feature review (PR #60, verified/released):** the Change
    control no longer overlaps labels at the tested mobile/tablet widths. Exact
    head `63ba52b` passed Ashbi CI and all five remote Chromium journeys. This is
-   merged as `21abd448` but is not yet in production.
+   merged as `21abd448` and shipped in the `6104f280` production release.
 9. **Physical/device and Android (#36/#32, externally blocked):** native API and
    uploaded-audio routing, constrained WebView CORS, store metadata, security
    diff review, and debug APK assembly are verified. Complete the signed
@@ -201,10 +201,16 @@ and aggregate product learning must remain separate from recordings and names.
 
 Top residual risks are child audio/privacy, an untested physical-device journey,
 unavailable GitHub artifact publication, unsigned Android release material,
-absent customer evidence, and single-host SQLite plus uploads capacity. The
-latest responsive fix is merged but unreleased. No “market-leading,” launch-ready, or customer-validated claim is warranted while these remain.
+absent customer evidence, and single-host SQLite plus uploads capacity. No “market-leading,” launch-ready, or customer-validated claim is warranted while these remain.
 
 ## Work log
+
+- 2026-09-01: promoted exact merge commit `6104f280` as SSH-built image
+  `camster91/animal-farts:ssh-6104f280ae8d`. The fresh backup and isolated
+  restore rehearsal passed with eight recordings and audio playback; internal
+  and public health, homepage, hidden recording discovery, manifest, service
+  worker, TLS/capacity/restart checks, and the responsive feature release all
+  passed. The retained rollback image is `sha256:b582885ad54e...`.
 
 - 2026-09-01: merged the responsive card/control correction in PR #60 after
   exact-head Ashbi CI and a five-journey remote mobile/tablet Chromium run. The

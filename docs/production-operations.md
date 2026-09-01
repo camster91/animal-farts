@@ -12,10 +12,10 @@ Verified against the VPS on 2026-08-29. Owner: Cameron Ashley. Public service:
 | Data | `/data/animal-farts` to `/app/data` |
 | SQLite | `/data/animal-farts/farts.db` (WAL mode) |
 | Uploads | `/data/animal-farts/uploads` |
-| Current observed image | `camster91/animal-farts:ssh-7f8b0698fa93` (`sha256:b582885ad54e7eae5809f2a176a793b4be1805c4e90c7a8bfe9ea7441c84b001`) |
-| Current source commit | `7f8b0698fa9306437c79779db66f529a3bdcaaa6` |
-| Deployment record | `/data/animal-farts/releases/20260829T075018Z-7f8b0698fa93.env` |
-| Rollback image | `sha256:2d17e2d2bf5516a3c6ff5a7c0e6c7ae46a073edd596cd079bb546cf697665a2a` |
+| Current observed image | `camster91/animal-farts:ssh-6104f280ae8d` (`sha256:c11090ea80464ef094ac5dd8b70a251b061f22eba3b86d68196531196ea81a96`) |
+| Current source commit | `6104f280ae8de72e401d9ce2c7b0711d8800df8d` |
+| Deployment record | `/data/animal-farts/releases/20260901T102050Z-6104f280ae8d.env` |
+| Rollback image | `sha256:b582885ad54e7eae5809f2a176a793b4be1805c4e90c7a8bfe9ea7441c84b001` |
 | Restart policy | `unless-stopped` with Docker health check |
 | TLS | Traefik `letsencrypt` ACME resolver |
 
