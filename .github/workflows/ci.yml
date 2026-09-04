@@ -1,13 +1,20 @@
 name: CI Build
 
 # Release gate for Animal Farts (Vite/React frontend + Express/SQLite server).
-# Validate lint, tests, production build, and server syntax on every PR.
+# Fast checks run for every relevant PR; expensive browser journeys are skipped
+# for Dependabot because dependency PRs still receive lint/build/unit coverage.
 
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   workflow_dispatch:
 
 permissions:
@@ -41,6 +48,7 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Install Playwright browser
+        if: github.actor != 'dependabot[bot]'
         run: npx playwright install --with-deps chromium
 
       - name: Lint
@@ -53,8 +61,6 @@ jobs:
         env:
           CI: true
 
-      # The server integration suite verifies the production SPA/static routes,
-      # so dist/ must exist before the server subprocess starts.
       - name: Build frontend
         run: npm run build
         env:
@@ -67,12 +73,13 @@ jobs:
           CI: true
 
       - name: Test core PWA journeys
+        if: github.actor != 'dependabot[bot]'
         run: npx playwright test
         env:
           CI: true
 
       - name: Upload Playwright diagnostics
-        if: failure()
+        if: failure() && github.actor != 'dependabot[bot]'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-diagnostics
