@@ -25,13 +25,13 @@ npm run preview
 
 ## Test
 
-Use Node 20 for the release checks:
+Use Node 20 (matching CI and `.nvmrc`) for development and release checks:
 
 ```bash
-npm test
-npm run lint
+npm run verify:quick # lint + compile test targets while iterating
+npm run verify       # merge-level source gate: lint + build + unit/integration tests
 npx playwright install chromium # first E2E run only
-npm run test:e2e
+npm run verify:e2e   # browser/release journeys
 ```
 
 The Playwright suite starts the production server with a temporary database
