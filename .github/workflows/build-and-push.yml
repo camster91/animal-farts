@@ -1,16 +1,8 @@
 name: Build and Push Image
 
-# Reusable build workflow for camster91/* Node.js web apps.
-# Triggered on push to main, tags, and pull requests. Pull requests build
-# without publishing; main and tag runs push the canonical deployable
-# artifact — any host (Coolify, Hostinger, Render, Fly, local docker) can
-# run it without needing source code, Node, or build tools on the host.
-#
-# Conventions:
-#   - Image: ghcr.io/camster91/<repo>:main (or :<tag> for releases)
-#   - Multi-arch: linux/amd64 + linux/arm64 (Raspberry Pi, Apple Silicon hosts)
-#   - Buildx cache pushed to GHCR type=cache (saves ~3min per build)
-#   - SBOM + provenance attestations enabled (for supply-chain trust)
+# Pull requests validate the production container only when container/package
+# inputs change. Default-branch and tag runs continue publishing the canonical
+# multi-arch GHCR image.
 
 on:
   push:
@@ -18,6 +10,14 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main, master]
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'server/package.json'
+      - 'server/package-lock.json'
+      - '.github/workflows/build-and-push.yml'
   workflow_call:
     inputs:
       image_name:
@@ -132,6 +132,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Platforms:** ${{ inputs.platforms || 'linux/amd64,linux/arm64' }}" >> $GITHUB_STEP_SUMMARY
           echo "**SHA:** ${{ steps.meta.outputs.sha }}" >> $GITHUB_STEP_SUMMARY
+
       - name: Pull request build summary
         if: github.event_name == 'pull_request'
         run: |
