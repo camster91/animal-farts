@@ -21,7 +21,6 @@ on:
       - 'package-lock.json'
       - 'server/package.json'
       - 'server/package-lock.json'
-      - '.github/workflows/build-and-push.yml'
   workflow_call:
     inputs:
       image_name:
