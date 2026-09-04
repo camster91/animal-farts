@@ -14,7 +14,10 @@
     "preview": "vite preview",
     "cap:sync": "cap sync android",
     "cap:build": "npm run build && cap sync android",
-    "cap:open": "cap open android"
+    "cap:open": "cap open android",
+    "verify:quick": "npm run lint && npm run test:build",
+    "verify": "npm run lint && npm test",
+    "verify:e2e": "npm run test:e2e"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
