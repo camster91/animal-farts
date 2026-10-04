@@ -2,12 +2,16 @@ name: Build and Push Image
 
 # Pull requests validate the production container only when container/package
 # inputs change. Default-branch and tag runs continue publishing the canonical
-# multi-arch GHCR image.
+# multi-arch GHCR image, except CI/docs-only default-branch changes.
 
 on:
   push:
     branches: [main, master]
     tags: ['v*']
+    paths-ignore:
+      - '.github/**'
+      - 'docs/**'
+      - '**/*.md'
   pull_request:
     branches: [main, master]
     paths:
@@ -17,7 +21,6 @@ on:
       - 'package-lock.json'
       - 'server/package.json'
       - 'server/package-lock.json'
-      - '.github/workflows/build-and-push.yml'
   workflow_call:
     inputs:
       image_name:
