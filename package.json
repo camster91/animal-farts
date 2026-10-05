@@ -17,11 +17,11 @@
     "cap:open": "cap open android"
   },
   "dependencies": {
-    "@capacitor/android": "^8.5.0",
-    "@capacitor/cli": "^8.5.0",
-    "@capacitor/core": "^8.4.2",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   },
   "overrides": {
     "uuid": "11.1.1"
@@ -30,8 +30,8 @@
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
     "@types/node": "^24.13.4",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "autoprefixer": "^10.5.6",
     "eslint": "^10.10.0",
