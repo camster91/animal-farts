@@ -6,7 +6,7 @@ async function openFreshApp(page: Page) {
   await expect(skip).toBeVisible();
   await skip.click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Play", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "Let's make some noise." })).toBeVisible();
 }
 
 async function recordSound(page: Page) {
@@ -140,6 +140,7 @@ test("primary mobile controls meet the minimum touch target", async ({ page }) =
 test("card labels stay clear of Change controls at supported responsive widths", async ({ page }) => {
   await openFreshApp(page);
 
+  await page.getByRole("button", { name: "Edit sounds", exact: true }).click();
   await page.getByRole("button", { name: /^Change .* sound$/ }).first().click();
   await expect(page.getByText("Pick a sound", { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Search sounds" })).toBeVisible();
@@ -149,6 +150,7 @@ test("card labels stay clear of Change controls at supported responsive widths",
     { width: 320, height: 568 },
     { width: 393, height: 851 },
     { width: 768, height: 1024 },
+    { width: 1440, height: 900 },
   ]) {
     await page.setViewportSize(viewport);
     const cards = page.locator("[data-bubble-id]");
@@ -177,4 +179,26 @@ test("card labels stay clear of Change controls at supported responsive widths",
     const pageOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect.soft(pageOverflow, `${viewport.width}px page overflow`).toBeLessThanOrEqual(1);
   }
+});
+
+test("soundboard browsing keeps the play surface small and editing intentional", async ({ page }) => {
+  await openFreshApp(page);
+  await expect(page.getByRole("button", { name: /tap to play/ })).toHaveCount(24);
+  await expect(page.getByRole("button", { name: /^Change .* sound$/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Play", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Farts", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Farts", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "All sounds", exact: true }).click();
+  await page.getByRole("searchbox", { name: "Find a sound" }).fill("Bear");
+  await expect(page.getByRole("button", { name: /Bear — tap to play/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Cow — tap to play/ })).toHaveCount(0);
+  await page.getByRole("searchbox", { name: "Find a sound" }).fill("no-such-sound-123");
+  await expect(page.getByRole("heading", { name: "No giggles found. Yet." })).toBeVisible();
+  await page.getByRole("button", { name: "See all sounds", exact: true }).click();
+  await page.getByRole("button", { name: /Show 24 more sounds/ }).click();
+  await expect(page.getByRole("button", { name: /tap to play/ })).toHaveCount(48);
+  await page.getByRole("button", { name: "Edit sounds", exact: true }).click();
+  await expect(page.getByRole("button", { name: /^Change .* sound$/ })).toHaveCount(48);
+  await page.getByRole("button", { name: "✓ Done", exact: true }).click();
+  await expect(page.getByRole("button", { name: /^Change .* sound$/ })).toHaveCount(0);
 });
