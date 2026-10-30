@@ -10,7 +10,7 @@
 
 import { describe, it, beforeEach, mock } from 'node:test';
 import assert from 'node:assert';
-import { playSingle, stopAllSounds, isAnySoundPlaying } from './build/audioManager.js';
+import { playSingle, stopAllSounds, isAnySoundPlaying, getCurrentBubbleId } from './build/audioManager.js';
 
 // === Mocks ===
 // Replace HTMLAudioElement with a mock that records every action.
@@ -45,6 +45,25 @@ globalThis.HTMLAudioElement = MockAudio;
 globalThis.Audio = MockAudio;
 
 describe('audioManager', () => {
+  it('keeps long audio tracked and stoppable after ten seconds', (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    playSingle('/sounds/long.mp3', 0.9, 'long');
+    t.mock.timers.tick(11000);
+    assert.strictEqual(isAnySoundPlaying(), true);
+    assert.strictEqual(getCurrentBubbleId(), 'long');
+    stopAllSounds();
+    assert.strictEqual(mockAudioInstances.at(-1).paused, true);
+  });
+
+  it('stops a long clip before starting the next clip', (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    playSingle('/sounds/long.mp3', 0.9, 'long');
+    const first = mockAudioInstances.at(-1);
+    t.mock.timers.tick(11000);
+    playSingle('/sounds/dog.mp3', 0.9, 'dog');
+    assert.strictEqual(first.paused, true);
+    assert.strictEqual(getCurrentBubbleId(), 'dog');
+  });
   beforeEach(() => {
     stopAllSounds(); // reset state
     mockAudioInstances.length = 0;

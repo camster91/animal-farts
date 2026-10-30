@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { BUILT_IN_SOUNDS } from "../../src/pootbox/constants";
 
 async function openFreshApp(page: Page) {
   await page.goto("/");
@@ -202,4 +203,90 @@ test("soundboard browsing keeps the play surface small and editing intentional",
   await expect(page.getByRole("button", { name: /^Change .* sound$/ })).toHaveCount(48);
   await page.getByRole("button", { name: "✓ Done", exact: true }).click();
   await expect(page.getByRole("button", { name: /^Change .* sound$/ })).toHaveCount(0);
+});
+
+test("sound replacements and additions survive a reload", async ({ page }) => {
+  await openFreshApp(page);
+  await page.getByRole("button", { name: "Edit sounds", exact: true }).click();
+  await page.getByRole("button", { name: "Change Bear sound", exact: true }).click();
+  await page.getByRole("button", { name: "Cow sound", exact: true }).click();
+  const originalCard = page.locator('[data-bubble-id="b:built-in:bear"]');
+  await expect(originalCard.getByRole("button", { name: /Cow — tap to play/ })).toBeVisible();
+  await page.reload();
+  await expect(originalCard.getByRole("button", { name: /Cow — tap to play/ })).toBeVisible();
+  await page.getByRole("button", { name: "Add a new sound card" }).click();
+  await page.getByRole("button", { name: "Bear sound", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Pick a sound", exact: true })).toHaveCount(0);
+  await page.reload();
+  await page.getByRole("searchbox", { name: "Find a sound" }).fill("Bear");
+  await expect(page.getByRole("button", { name: /Bear — tap to play/ })).toBeVisible();
+});
+
+test("every bundled sound loads and decodes in Chromium", async ({ page }) => {
+  test.setTimeout(90000);
+  await openFreshApp(page);
+  const failures = await page.evaluate(async paths => {
+    const context = new AudioContext();
+    const failed: string[] = [];
+    try {
+      for (let index = 0; index < paths.length; index += 6) {
+        await Promise.all(paths.slice(index, index + 6).map(async path => {
+          try {
+            const response = await fetch(path);
+            if (!response.ok || !response.headers.get("content-type")?.startsWith("audio/")) throw new Error(`HTTP ${response.status}`);
+            const audio = await context.decodeAudioData(await response.arrayBuffer());
+            if (!(audio.duration > 0 && audio.numberOfChannels > 0)) throw new Error("Empty audio");
+          } catch (error) { failed.push(`${path}: ${String(error)}`); }
+        }));
+      }
+    } finally { await context.close(); }
+    return failed;
+  }, BUILT_IN_SOUNDS.map(sound => sound.file));
+  expect(failures).toEqual([]);
+});
+
+test("a played sound remains loadable offline through native audio range requests", async ({ page, context }) => {
+  await openFreshApp(page);
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller) await new Promise<void>(resolve => {
+      navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), { once: true });
+    });
+  });
+  await page.getByRole("button", { name: /Bear — tap to play/ }).click();
+  await expect.poll(() => page.evaluate(async () => {
+    const response = await caches.match("/sounds/bear.mp3");
+    return response?.status;
+  })).toBe(200);
+  await context.setOffline(true);
+  const duration = await page.evaluate(() => new Promise<number>((resolve, reject) => {
+    const audio = new Audio("/sounds/bear.mp3");
+    audio.onloadeddata = () => { const duration = audio.duration; audio.pause(); resolve(duration); };
+    audio.onerror = () => reject(new Error("Native audio failed offline"));
+    audio.load();
+  }));
+  expect(duration).toBeGreaterThan(0);
+});
+
+test("a recorded sound remains loadable offline after upload", async ({ page, context }) => {
+  await openFreshApp(page);
+  const uploaded = page.waitForResponse(response => response.url().endsWith('/api/recordings') && response.request().method() === 'POST');
+  await recordSound(page);
+  const { audioUrl } = await (await uploaded).json() as { audioUrl: string };
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller) await new Promise<void>(resolve => {
+      navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), { once: true });
+    });
+  });
+  await page.getByRole("button", { name: /My Sound — tap to play/ }).click();
+  await expect.poll(() => page.evaluate(async path => (await caches.match(path))?.status, audioUrl)).toBe(200);
+  await context.setOffline(true);
+  const duration = await page.evaluate(path => new Promise<number>((resolve, reject) => {
+    const audio = new Audio(path);
+    audio.onloadeddata = () => { const duration = audio.duration; audio.pause(); resolve(duration); };
+    audio.onerror = () => reject(new Error("Recording failed offline"));
+    audio.load();
+  }), audioUrl);
+  expect(duration).toBeGreaterThan(0);
 });

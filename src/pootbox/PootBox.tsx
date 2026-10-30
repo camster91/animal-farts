@@ -12,6 +12,7 @@ import {
   saveRecordingName,
   loadRecordingNames,
   savePage,
+  saveBuiltInSoundToPage,
 } from "./recordings";
 import { playSingle, stopAllSounds, getCurrentBubbleId } from "./audioManager";
 import { getOrCreateDeviceId } from "./lib/deviceId";
@@ -449,47 +450,29 @@ export default function PootBox() {
 
   const onPickBuiltIn = useCallback(async (sound: BuiltInSound, targetBubbleId?: string) => {
     if (!activePageId) return;
-
-    if (targetBubbleId) {
-      // Change mode: mutate the existing bubble in place.
-      setPages((prev) => prev.map((p) => {
-        if (p.id !== activePageId) return p;
-        return {
-          ...p,
-          bubbles: p.bubbles.map((b) =>
-            b.id === targetBubbleId
-              ? { ...b, type: "built-in", emoji: sound.emoji, builtinKey: sound.key, sound: sound.file }
-              : b
-          ),
-        };
-      }));
+    const pageId = activePageId;
+    try {
+      const saved = await saveBuiltInSoundToPage(pageId, sound, targetBubbleId);
+      const savedBubble = targetBubbleId
+        ? saved.bubbles.find(bubble => bubble.id === targetBubbleId)
+        : saved.bubbles.at(-1);
+      if (!savedBubble) return;
+      // Merge only the edited card so a concurrent recording upload keeps its
+      // current URL and sync state. The database write has already committed.
+      setPages(previous => previous.map(page => page.id === pageId ? {
+        ...page,
+        bubbles: targetBubbleId
+          ? page.bubbles.map(bubble => bubble.id === targetBubbleId ? { ...bubble,
+            type: savedBubble.type, emoji: savedBubble.emoji, builtinKey: savedBubble.builtinKey,
+            sound: savedBubble.sound, blobUrl: undefined } : bubble)
+          : [...page.bubbles, savedBubble],
+      } : page));
       setShowLibrary(false);
-      return;
+      setChangingBubbleId(null);
+    } catch {
+      showToast("Couldn't save that sound. Please try again.", { variant: "error" });
     }
-
-    // Add mode: create a new bubble. Use a stable id so the same
-    // sound can be added twice on the same page (the original
-    // addBubbleToPageDedup was strict; for the kid-facing flow,
-    // duplicates are fine).
-    const bubble: BubbleState = {
-      id: `b:built-in:${sound.key}:${Date.now()}`,
-      type: "built-in",
-      emoji: sound.emoji,
-      builtinKey: sound.key,
-      sound: sound.file,
-      pos: { x: 0, y: 0 },
-      vel: { x: 0, y: 0 },
-      radius: 36,
-      mass: 1,
-      lastTouchedAt: -1,
-      lastReleasedAt: -1,
-    };
-    setPages((prev) => prev.map((p) => {
-      if (p.id !== activePageId) return p;
-      return { ...p, bubbles: [...p.bubbles, bubble] };
-    }));
-    setShowLibrary(false);
-  }, [activePageId, setPages, setShowLibrary]);
+  }, [activePageId, setPages, setShowLibrary, setChangingBubbleId, showToast]);
 
   // v72 (code review 2026-06-16 #5): removed the dead onRemoveBubble
   // callback. The v52-era code had it as a separate useCallback that
@@ -1012,8 +995,7 @@ export default function PootBox() {
           builtInSounds={BUILT_IN_SOUNDS}
           alreadyAddedKeys={changingBubbleId ? new Set<string>() : alreadyAddedKeys}
           onPick={(sound) => {
-            onPickBuiltIn(sound, changingBubbleId ?? undefined);
-            setChangingBubbleId(null);
+            void onPickBuiltIn(sound, changingBubbleId ?? undefined);
           }}
           onRecord={() => {
             setRecordingRequested(true);
