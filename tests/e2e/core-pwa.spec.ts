@@ -153,6 +153,7 @@ test("card labels stay clear of Change controls at supported responsive widths",
     { width: 1440, height: 900 },
   ]) {
     await page.setViewportSize(viewport);
+    await page.screenshot({ path: `.artifacts/playwright/ui-${viewport.width}.png` });
     const cards = page.locator("[data-bubble-id]");
     await expect(cards.first()).toBeVisible();
 

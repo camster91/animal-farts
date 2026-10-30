@@ -602,7 +602,7 @@ export default function PootBox() {
         position: "fixed",
         inset: 0,
         background: "var(--pb-surface)",
-        touchAction: "none",
+        touchAction: "auto",
         userSelect: "none",
         WebkitTapHighlightColor: "transparent",
         overflow: "hidden",

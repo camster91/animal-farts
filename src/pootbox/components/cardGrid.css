@@ -1,4 +1,4 @@
-.pb-board { position:absolute; inset:calc(76px + env(safe-area-inset-top, 0px)) 0 0; overflow-y:auto; padding:28px 24px calc(110px + env(safe-area-inset-bottom, 0px)); touch-action:pan-y; }
+.pb-board { position:absolute; inset:calc(76px + env(safe-area-inset-top, 0px)) 0 0; overflow-y:auto; padding:28px 24px calc(110px + env(safe-area-inset-bottom, 0px)); touch-action:pan-y pinch-zoom; }
 .pb-board-inner { max-width:1120px; margin:0 auto; }
 .pb-board-heading { display:flex; justify-content:space-between; align-items:center; gap:24px; margin-bottom:28px; }
 .pb-eyebrow { margin:0 0 8px; color:var(--pb-muted); font-size:13px; font-weight:600; }
