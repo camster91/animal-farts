@@ -208,7 +208,8 @@ async function audio(request, env, path) {
     'Cache-Control': 'private, max-age=0, must-revalidate', 'Cross-Origin-Resource-Policy': 'cross-origin',
     'Accept-Ranges': 'bytes', 'ETag': object.httpEtag });
   let status = 200;
-  if (object.range && 'offset' in object.range && 'length' in object.range) {
+  // R2 also returns range metadata for a full GET; only a requested range is 206.
+  if (request.headers.has('range') && object.range && 'offset' in object.range && 'length' in object.range) {
     const { offset, length } = object.range;
     headers.set('Content-Range', `bytes ${offset}-${offset + length - 1}/${object.size}`);
     headers.set('Content-Length', String(length));

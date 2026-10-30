@@ -25,7 +25,17 @@ function harness() {
     AUDIO: {
       put: async (key, bytes) => { if (failPut) throw new Error('R2 unavailable'); objects.set(key, bytes); },
       head: async key => objects.has(key) ? {} : null,
-      get: async key => objects.has(key) ? { body: objects.get(key), size: objects.get(key).length, httpEtag: '"test"' } : null,
+      get: async (key, options) => {
+        if (!objects.has(key)) return null;
+        const bytes = objects.get(key);
+        const requested = options?.range?.get('range');
+        const match = requested && /^bytes=(\d+)-(\d+)$/.exec(requested);
+        const offset = match ? Number(match[1]) : 0;
+        const length = match ? Number(match[2]) - offset + 1 : bytes.length;
+        // Real R2 includes range metadata even when no Range header was supplied.
+        return { body: bytes.slice(offset, offset + length), size: bytes.length,
+          httpEtag: '"test"', range: { offset, length } };
+      },
       delete: async key => { if (failDelete) throw new Error('R2 unavailable'); objects.delete(key); },
     },
     ASSETS: { fetch: async () => new Response('<html>app</html>', { headers: { 'Content-Type': 'text/html' } }) },
@@ -70,6 +80,11 @@ test('Cloudflare: upload, playback, controlled share, delete and retry end to en
   assert.equal(playback.status, 200);
   assert.equal(playback.headers.get('content-type'), 'audio/webm');
   assert.equal((await playback.arrayBuffer()).byteLength, 8);
+  assert.equal((await h.request(recording.audioUrl, { method: 'HEAD' })).status, 200);
+  const partial = await h.request(recording.audioUrl, { headers: { Range: 'bytes=0-3' } });
+  assert.equal(partial.status, 206);
+  assert.equal(partial.headers.get('content-range'), 'bytes 0-3/8');
+  assert.equal((await partial.arrayBuffer()).byteLength, 4);
   const sharing = await h.share(recording);
   assert.equal(sharing.status, 200);
   const { code } = await sharing.json();
