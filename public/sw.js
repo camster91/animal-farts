@@ -11,7 +11,7 @@
 // v55: never cache /api/* (personalized social data). Validate
 // notification click URLs to same-origin relative paths only.
 
-const CACHE = "pootbox-v56";
+const CACHE = "pootbox-v57-audio";
 
 const SHELL_ASSETS = [
   "/",
@@ -94,6 +94,26 @@ function safeAppUrl(raw) {
   return raw;
 }
 
+// A single audio byte range is enough for native HTML audio players.
+async function audioRange(response, value) {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(value);
+  if (!match || (!match[1] && !match[2])) return response;
+  const bytes = await response.arrayBuffer();
+  const size = bytes.byteLength;
+  let start = match[1] ? Number(match[1]) : Math.max(0, size - Number(match[2]));
+  let end = match[1] && match[2] ? Math.min(Number(match[2]), size - 1) : size - 1;
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) ||
+      start >= size || start > end || (!match[1] && Number(match[2]) === 0)) {
+    return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${size}` } });
+  }
+  const headers = new Headers(response.headers);
+  headers.delete("content-encoding");
+  headers.set("Content-Range", `bytes ${start}-${end}/${size}`);
+  headers.set("Content-Length", String(end - start + 1));
+  headers.set("Accept-Ranges", "bytes");
+  return new Response(bytes.slice(start, end + 1), { status: 206, headers });
+}
+
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
   const url = new URL(e.request.url);
@@ -107,6 +127,35 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
+  // Media elements ask for byte ranges. Cache a complete 200 response and
+  // answer their range from those bytes, including when the network is offline.
+  // Cache.put rejects 206 responses, so storing the original request failed.
+  if (url.pathname.startsWith("/sounds/") || url.pathname.startsWith("/uploads/")) {
+    e.respondWith((async () => {
+      const headers = new Headers(e.request.headers);
+      headers.delete("range");
+      headers.delete("if-range");
+      const fullRequest = new Request(e.request, { headers });
+      let cache;
+      let response;
+      try {
+        cache = await caches.open(CACHE);
+        response = await cache.match(fullRequest);
+      } catch { /* Storage can be unavailable; online playback still works. */ }
+      if (!response) {
+        response = await fetch(fullRequest);
+        if (response.status === 200 && cache) {
+          try { await cache.put(fullRequest, response.clone()); }
+          catch { /* Quota/storage failure must not interrupt playback. */ }
+        }
+      }
+      const range = e.request.headers.get("range");
+      if (!range || response.status !== 200) return response;
+      return audioRange(response, range);
+    })());
+    return;
+  }
+
   e.respondWith(
     (async () => {
       const cached = await caches.match(e.request);
@@ -116,7 +165,7 @@ self.addEventListener("fetch", (e) => {
         const res = await fetch(e.request);
         if (res && res.ok) {
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(e.request, copy));
+          e.waitUntil(caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {}));
         }
         return res;
       } catch (err) {

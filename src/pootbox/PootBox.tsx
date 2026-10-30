@@ -12,6 +12,7 @@ import {
   saveRecordingName,
   loadRecordingNames,
   savePage,
+  saveBuiltInSoundToPage,
 } from "./recordings";
 import { playSingle, stopAllSounds, getCurrentBubbleId } from "./audioManager";
 import { getOrCreateDeviceId } from "./lib/deviceId";
@@ -181,6 +182,8 @@ export default function PootBox() {
     onSyncStatus: updateSyncStatus,
     onError: (msg) => { showToast(msg, { variant: "error" }); },
   });
+
+  const [recordingRequested, setRecordingRequested] = useState(false);
 
   // Audio state
   // Audio state (soundPlaying is set by useSoundPlaying below)
@@ -447,47 +450,29 @@ export default function PootBox() {
 
   const onPickBuiltIn = useCallback(async (sound: BuiltInSound, targetBubbleId?: string) => {
     if (!activePageId) return;
-
-    if (targetBubbleId) {
-      // Change mode: mutate the existing bubble in place.
-      setPages((prev) => prev.map((p) => {
-        if (p.id !== activePageId) return p;
-        return {
-          ...p,
-          bubbles: p.bubbles.map((b) =>
-            b.id === targetBubbleId
-              ? { ...b, type: "built-in", emoji: sound.emoji, builtinKey: sound.key, sound: sound.file }
-              : b
-          ),
-        };
-      }));
+    const pageId = activePageId;
+    try {
+      const saved = await saveBuiltInSoundToPage(pageId, sound, targetBubbleId);
+      const savedBubble = targetBubbleId
+        ? saved.bubbles.find(bubble => bubble.id === targetBubbleId)
+        : saved.bubbles.at(-1);
+      if (!savedBubble) return;
+      // Merge only the edited card so a concurrent recording upload keeps its
+      // current URL and sync state. The database write has already committed.
+      setPages(previous => previous.map(page => page.id === pageId ? {
+        ...page,
+        bubbles: targetBubbleId
+          ? page.bubbles.map(bubble => bubble.id === targetBubbleId ? { ...bubble,
+            type: savedBubble.type, emoji: savedBubble.emoji, builtinKey: savedBubble.builtinKey,
+            sound: savedBubble.sound, blobUrl: undefined } : bubble)
+          : [...page.bubbles, savedBubble],
+      } : page));
       setShowLibrary(false);
-      return;
+      setChangingBubbleId(null);
+    } catch {
+      showToast("Couldn't save that sound. Please try again.", { variant: "error" });
     }
-
-    // Add mode: create a new bubble. Use a stable id so the same
-    // sound can be added twice on the same page (the original
-    // addBubbleToPageDedup was strict; for the kid-facing flow,
-    // duplicates are fine).
-    const bubble: BubbleState = {
-      id: `b:built-in:${sound.key}:${Date.now()}`,
-      type: "built-in",
-      emoji: sound.emoji,
-      builtinKey: sound.key,
-      sound: sound.file,
-      pos: { x: 0, y: 0 },
-      vel: { x: 0, y: 0 },
-      radius: 36,
-      mass: 1,
-      lastTouchedAt: -1,
-      lastReleasedAt: -1,
-    };
-    setPages((prev) => prev.map((p) => {
-      if (p.id !== activePageId) return p;
-      return { ...p, bubbles: [...p.bubbles, bubble] };
-    }));
-    setShowLibrary(false);
-  }, [activePageId, setPages, setShowLibrary]);
+  }, [activePageId, setPages, setShowLibrary, setChangingBubbleId, showToast]);
 
   // v72 (code review 2026-06-16 #5): removed the dead onRemoveBubble
   // callback. The v52-era code had it as a separate useCallback that
@@ -599,8 +584,8 @@ export default function PootBox() {
       style={{
         position: "fixed",
         inset: 0,
-        background: "linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)",
-        touchAction: "none",
+        background: "var(--pb-surface)",
+        touchAction: "auto",
         userSelect: "none",
         WebkitTapHighlightColor: "transparent",
         overflow: "hidden",
@@ -794,104 +779,20 @@ export default function PootBox() {
         <EmptyPageHint show={true} />
       )}
 
-      {/* v61: top bar = a single settings gear + a small "💨" title.
-          No page tabs (v61 is single-page). No FAB (the + Add
-          sound card at the end of the grid is the entry point).
-          The ShareSheet is reached from the settings modal. */}
-      <div
-        style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          height: 56,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 16px",
-          background: "rgba(254, 243, 199, 0.92)",
-          backdropFilter: "blur(10px)",
-          WebkitBackdropFilter: "blur(10px)",
-          zIndex: 200,
-          borderBottom: "1px solid rgba(61,44,30,0.08)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            fontFamily: "Fredoka, system-ui, sans-serif",
-            fontSize: "1.05rem",
-            fontWeight: 700,
-            color: "#3D2C1E",
-          }}
-        >
-          <span style={{ fontSize: "1.4rem" }}>💨</span>
-          <span>PootBox</span>
+      <header className="pb-app-header">
+        <div className="pb-app-header-inner">
+          <div className="pb-brand">
+            <span className="pb-brand-mark" aria-hidden="true">💨</span>
+            <div><strong>PootBox</strong><span>Your pocket of silly.</span></div>
+          </div>
+          <div className="pb-header-actions">
+            <button type="button" onClick={() => setShowShare("share")} aria-label="Share" className="pb-header-share">
+              <span aria-hidden="true">↗</span> Share
+            </button>
+            <button type="button" onClick={() => setShowSettings(true)} aria-label="Settings" className="pb-header-settings">⚙</button>
+          </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button
-            onClick={() => setShowShare("share")}
-            aria-label="Share"
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: "50%",
-              background: "rgba(61,44,30,0.75)",
-              border: "none",
-              cursor: "pointer",
-              color: "white",
-              fontSize: 18,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 0,
-            }}
-          >
-            🔗
-          </button>
-          <button
-            onClick={() => setShowSettings(true)}
-            aria-label="Settings"
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: "50%",
-              background: "rgba(61,44,30,0.75)",
-              border: "none",
-              cursor: "pointer",
-              color: "white",
-              fontSize: 18,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 0,
-            }}
-          >
-            ⚙
-          </button>
-        </div>
-      </div>
-
-      {/* v62: home-category chips removed. The v61 default page
-          shows all 30 built-in sounds, so the kid sees every
-          card at once. The v46-era chip filter (Animals / Farts
-          / Silly / Instruments) made sense when the home page
-          had only 12 animals and the kid wanted to filter down.
-          With 30 cards in a responsive grid, the chip filter
-          was dead weight that ALSO overlapped the top of the
-          first row of cards (chips were at top:56-88, grid
-          started at top:72). Removing the chips:
-            - clears the layout collision
-            - keeps the "simple and fun" v62 surface uncluttered
-            - the kid can still pick a specific bucket by using
-              the SoundLibrary modal (which has a chip filter at
-              the top)
-          usePagesState still owns homeCategory + setHomeCategory
-          for the SoundLibrary → usePagesState → createDefaultPage
-          wiring; homeCategory is just no longer surfaced as a
-          visible UI control. */}
+      </header>
 
       {/* Volume slider popover */}
       <VolumeSlider
@@ -1035,13 +936,13 @@ export default function PootBox() {
             position: "fixed",
             bottom: "calc(20px + env(safe-area-inset-bottom))",
             right: 20,
-            width: 56,
-            height: 56,
-            borderRadius: "50%",
-            background: "rgba(255,82,82,0.95)",
+            width: 128,
+            height: 48,
+            borderRadius: 16,
+            background: "#3d2c1e",
             border: "1px solid rgba(0,0,0,0.06)",
-            boxShadow: "0 4px 16px rgba(255,82,82,0.35)",
-            fontSize: "1.4rem",
+            boxShadow: "0 4px 16px rgba(61,44,30,0.18)",
+            fontSize: "0.9rem",
             lineHeight: 1,
             fontWeight: 700,
             cursor: "pointer",
@@ -1051,57 +952,21 @@ export default function PootBox() {
             padding: 0,
             color: "white",
             zIndex: 50,
-            animation: "pootbox-pulse-stop 1s ease-in-out infinite",
+            animation: "none",
           }}
         >
-          ⏹
+          ■ Stop sound
         </button>
       )}
 
-      {/* Mic denied banner */}
-      {micDenied && (
-        <div
-          style={{
-            position: "fixed",
-            top: 16,
-            left: 16,
-            right: 16,
-            background: "rgba(255,82,82,0.95)",
-            color: "white",
-            borderRadius: 16,
-            padding: "12px 16px",
-            zIndex: 150,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
-            fontSize: "0.85rem",
-          }}
-        >
-          <span style={{ flex: 1 }}>
-            {micPermState === "denied"
-              ? "Microphone blocked. Tap the lock 🔒 in the address bar → Site settings → Allow."
-              : "Microphone access denied. Tap + again to allow."}
-          </span>
-          <button
-            onClick={() => { void startRecording(); }}
-            style={{
-              appearance: "none",
-              border: "1px solid rgba(255,255,255,0.4)",
-              background: "rgba(255,255,255,0.15)",
-              color: "white",
-              borderRadius: 10,
-              padding: "6px 12px",
-              cursor: "pointer",
-              fontSize: "0.85rem",
-              fontFamily: "inherit",
-              whiteSpace: "nowrap",
-              flexShrink: 0,
-            }}
-          >
-            Try again
-          </button>
+      {/* Explain microphone permissions only after a recording attempt. */}
+      {micDenied && recordingRequested && (
+        <div className="pb-mic-notice" role="status">
+          <span>{micPermState === "denied"
+            ? "Microphone access is blocked. You can still play all the sounds."
+            : "Allow microphone access to record your own sound."}</span>
+          <button type="button" onClick={() => { void startRecording(); }}>Try again</button>
+          <button type="button" onClick={() => setRecordingRequested(false)} aria-label="Dismiss microphone notice">×</button>
         </div>
       )}
 
@@ -1130,10 +995,10 @@ export default function PootBox() {
           builtInSounds={BUILT_IN_SOUNDS}
           alreadyAddedKeys={changingBubbleId ? new Set<string>() : alreadyAddedKeys}
           onPick={(sound) => {
-            onPickBuiltIn(sound, changingBubbleId ?? undefined);
-            setChangingBubbleId(null);
+            void onPickBuiltIn(sound, changingBubbleId ?? undefined);
           }}
           onRecord={() => {
+            setRecordingRequested(true);
             setShowLibrary(false);
             setChangingBubbleId(null);
             void startRecording();

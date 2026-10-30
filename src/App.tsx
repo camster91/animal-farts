@@ -114,7 +114,7 @@ export default function App() {
 
         {/* v79/v80: bottom tab bar. Fixed to the bottom of the viewport
             with safe-area-inset padding for iOS notches. */}
-        <nav
+        {SOCIAL_FEATURES_ENABLED && <nav
           role="navigation"
           aria-label="App sections"
           style={{
@@ -158,7 +158,7 @@ export default function App() {
               />
             </>
           )}
-        </nav>
+        </nav>}
       </div>
     </ToastProvider>
   );
