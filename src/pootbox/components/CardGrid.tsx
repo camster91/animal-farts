@@ -1,21 +1,4 @@
-// CardGrid.tsx — v61 "simple" mode main view.
-//
-// Replaces the physics-based BubbleCanvas with a static grid of
-// cards. Each card shows the emoji + the sound name, plus a small
-// "change sound" pencil icon. Tap a card to play its sound. Tap the
-// pencil to swap the sound via the SoundPicker. There's a single
-// "+ Add sound" card at the end of the grid that opens the picker
-// to add a new card.
-//
-// The physics + drag + collision behavior is GONE in v61. The
-// SingleVoice policy from audioManager still applies: tapping a
-// different card stops the previous sound first.
-//
-// "Simple and fun" — no settings in the visible chrome (gear icon
-// top-right opens SettingsModal as a sheet), no page tabs (single
-// page in v61; if a kid wants more cards they tap "+ Add sound"
-// and pick from the library).
-
+import { useState } from "react";
 import type { FC } from "react";
 import type { BubbleState, BuiltInSound } from "../types";
 
@@ -23,521 +6,157 @@ interface CardGridProps {
   bubbles: BubbleState[];
   builtInSounds: BuiltInSound[];
   reducedMotion: boolean;
-  /** Currently-playing bubble id, polled from useSoundPlaying.
-   *  Used to render a "playing" pulse on the matching card. */
   playingBubbleId: string | null;
-  /** v69: map of bubbleId → friendly name for custom
-   *  recordings. The card label uses this map first, then
-   *  falls back to the bubble's `name` field (built-in) or
-   *  "My Sound" (custom, no name). Updated when the user
-   *  renames a card via the RenameModal. */
   customNames?: Map<string, string>;
   onTapBubble: (id: string, clientX: number, clientY: number) => void;
   onChangeSound: (bubbleId: string) => void;
-  /** v69: open the rename modal for a custom card. Only
-   *  called on custom cards. */
   onRenameCard?: (bubbleId: string) => void;
   onAddCard: () => void;
-  /** v78: called when the kid taps the small 👍 button on an
-   *  uploaded custom card. The parent (PootBox) looks up the
-   *  server recording id in its localStorage-backed map and
-   *  POSTs /api/recordings/:id/upvote. The button is only
-   *  rendered for custom cards in `upvoteEligible` (i.e. the
-   *  upload fire-and-forget completed). */
-  onUpvoteBubble?: (bubbleId: string) => void;
-  /** v78: bubbleIds whose server recording id is known (upload
-   *  completed). The 👍 button only shows when the card's id
-   *  is in this set. Built-in sounds and not-yet-uploaded
-   *  recordings are excluded. */
-  upvoteEligible?: Set<string>;
-  /** v78: reactions map (👍/😂/💀) keyed by bubbleId. Each
-   *  entry is {counts, mine}. Populated by PootBox's batch-fetch
-   *  effect on the serverRecordingIds map. */
-  reactions?: Map<string, { counts: Record<string, number>; mine: string[] }>;
-  /** v78: called when the kid taps one of the 3 reaction emoji
-   *  (👍/😂/💀). PootBox POSTs /api/recordings/:id/reactions
-   *  with the emoji and updates the reactions state from the
-   *  server's response. Like upvote, only fired for cards in
-   *  upvoteEligible (uploaded custom recordings). */
-  onReactBubble?: (bubbleId: string, emoji: string) => void;
-  /** v78: called when the kid taps the small 💬 button to open
-   *  the comments sheet. PootBox opens <CommentsSheet> for the
-   *  matching recording. Like the other social buttons, only
-   *  wired for cards in upvoteEligible (uploaded custom
-   *  recordings). */
-  onOpenComments?: (bubbleId: string) => void;
-  /** v78: called when the kid taps the small "delete" button on a
-    *  custom-recorded card. Built-in cards can't be deleted
-    *  (changing their sound is the equivalent — kid can swap
-    *  to any other built-in or record their own over). */
   onDeleteCard?: (bubbleId: string) => void;
+  onUpvoteBubble?: (bubbleId: string) => void;
+  upvoteEligible?: Set<string>;
+  reactions?: Map<string, { counts: Record<string, number>; mine: string[] }>;
+  onReactBubble?: (bubbleId: string, emoji: string) => void;
+  onOpenComments?: (bubbleId: string) => void;
 }
 
+type Category = "all" | "animal" | "fart" | "silly" | "custom";
+const categories: { key: Category; label: string; emoji: string }[] = [
+  { key: "all", label: "All sounds", emoji: "✦" },
+  { key: "animal", label: "Animals", emoji: "🐻" },
+  { key: "fart", label: "Farts", emoji: "💨" },
+  { key: "silly", label: "Silly", emoji: "🤪" },
+  { key: "custom", label: "My sounds", emoji: "🎙️" },
+];
+const PAGE_SIZE = 24;
+
 const CardGrid: FC<CardGridProps> = ({
-  bubbles,
-  builtInSounds,
-  reducedMotion,
-  playingBubbleId,
-  customNames,
-  onTapBubble,
-  onChangeSound,
-  onRenameCard,
-  onAddCard,
-  onDeleteCard,
-  onUpvoteBubble,
-  upvoteEligible,
-  reactions,
-  onReactBubble,
-  onOpenComments,
+  bubbles, builtInSounds, reducedMotion, playingBubbleId, customNames,
+  onTapBubble, onChangeSound, onRenameCard, onAddCard, onDeleteCard,
+  onUpvoteBubble, upvoteEligible, reactions, onReactBubble, onOpenComments,
 }) => {
-  // Build a lookup: bubbleId → builtInKey (for the "Animal"/"Fart"
-  // label under the emoji). The "Fart" label is shown in a slightly
-  // different color (it's the headline category for the app) but
-  // we keep all sound names plain English.
-  const soundKeyToBuiltIn: Map<string, BuiltInSound> = new Map();
-  for (const s of builtInSounds) soundKeyToBuiltIn.set(s.key, s);
+  const [category, setCategory] = useState<Category>("all");
+  const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const metadata = new Map(builtInSounds.map(sound => [sound.key, sound]));
+  const label = (bubble: BubbleState) => bubble.type === "custom"
+    ? customNames?.get(bubble.id) || "My Sound"
+    : metadata.get(bubble.builtinKey || "")?.name || "Sound";
+  const matches = bubbles.filter(bubble => {
+    const bucket = bubble.type === "custom" ? "custom" : metadata.get(bubble.builtinKey || "")?.bucket;
+    return (category === "all" || category === bucket) && label(bubble).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
+  });
+  // Personal recordings always remain visible on the unfiltered board, including
+  // a newly recorded sound. Browsing never changes or removes stored cards.
+  const personal = matches.filter(bubble => bubble.type === "custom");
+  const builtInMatches = matches.filter(bubble => bubble.type !== "custom");
+  const groups = ["animal", "fart", "silly"].map(bucket => builtInMatches.filter(bubble =>
+    (metadata.get(bubble.builtinKey || "")?.bucket || "silly") === bucket));
+  const builtIn = category === "all"
+    ? Array.from({ length: Math.max(0, ...groups.map(group => group.length)) }, (_, index) =>
+      groups.flatMap(group => group[index] ? [group[index]] : [])).flat()
+    : builtInMatches;
+  const visible = [...personal, ...builtIn.slice(0, visibleCount)];
+  const remaining = Math.max(0, builtIn.length - visibleCount);
 
-  function cardLabel(b: BubbleState): { name: string; isFart: boolean } {
-    if (b.type === "built-in" && b.builtinKey) {
-      const meta = soundKeyToBuiltIn.get(b.builtinKey);
-      if (meta) return { name: meta.name, isFart: meta.bucket === "fart" };
-    }
-    if (b.type === "custom") {
-      // v69: use the per-recording name from the localStorage
-      // map (the friendly name the user typed), defaulting to
-      // "My Sound" if the user hasn't renamed yet.
-      const custom = customNames?.get(b.id);
-      return { name: custom || "My Sound", isFart: false };
-    }
-    return { name: "Sound", isFart: false };
-  }
-
-  // v69: tap animation handled via the CSS :active pseudo-class
-  // (no React state needed). The card's transform scales down
-  // when the kid presses it, then snaps back when released.
-  // It's pure-CSS so there's no React re-mount, no race
-  // condition, and the animation fires every time without
-  // any state machinery. Suppressed under reduced-motion via
-  // the .reduce-motion class on the outer CardGrid wrapper.
-
-  function handleCardTap(b: BubbleState, e: React.MouseEvent<HTMLElement>) {
-    try { navigator.vibrate(20); } catch { /* ignore */ }
-    // The bubble owns the audio — but to avoid a stack of audioManager
-    // calls, route through the same path as BubbleCanvas did. The
-    // parent has a `onTapBubble` callback that fires handleBubbleTap
-    // which has the playing-bubble branch.
-    onTapBubble(b.id, e.clientX, e.clientY);
-  }
-
-  function handleCardDelete(b: BubbleState, e: React.MouseEvent<HTMLButtonElement>) {
-    e.stopPropagation();
-    onDeleteCard?.(b.id);
-  }
-
-  function handleCardKeyDown(b: BubbleState, e: React.KeyboardEvent<HTMLDivElement>) {
-    // Action buttons inside the card own their keyboard events.
-    if (e.target !== e.currentTarget) return;
-    if (e.key !== "Enter" && e.key !== " ") return;
-    e.preventDefault();
-    onTapBubble(b.id, 0, 0);
-  }
-
-  // Inline styles here (no Tailwind) — the rest of the
-  // app uses inline styles too (e.g. PootBox, SoundLibrary, etc.).
-  function renderCard(b: BubbleState) {
-    const isPlaying = playingBubbleId === b.id;
-    const isCustom = b.type === "custom";
-    const { name, isFart } = cardLabel(b);
-    return (
-      <div
-        key={b.id}
-        className="pootbox-card"
-        data-bubble-id={b.id}
-        onClick={(e) => handleCardTap(b, e)}
-        onKeyDown={(e) => handleCardKeyDown(b, e)}
-        role="button"
-        tabIndex={0}
-        aria-label={`${name} — tap to play${isPlaying ? " (playing — tap to stop)" : ""}`}
-        style={{
-          position: "relative",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 6,
-          padding: 12,
-          minHeight: 168,
-          borderRadius: 20,
-          background: isPlaying
-            ? "rgba(245, 158, 11, 0.18)"
-            : "rgba(255, 255, 255, 0.75)",
-          backdropFilter: "blur(8px)",
-          WebkitBackdropFilter: "blur(8px)",
-          boxShadow: isPlaying
-            ? "0 0 0 3px rgba(245,158,11,0.85), 0 4px 16px rgba(245,158,11,0.25)"
-            : "0 4px 14px rgba(0,0,0,0.10)",
-          border: "none",
-          cursor: "pointer",
-          userSelect: "none",
-          WebkitUserSelect: "none",
-          WebkitTapHighlightColor: "transparent",
-          paddingTop: isCustom ? 52 : 16, // keep the delete control clear of the emoji
-          paddingBottom: 60, // reserve a real lane for the 44px action bar
-          // The transform transition is set in the <style> block
-          // above (.pootbox-card) so the :active state can override
-          // it. Inline `transition` here would win specificity.
-          animation: isPlaying && !reducedMotion
-            ? "pootbox-card-playing 1.2s ease-in-out infinite"
-            : "none",
-        }}
-      >
-        <span
-          data-card-label
-          style={{
-            fontSize: 56,
-            lineHeight: 1,
-            // The fart-color tint is a tiny touch but the kids
-            // notice it. Pink for farts, default for everything else.
-            filter: isFart ? "drop-shadow(0 2px 4px rgba(244,114,182,0.4))" : "none",
-          }}
-        >
-          {b.emoji}
-        </span>
-        <span
-          style={{
-            fontFamily: "Fredoka, system-ui, sans-serif",
-            fontSize: "0.85rem",
-            fontWeight: 600,
-            color: isFart ? "#BE185D" : "#3D2C1E",
-            lineHeight: 1.1,
-            textAlign: "center",
-            minHeight: "2.2em",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            overflowWrap: "anywhere",
-          }}
-        >
-          {name}
-        </span>
-        {/* v78: emoji reaction row. Renders 3 tiny emoji + count
-            buttons (👍/😂/💀). Only shown on cards in upvoteEligible
-            (uploaded custom recordings with a known server id).
-            The "mine" set shows which ones the current device has
-            already reacted with — filled background vs outlined.
-            Pure presentation; no internal state. */}
-        {upvoteEligible?.has(b.id) && onReactBubble && (
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              gap: 4,
-              padding: "2px 4px",
-              marginTop: 2,
-            }}
-          >
-            {(["👍", "😂", "💀"] as const).map((emoji) => {
-              const r = reactions?.get(b.id);
-              const count = r?.counts[emoji] ?? 0;
-              const mine = r?.mine.includes(emoji) ?? false;
-              return (
-                <button
-                  key={emoji}
-                  type="button"
-                  className="pb-hit"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onReactBubble(b.id, emoji);
-                  }}
-                  aria-label={`React ${emoji} on ${name}`}
-                  title={mine ? `Remove your ${emoji}` : `React ${emoji}`}
-                  aria-pressed={mine}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 2,
-                    minWidth: 44,
-                    minHeight: 44,
-                    borderRadius: 14,
-                    background: mine
-                      ? "rgba(245,158,11,0.85)"
-                      : "rgba(255,255,255,0.85)",
-                    border: mine ? "none" : "1px solid rgba(0,0,0,0.08)",
-                    color: mine ? "#FFFFFF" : "#3D2C1E",
-                    fontFamily: "Fredoka, system-ui, sans-serif",
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    lineHeight: 1,
-                    padding: "0 8px",
-                  }}
-                >
-                  <span style={{ fontSize: 16, lineHeight: 1 }}>{emoji}</span>
-                  {count > 0 && (
-                    <span style={{ fontSize: 12, lineHeight: 1 }}>
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-        {/* v69: bottom action bar (rename + change-sound). Both
-            are pill-shaped with a soft-white background so the
-            kid can find them. Anchored at the bottom of the
-            card. The delete (×) button is at the top-right (a
-            red dot) — out of the way but still discoverable. */}
-        <div
-          data-card-actions
-          style={{
-            position: "absolute",
-            bottom: 4,
-            left: 0,
-            right: 0,
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            gap: 6,
-            padding: "0 4px",
-          }}
-        >
-          {isCustom && onRenameCard && (
-            <button
-              type="button"
-              className="pb-hit"
-              onClick={(e) => {
-                e.stopPropagation();
-                onRenameCard(b.id);
-              }}
-              aria-label={`Rename ${name}`}
-              title="Rename"
-              style={{
-                minWidth: 44,
-                minHeight: 44,
-                borderRadius: 14,
-                background: "rgba(255,255,255,0.95)",
-                border: "none",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
-                color: "#3D2C1E",
-                fontSize: 16,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-                padding: 0,
-                lineHeight: 1,
-              }}
-            >
-              ✎
-            </button>
-          )}
-          <button
-            type="button"
-            className="pb-hit"
-            onClick={(e) => {
-              e.stopPropagation();
-              onChangeSound(b.id);
-            }}
-            aria-label={`Change ${name} sound`}
-            title="Change sound"
-            style={{
-              minWidth: 72,
-              minHeight: 44,
-              borderRadius: 14,
-              background: "rgba(255,255,255,0.95)",
-              border: "none",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
-              color: "#3D2C1E",
-              fontSize: 12,
-              fontWeight: 700,
-              fontFamily: "Fredoka, system-ui, sans-serif",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              padding: "0 12px",
-              lineHeight: 1,
-              letterSpacing: "0.04em",
-              textTransform: "uppercase",
-            }}
-          >
-            Change
-          </button>
-          {/* v78: upvote button — only rendered if PootBox wired
-              onUpvoteBubble AND the parent computed that this
-              bubble has a server recording id (i.e. we know the
-              upvote can actually reach the server). The parent
-              passes hasUpvote = true via the upvote-eligible set. */}
-          {isCustom && onUpvoteBubble && upvoteEligible?.has(b.id) && (
-            <button
-              type="button"
-              className="pb-hit"
-              onClick={(e) => {
-                e.stopPropagation();
-                onUpvoteBubble(b.id);
-              }}
-              aria-label={`Upvote ${name}`}
-              title="Upvote"
-              style={{
-                minWidth: 44,
-                minHeight: 44,
-                borderRadius: 14,
-                background: "rgba(255,255,255,0.95)",
-                border: "none",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
-                color: "#B45309",
-                fontSize: 16,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-                padding: 0,
-                lineHeight: 1,
-              }}
-            >
-              👍
-            </button>
-          )}
-          {/* v78: comments button — opens the CommentsSheet. Same
-              gating as upvote (only for uploaded custom cards). */}
-          {isCustom && onOpenComments && upvoteEligible?.has(b.id) && (
-            <button
-              type="button"
-              className="pb-hit"
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenComments(b.id);
-              }}
-              aria-label={`Comments on ${name}`}
-              title="Comments"
-              style={{
-                minWidth: 44,
-                minHeight: 44,
-                borderRadius: 14,
-                background: "rgba(255,255,255,0.95)",
-                border: "none",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.18)",
-                color: "#3D2C1E",
-                fontSize: 16,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-                padding: 0,
-                lineHeight: 1,
-              }}
-            >
-              💬
-            </button>
-          )}
-        </div>
-        {isCustom && onDeleteCard && (
-          <button
-            type="button"
-            className="pb-hit"
-            onClick={(e) => handleCardDelete(b, e)}
-            aria-label={`Delete ${name}`}
-            title="Delete"
-            style={{
-              position: "absolute",
-              top: 4,
-              right: 4,
-              minWidth: 44,
-              minHeight: 44,
-              borderRadius: 14,
-              background: "rgba(224, 122, 95, 0.95)",
-              border: "none",
-              color: "#FFF",
-              fontSize: 18,
-              fontWeight: 700,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              padding: 0,
-              lineHeight: 1,
-              boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-            }}
-          >
-            ×
-          </button>
-        )}
-      </div>
-    );
-  }
+  const addSound = () => {
+    setCategory("all"); setQuery(""); setVisibleCount(PAGE_SIZE);
+    onAddCard();
+  };
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        top: 72, // leave room for the new top bar (gear icon)
-        left: 8,
-        right: 8,
-        bottom: 80, // clear the tab bar
-        overflowY: "auto",
-        // Keep two usable columns on narrow phones. The previous 108px
-        // minimum let the absolutely-positioned Change controls overlap
-        // labels and made custom action rows wider than their cards.
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
-        gap: 10,
-        padding: "8px 0 24px",
-        // The card is the touch target; the page itself doesn't
-        // need to handle pointer events except for the gear icon
-        // and any future backdrop. Setting touchAction: manipulation
-        // disables the double-tap-to-zoom delay.
-        touchAction: "manipulation",
-      }}
-    >
-      <style>{`
-        .pootbox-card {
-          transition: transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1),
-                      background 200ms ease,
-                      box-shadow 200ms ease;
-        }
-        .pootbox-card:active:not(:disabled) {
-          transform: scale(0.94) !important;
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .pootbox-card:active:not(:disabled) {
-            transform: scale(1) !important;
-          }
-        }
-      `}</style>
-      {bubbles.map(renderCard)}
-      {/* "+ Add sound" card. Dashed border, single big "+" emoji,
-          anchored at the end of the grid. */}
-      <button
-        onClick={onAddCard}
-        aria-label="Add a new sound card"
-        data-add-card
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 6,
-          padding: 12,
-          minHeight: 168,
-          borderRadius: 20,
-          background: "rgba(255, 255, 255, 0.4)",
-          border: "2px dashed rgba(61,44,30,0.35)",
-          cursor: "pointer",
-          fontFamily: "Fredoka, system-ui, sans-serif",
-          color: "#3D2C1E",
-          fontSize: "0.85rem",
-          fontWeight: 600,
-          transition: reducedMotion ? "none" : "background 150ms ease",
-        }}
-      >
-        <span style={{ fontSize: 44, lineHeight: 1 }}>＋</span>
-        <span>Add sound</span>
-      </button>
-    </div>
+    <main className={`pb-board${reducedMotion ? " reduce-motion" : ""}`} aria-labelledby="soundboard-title">
+      <div className="pb-board-inner">
+        <div className="pb-board-heading">
+          <div>
+            <p className="pb-eyebrow">A little tap. A lot of silly.</p>
+            <h1 id="soundboard-title">Let's make some noise.</h1>
+            <p className="pb-board-hint">Pick a sound to play. Tap it again to stop.</p>
+          </div>
+          <button type="button" className="pb-add-sound" onClick={addSound} aria-label="Add a new sound card" data-add-card>
+            <span aria-hidden="true">＋</span> Add sound
+          </button>
+        </div>
+
+        <div className="pb-board-tools">
+          <div className="pb-categories" role="group" aria-label="Sound categories">
+            {categories.map(item => (
+              <button key={item.key} type="button" aria-pressed={category === item.key}
+                onClick={() => { setCategory(item.key); setVisibleCount(PAGE_SIZE); }}>
+                <span aria-hidden="true">{item.emoji}</span> {item.label}
+              </button>
+            ))}
+          </div>
+          <div className="pb-board-search-row">
+            <label className="pb-board-search">
+              <span aria-hidden="true">⌕</span>
+              <span className="pb-sr-only">Find a sound</span>
+              <input type="search" placeholder="Find a sound…" value={query}
+                onChange={event => { setQuery(event.target.value); setVisibleCount(PAGE_SIZE); }} />
+            </label>
+            <button type="button" className="pb-edit-toggle" aria-pressed={editing} onClick={() => setEditing(!editing)}>
+              {editing ? "✓ Done" : "Edit sounds"}
+            </button>
+          </div>
+        </div>
+
+        <div className="pb-board-caption">
+          <p role="status">{matches.length === 0 ? "No sounds found" : `${visible.length} of ${matches.length} sounds`}</p>
+          <span>{editing ? "Choose a card to change its sound" : "Made for little giggles"}</span>
+        </div>
+
+        <div className="pb-sound-grid" aria-label="Sound cards">
+          {visible.map(bubble => {
+            const name = label(bubble);
+            const isCustom = bubble.type === "custom";
+            const isPlaying = playingBubbleId === bubble.id;
+            const bucket = isCustom ? "custom" : metadata.get(bubble.builtinKey || "")?.bucket || "silly";
+            const hasActions = editing || isCustom;
+            return (
+              <div key={bubble.id} className={`pootbox-card pb-sound-${bucket}${isPlaying ? " is-playing" : ""}`}
+                data-bubble-id={bubble.id}>
+                <button type="button" className="pb-card-play" aria-pressed={isPlaying}
+                  aria-label={`${name} — tap to play${isPlaying ? " (playing — tap to stop)" : ""}`}
+                  onClick={event => {
+                    try { navigator.vibrate(20); } catch { /* optional haptics */ }
+                    onTapBubble(bubble.id, event.clientX, event.clientY);
+                  }}>
+                  <span className="pb-card-emoji" aria-hidden="true">{bubble.emoji}</span>
+                  <span className="pb-card-name" data-card-label>{name}</span>
+                  <span className="pb-card-state" aria-hidden="true">{isPlaying ? "■ Playing" : isCustom ? "Your recording" : "▶ Tap to play"}</span>
+                </button>
+                {hasActions && (
+                  <div className="pb-card-actions" data-card-actions>
+                    {isCustom && onRenameCard && <button type="button" onClick={() => onRenameCard(bubble.id)} aria-label={`Rename ${name}`}>Rename</button>}
+                    {editing && <button type="button" onClick={() => onChangeSound(bubble.id)} aria-label={`Change ${name} sound`}>Change</button>}
+                    {isCustom && onDeleteCard && <button type="button" className="pb-card-delete" onClick={() => onDeleteCard(bubble.id)} aria-label={`Delete ${name}`}>Remove</button>}
+                  </div>
+                )}
+                {upvoteEligible?.has(bubble.id) && (
+                  <div className="pb-card-actions">
+                    {onUpvoteBubble && <button type="button" onClick={() => onUpvoteBubble(bubble.id)} aria-label={`Upvote ${name}`}>👍</button>}
+                    {onReactBubble && ["👍", "😂", "💀"].map(emoji => <button key={emoji} type="button"
+                      aria-label={`React ${emoji} on ${name}`} aria-pressed={reactions?.get(bubble.id)?.mine.includes(emoji) || false}
+                      onClick={() => onReactBubble(bubble.id, emoji)}>{emoji} {reactions?.get(bubble.id)?.counts[emoji] || ""}</button>)}
+                    {onOpenComments && <button type="button" onClick={() => onOpenComments(bubble.id)} aria-label={`Comments on ${name}`}>💬</button>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {matches.length === 0 && <div className="pb-board-empty">
+          <span aria-hidden="true">{category === "custom" ? "🎙️" : "🔎"}</span>
+          <h2>{category === "custom" && !query ? "Make it your own" : "No giggles found. Yet."}</h2>
+          <p>{category === "custom" && !query ? "Add a sound and record something silly." : "Try another name or choose a different category."}</p>
+          <button type="button" className="pb-edit-toggle" onClick={() => { setQuery(""); setCategory("all"); }}>See all sounds</button>
+        </div>}
+        {remaining > 0 && <button type="button" className="pb-show-more" onClick={() => setVisibleCount(visibleCount + PAGE_SIZE)}>
+          Show {Math.min(PAGE_SIZE, remaining)} more sounds <span aria-hidden="true">↓</span>
+        </button>}
+      </div>
+    </main>
   );
 };
-
 export default CardGrid;

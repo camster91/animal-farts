@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { BUILT_IN_SOUNDS } from "../../src/pootbox/constants";
 
 async function openFreshApp(page: Page) {
   await page.goto("/");
@@ -6,7 +7,7 @@ async function openFreshApp(page: Page) {
   await expect(skip).toBeVisible();
   await skip.click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Play", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "Let's make some noise." })).toBeVisible();
 }
 
 async function recordSound(page: Page) {
@@ -140,6 +141,7 @@ test("primary mobile controls meet the minimum touch target", async ({ page }) =
 test("card labels stay clear of Change controls at supported responsive widths", async ({ page }) => {
   await openFreshApp(page);
 
+  await page.getByRole("button", { name: "Edit sounds", exact: true }).click();
   await page.getByRole("button", { name: /^Change .* sound$/ }).first().click();
   await expect(page.getByText("Pick a sound", { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Search sounds" })).toBeVisible();
@@ -149,8 +151,10 @@ test("card labels stay clear of Change controls at supported responsive widths",
     { width: 320, height: 568 },
     { width: 393, height: 851 },
     { width: 768, height: 1024 },
+    { width: 1440, height: 900 },
   ]) {
     await page.setViewportSize(viewport);
+    await page.screenshot({ path: `.artifacts/playwright/ui-${viewport.width}.png` });
     const cards = page.locator("[data-bubble-id]");
     await expect(cards.first()).toBeVisible();
 
@@ -177,4 +181,112 @@ test("card labels stay clear of Change controls at supported responsive widths",
     const pageOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect.soft(pageOverflow, `${viewport.width}px page overflow`).toBeLessThanOrEqual(1);
   }
+});
+
+test("soundboard browsing keeps the play surface small and editing intentional", async ({ page }) => {
+  await openFreshApp(page);
+  await expect(page.getByRole("button", { name: /tap to play/ })).toHaveCount(24);
+  await expect(page.getByRole("button", { name: /^Change .* sound$/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Play", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Farts", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Farts", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "All sounds", exact: true }).click();
+  await page.getByRole("searchbox", { name: "Find a sound" }).fill("Bear");
+  await expect(page.getByRole("button", { name: /Bear — tap to play/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Cow — tap to play/ })).toHaveCount(0);
+  await page.getByRole("searchbox", { name: "Find a sound" }).fill("no-such-sound-123");
+  await expect(page.getByRole("heading", { name: "No giggles found. Yet." })).toBeVisible();
+  await page.getByRole("button", { name: "See all sounds", exact: true }).click();
+  await page.getByRole("button", { name: /Show 24 more sounds/ }).click();
+  await expect(page.getByRole("button", { name: /tap to play/ })).toHaveCount(48);
+  await page.getByRole("button", { name: "Edit sounds", exact: true }).click();
+  await expect(page.getByRole("button", { name: /^Change .* sound$/ })).toHaveCount(48);
+  await page.getByRole("button", { name: "✓ Done", exact: true }).click();
+  await expect(page.getByRole("button", { name: /^Change .* sound$/ })).toHaveCount(0);
+});
+
+test("sound replacements and additions survive a reload", async ({ page }) => {
+  await openFreshApp(page);
+  await page.getByRole("button", { name: "Edit sounds", exact: true }).click();
+  await page.getByRole("button", { name: "Change Bear sound", exact: true }).click();
+  await page.getByRole("button", { name: "Cow sound", exact: true }).click();
+  const originalCard = page.locator('[data-bubble-id="b:built-in:bear"]');
+  await expect(originalCard.getByRole("button", { name: /Cow — tap to play/ })).toBeVisible();
+  await page.reload();
+  await expect(originalCard.getByRole("button", { name: /Cow — tap to play/ })).toBeVisible();
+  await page.getByRole("button", { name: "Add a new sound card" }).click();
+  await page.getByRole("button", { name: "Bear sound", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Pick a sound", exact: true })).toHaveCount(0);
+  await page.reload();
+  await page.getByRole("searchbox", { name: "Find a sound" }).fill("Bear");
+  await expect(page.getByRole("button", { name: /Bear — tap to play/ })).toBeVisible();
+});
+
+test("every bundled sound loads and decodes in Chromium", async ({ page }) => {
+  test.setTimeout(90000);
+  await openFreshApp(page);
+  const failures = await page.evaluate(async paths => {
+    const context = new AudioContext();
+    const failed: string[] = [];
+    try {
+      for (let index = 0; index < paths.length; index += 6) {
+        await Promise.all(paths.slice(index, index + 6).map(async path => {
+          try {
+            const response = await fetch(path);
+            if (!response.ok || !response.headers.get("content-type")?.startsWith("audio/")) throw new Error(`HTTP ${response.status}`);
+            const audio = await context.decodeAudioData(await response.arrayBuffer());
+            if (!(audio.duration > 0 && audio.numberOfChannels > 0)) throw new Error("Empty audio");
+          } catch (error) { failed.push(`${path}: ${String(error)}`); }
+        }));
+      }
+    } finally { await context.close(); }
+    return failed;
+  }, BUILT_IN_SOUNDS.map(sound => sound.file));
+  expect(failures).toEqual([]);
+});
+
+test("a played sound remains loadable offline through native audio range requests", async ({ page, context }) => {
+  await openFreshApp(page);
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller) await new Promise<void>(resolve => {
+      navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), { once: true });
+    });
+  });
+  await page.getByRole("button", { name: /Bear — tap to play/ }).click();
+  await expect.poll(() => page.evaluate(async () => {
+    const response = await caches.match("/sounds/bear.mp3");
+    return response?.status;
+  })).toBe(200);
+  await context.setOffline(true);
+  const duration = await page.evaluate(() => new Promise<number>((resolve, reject) => {
+    const audio = new Audio("/sounds/bear.mp3");
+    audio.onloadeddata = () => { const duration = audio.duration; audio.pause(); resolve(duration); };
+    audio.onerror = () => reject(new Error("Native audio failed offline"));
+    audio.load();
+  }));
+  expect(duration).toBeGreaterThan(0);
+});
+
+test("a recorded sound remains loadable offline after upload", async ({ page, context }) => {
+  await openFreshApp(page);
+  const uploaded = page.waitForResponse(response => response.url().endsWith('/api/recordings') && response.request().method() === 'POST');
+  await recordSound(page);
+  const { audioUrl } = await (await uploaded).json() as { audioUrl: string };
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller) await new Promise<void>(resolve => {
+      navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), { once: true });
+    });
+  });
+  await page.getByRole("button", { name: /My Sound — tap to play/ }).click();
+  await expect.poll(() => page.evaluate(async path => (await caches.match(path))?.status, audioUrl)).toBe(200);
+  await context.setOffline(true);
+  const duration = await page.evaluate(path => new Promise<number>((resolve, reject) => {
+    const audio = new Audio(path);
+    audio.onloadeddata = () => { const duration = audio.duration; audio.pause(); resolve(duration); };
+    audio.onerror = () => reject(new Error("Recording failed offline"));
+    audio.load();
+  }), audioUrl);
+  expect(duration).toBeGreaterThan(0);
 });

@@ -51,8 +51,9 @@ export function playSingle(sound: string, volume: number, bubbleId?: string): vo
   };
   a.addEventListener("ended", remove, { once: true });
   a.addEventListener("error", remove, { once: true });
-  // Hard safety net: if 'ended' never fires, remove after 10s
-  setTimeout(remove, 10_000);
+  // Long clips remain tracked until playback actually stops. Dropping a
+  // live element after ten seconds made Stop lose it and allowed overlap.
+  a.addEventListener("pause", remove, { once: true });
   activeAudioElements.add(a);
   currentBubbleId = bubbleId ?? null;
   a.play().catch(() => {

@@ -1,6 +1,6 @@
 // === IndexedDB helpers for persisting user recordings & pages ===
 
-import type { Page, BubbleState } from "./types.js";
+import type { Page, BubbleState, BuiltInSound } from "./types.js";
 import { BUILT_IN_SOUNDS } from "./constants.js";
 
 const DB_NAME = "pootbox";
@@ -268,6 +268,41 @@ export async function savePage(page: Page): Promise<void> {
     });
     db.close();
   } catch { /* best-effort */ }
+}
+
+/** Persist a sound edit atomically before reporting success to the UI. */
+export async function saveBuiltInSoundToPage(pageId: string, sound: BuiltInSound, targetId?: string): Promise<Page> {
+  const db = await openDB();
+  try {
+    return await new Promise<Page>((resolve, reject) => {
+      const tx = db.transaction(PAGES_STORE, "readwrite");
+      const store = tx.objectStore(PAGES_STORE);
+      const request = store.get(pageId);
+      let updated: Page;
+      tx.oncomplete = () => resolve(updated);
+      tx.onerror = () => reject(tx.error || new Error("Could not save sound"));
+      tx.onabort = () => reject(tx.error || new Error("Could not save sound"));
+      request.onsuccess = () => {
+        const page = request.result as Page | undefined;
+        if (!page || (targetId && !page.bubbles.some(bubble => bubble.id === targetId))) {
+          tx.abort();
+          return;
+        }
+        const bubble: BubbleState = {
+          id: `b:built-in:${sound.key}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+          type: "built-in", emoji: sound.emoji, builtinKey: sound.key, sound: sound.file,
+          pos: { x: 0, y: 0 }, vel: { x: 0, y: 0 }, radius: 36, mass: 1,
+          lastTouchedAt: -1, lastReleasedAt: -1,
+        };
+        updated = { ...page, bubbles: targetId
+          ? page.bubbles.map(existing => existing.id === targetId
+            ? { ...existing, type: "built-in", emoji: sound.emoji, builtinKey: sound.key, sound: sound.file, blobUrl: undefined }
+            : existing)
+          : [...page.bubbles, bubble] };
+        store.put(updated, pageId);
+      };
+    });
+  } finally { db.close(); }
 }
 
 export async function deletePage(pageId: string): Promise<void> {
