@@ -1,0 +1,19 @@
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "pootbox",
+  "compatibility_date": "2026-11-19",
+  "pages_build_output_dir": "./dist",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pootbox-cloudflare",
+      "database_id": "bf326b9f-4df1-4af0-a9e1-863d55438c71"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "AUDIO",
+      "bucket_name": "pootbox-audio-cloudflare"
+    }
+  ]
+}
