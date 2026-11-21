@@ -1,10 +1,25 @@
-import { Capacitor } from "@capacitor/core";
-
 export const PRODUCTION_SERVER_ORIGIN = "https://animals.ashbi.ca";
+
+// Match @capacitor/core's getPlatformId / CapacitorCustomPlatform check without
+// bundling the core library into the web entry.
+type PlatformWindow = {
+  androidBridge?: unknown;
+  webkit?: { messageHandlers?: { bridge?: unknown } };
+  CapacitorCustomPlatform?: { name?: string };
+};
+
+function isNativePlatform(
+  win: PlatformWindow | undefined = typeof globalThis === "object" ? (globalThis as PlatformWindow) : undefined,
+): boolean {
+  if (!win) return false;
+  const custom = win.CapacitorCustomPlatform?.name;
+  if (custom) return custom !== "web";
+  return Boolean(win.androidBridge || win.webkit?.messageHandlers?.bridge);
+}
 
 export function serverUrl(
   path: string,
-  nativePlatform = Capacitor.isNativePlatform(),
+  nativePlatform = isNativePlatform(),
   serverOrigin = PRODUCTION_SERVER_ORIGIN,
 ): string {
   if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\")) {
